@@ -36,27 +36,29 @@ const KNOWN_ROUTES: Record<string, number> = {
   "dxbdac": 175,  // DXB→Dhaka
 };
 
-function detectRouteAndPrice(url: string): { route: string; priceUSD: number; priceAED: number } {
+function detectRouteAndPrice(url: string): { route: string; priceUSD: number; priceAED: number; category: string } {
   const u = url.toLowerCase();
   const from = (u.match(/from=([a-z]{3})/i) || [])[1] || "";
   const to = (u.match(/to=([a-z]{3})/i) || [])[1] || "";
   const key = (from + to).toLowerCase();
-  if (KNOWN_ROUTES[key]) return { route: `${from.toUpperCase()}→${to.toUpperCase()}`, priceUSD: KNOWN_ROUTES[key], priceAED: Math.round(KNOWN_ROUTES[key] * 3.67) };
-  if (u.includes("united")) return { route: "JFK→SFO", priceUSD: 347, priceAED: 1274 };
-  if (u.includes("delta")) return { route: "JFK→LAX", priceUSD: 320, priceAED: 1175 };
-  if (u.includes("flydubai")) return { route: "DXB→KTM", priceUSD: 229, priceAED: 840 };
-  if (u.includes("emirates")) return { route: "DXB→LHR", priceUSD: 280, priceAED: 1028 };
-  return { route: from ? `${from.toUpperCase()}→${to.toUpperCase()}` : "ROUTE", priceUSD: 220, priceAED: 808 };
+  if (KNOWN_ROUTES[key]) return { route: `${from.toUpperCase()}→${to.toUpperCase()}`, priceUSD: KNOWN_ROUTES[key], priceAED: Math.round(KNOWN_ROUTES[key] * 3.67), category: "flight" };
+  if (u.includes("united") || u.includes("delta") || u.includes("flydubai") || u.includes("emirates") || u.includes("google.com/travel"))
+    return { route: "FLIGHT", priceUSD: 280, priceAED: 1028, category: "flight" };
+  if (u.includes("booking.com") || u.includes("hotel") || u.includes("leela") || u.includes("marriott") || u.includes("hilton") || u.includes("taj") || u.includes("leela"))
+    return { route: "HOTEL", priceUSD: 175, priceAED: 642, category: "hotel" };
+  if (u.includes("amazon") || u.includes("product") || u.includes("buy"))
+    return { route: "PRODUCT", priceUSD: 45, priceAED: 165, category: "product" };
+  return { route: from ? `${from.toUpperCase()}→${to.toUpperCase()}` : "ROUTE", priceUSD: 180, priceAED: 660, category: "general" };
 }
 
 function generateMockReport(url: string, name: string): TopologyReport {
   const seed = hashStr(url + name) || 1;
   const rng = (max: number, min = 0) => { const x = Math.sin(seed * (++rngCtr || 1)) * 10000; return min + (x - Math.floor(x)) * (max - min); };
   let rngCtr = 0;
-  const { route, priceUSD: knownPrice, priceAED } = detectRouteAndPrice(url);
+  const { route, priceUSD: knownPrice, priceAED, category } = detectRouteAndPrice(url);
   const isGulf = /dubai|flydubai|dxb|uae|emirates|etihad|gulf/i.test(url);
   const base = knownPrice;
-  const scale = isGulf ? 0.6 : 0.8;
+  const scale = category === "hotel" ? 0.5 : category === "flight" ? 0.7 : 0.8;
   const classes = ["selective", "progressive", "aggressive"] as const;
   const cls = classes[Math.floor(rng(3))];
   const varsActive = cls === "selective" ? 1 + Math.floor(rng(2)) : cls === "progressive" ? 2 + Math.floor(rng(2)) : 3 + Math.floor(rng(1));
@@ -403,132 +405,108 @@ export default function JacobiChat() {
               <div className="w-7 h-7 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-1"><Bot className="w-3.5 h-3.5 text-white/40" /></div>
               <div className="max-w-[88%] ml-3 space-y-4 w-full">
 
-                {/* Metric Strip */}
-                <div className="grid grid-cols-4 gap-px bg-neutral-900 rounded overflow-hidden relative">
-                  <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-white/15 z-10" />
-                  <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-white/15 z-10" />
-                  <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-white/15 z-10" />
-                  <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-white/15 z-10" />
-                  {[
-                    { label: "Baseline", value: `$${report.baseline_price?.toFixed(0) ?? "—"}`, sub: `${report.successful_agents} agents`, icon: DollarSign, cls: "" },
-                    { label: "Spread", value: `$${report.max_price_spread?.toFixed(0) ?? "—"}`, sub: `${report.max_price_spread_pct?.toFixed(1)}%`, icon: TrendingUp, cls: "" },
-                    { label: "DI", value: `$${report.discrimination_index.toFixed(0)}`, sub: "discrimination", icon: Activity, cls: "" },
-                    { label: "Class", value: report.topology_class.toUpperCase(), sub: "3 vars active", icon: Shield, cls: clsColor(report.topology_class) },
-                  ].map((m, mi) => (
-                    <div key={m.label} className="bg-black p-3 relative">
-                      <div className="flex items-center gap-1.5 text-[8px] font-mono text-white/20 mb-1.5 uppercase tracking-[0.1em]"><m.icon className="w-2.5 h-2.5" />{m.label}</div>
-                      <div className={`text-lg font-mono tracking-tight ${m.cls || "text-white"}`}>{m.value}</div>
-                      <div className="text-[8px] font-mono text-white/15 mt-0.5">{m.sub}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Swarm */}
-                <div>
-                  <div className="text-[9px] font-mono text-white/20 mb-2">Agent Swarm — click for DOM diff</div>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-[1px] bg-neutral-900">
-                    {report.agents.map((a) => {
-                      const blocked = a.bot_detected; const sel = selectedAgent?.agent_id === a.agent_id;
-                      return (
-                        <button key={a.agent_id} onClick={() => setSelectedAgent(sel ? null : a)}
-                          className={`bg-black p-1.5 text-left transition-all ${blocked ? "bg-red-950/20 animate-blockPulse" : sel ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className={`text-[7px] font-mono ${blocked ? "text-red-400/60" : "text-white/15"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
-                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono text-white/70">${a.price}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
+                {/* ── BEST PRICE HERO ── */}
+                {(() => {
+                  const agents = report.agents.filter(a => a.status === "success" && a.price);
+                  const prices = agents.map(a => a.price!).sort((a, b) => a - b);
+                  const best = prices.length ? prices[0] : 0;
+                  const worst = prices.length ? prices[prices.length - 1] : 0;
+                  const bestAgent = agents.find(a => a.price === best);
+                  const worstAgent = agents.find(a => a.price === worst);
+                  const savings = worst - best;
+                  return (
+                    <div className="border border-neutral-900 rounded overflow-hidden">
+                      <div className="bg-black p-5 text-center border-b border-neutral-900">
+                        <div className="text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
+                        <div className="text-5xl font-mono tracking-tight text-white font-light">${best.toFixed(0)}</div>
+                        {savings > 0 && (
+                          <div className="mt-2 text-[11px] font-mono">
+                            <span className="text-emerald-400/80">Save ${savings.toFixed(0)}</span>
+                            <span className="text-white/20 mx-2">vs</span>
+                            <span className="text-red-400/60">${worst.toFixed(0)}</span>
+                            <span className="text-white/15 ml-1">highest rate</span>
                           </div>
-                          <p className="text-[6px] font-mono text-white/15 leading-tight truncate">{parseCombo(a.label)}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* DOM Explorer */}
-                {selectedAgent && agentDOM && (
-                  <div className="border border-neutral-900 rounded overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-900 bg-black/60">
-                      <div className="flex items-center gap-1.5"><Code className="w-3 h-3 text-white/25" /><span className="text-[8px] font-mono text-white/25 uppercase">DOM Explorer</span></div>
-                      <div className="flex items-center gap-2 text-[9px] font-mono">
-                        <span className="text-white/15">Base $347</span><span className="text-white/15">vs</span>
-                        <span className={selectedAgent.price ? "text-white/70" : "text-red-400/60"}>{selectedAgent.agent_id}{selectedAgent.price !== null ? ` $${selectedAgent.price}` : " BLOCKED"}</span>
-                        <button onClick={() => setSelectedAgent(null)} className="text-white/15 hover:text-white/40"><X className="w-2.5 h-2.5" /></button>
+                        )}
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-px bg-neutral-900">
-                      <div className="bg-black p-3">
-                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">Baseline</div>
-                        <div className="font-mono text-[8px] text-white/30 leading-relaxed break-all">{baseDOM.text}</div>
-                        <code className="text-[8px] text-emerald-400/80 bg-emerald-950/20 px-1.5 py-0.5 rounded block mt-1">{baseDOM.node}</code>
-                      </div>
-                      <div className="bg-black p-3">
-                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">{selectedAgent.agent_id}</div>
-                        <div className="font-mono text-[8px] leading-relaxed break-all">
-                          {agentDOM.text.split(" ").map((w, i) => /^\$\d/.test(w) && w !== "$347.00" ? <span key={i} className="text-amber-300/80 bg-amber-300/10 px-0.5 rounded">{w} </span> : <span key={i} className="text-white/30">{w} </span>)}
-                        </div>
-                        <code className={`text-[8px] ${selectedAgent.price && selectedAgent.price !== 347 ? "text-amber-300/80 bg-amber-950/20" : "text-white/30 bg-white/5"} px-1.5 py-0.5 rounded block mt-1`}>{agentDOM.node}</code>
-                        {selectedAgent.bot_detected && <div className="mt-1 flex items-center gap-1 text-[8px] font-mono text-red-400/60"><AlertOctagon className="w-2 h-2" />BLOCKED</div>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sensitivity + Histogram */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-[9px] font-mono text-white/20 mb-2">Gradient Sensitivity</div>
-                    <div className="space-y-[1px]">
-                      {report.gradients.map((g) => {
-                        const high = g.delta > 0; const sig = g.significant;
-                        return (
-                          <div key={g.variable_name} className="flex items-center bg-white/[0.02] px-3 py-2">
-                            <div className="w-24 flex items-center gap-1.5 text-[9px] font-mono text-white/40">{VAR_ICONS[g.variable_name]}{g.variable_name.replace("_"," ")}</div>
-                            <div className="flex-1 grid grid-cols-3 gap-1 text-[9px] font-mono">
-                              <span className="text-white/15">{g.state_high}</span>
-                              <span className={`text-center ${sig ? (high ? "text-white" : "text-white/60") : "text-white/15"}`}>{sig ? fmtDelta(g.delta) : "—"}</span>
-                              <span className="text-right text-white/15">{g.state_low}</span>
+                      {bestAgent && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-neutral-900">
+                          {[
+                            { label: "Location", value: bestAgent.label.includes("DUBAI") ? "Dubai (AE)" : bestAgent.label.includes("MANHATTAN") ? "New York (US)" : bestAgent.label.includes("LONDON") ? "London (UK)" : bestAgent.label.includes("MUMBAI") ? "Mumbai (IN)" : bestAgent.label.includes("SINGAPORE") ? "Singapore (SG)" : bestAgent.label.includes("RURAL") ? "Rural Iowa (US)" : bestAgent.label.includes("TOKYO") ? "Tokyo (JP)" : bestAgent.label.includes("BERLIN") ? "Berlin (DE)" : bestAgent.label.includes("SYDNEY") ? "Sydney (AU)" : bestAgent.label.includes("DOHA") ? "Doha (QA)" : bestAgent.label.includes("MUSCAT") ? "Muscat (OM)" : bestAgent.label.includes("ABU") ? "Abu Dhabi (AE)" : "Standard (US)", icon: Globe },
+                            { label: "Device", value: bestAgent.label.includes("WINDOWS") ? "Windows Chrome" : bestAgent.label.includes("MACBOOK") || bestAgent.label.includes("MAC") ? "MacBook Safari" : bestAgent.label.includes("iPHONE") || bestAgent.label.includes("IPAD") ? "iOS Safari" : bestAgent.label.includes("ANDROID") ? "Android Chrome" : bestAgent.label.includes("CHROMEBOOK") ? "Chromebook" : bestAgent.label.includes("EDGE") ? "Windows Edge" : bestAgent.label.includes("FIREFOX") ? "Firefox Desktop" : "Standard Browser", icon: Smartphone },
+                            { label: "Cookie Policy", value: bestAgent.label.includes("FRESH") ? "Fresh (no tracking)" : bestAgent.label.includes("AGED") ? "Aged (30d history)" : bestAgent.label.includes("LOYALTY") ? "Loyalty (90d)" : "Fresh (no tracking)", icon: Cookie },
+                            { label: "Traffic Source", value: bestAgent.label.includes("KAYAK") ? "Via Kayak" : bestAgent.label.includes("SKYSCANNER") ? "Via Skyscanner" : bestAgent.label.includes("AGODA") ? "Via Agoda" : bestAgent.label.includes("DIRECT") ? "Direct (type URL)" : "Direct", icon: ExternalLink },
+                          ].map((m, i) => (
+                            <div key={m.label} className="bg-black p-3 text-center">
+                              <div className="flex items-center justify-center gap-1 text-[8px] font-mono text-white/15 mb-1 uppercase tracking-wider"><m.icon className="w-2.5 h-2.5" />{m.label}</div>
+                              <div className="text-[10px] font-mono text-white/60">{m.value}</div>
                             </div>
-                            {sig && <div className={`ml-2 px-1.5 py-0.5 rounded text-[7px] font-mono ${high ? "bg-white/10 text-white/70" : "bg-white/5 text-white/30"}`}>{g.delta_pct.toFixed(1)}%</div>}
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Discount Matrix — collapsed row */}
+                <div className="border border-neutral-900 rounded overflow-hidden">
+                  <button onClick={() => setShowStream(!showStream)} className="w-full flex items-center justify-between px-4 py-2.5 text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] hover:text-white/40 transition-colors bg-black/40">
+                    <span className="flex items-center gap-2"><BarChart3 className="w-3 h-3" />Price Distribution &amp; Sensitivity</span>
+                    {showStream ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                  </button>
+                  {showStream && (
+                    <div className="p-4 space-y-4">
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { label: "Lowest", value: `$${report.price_range?.[0].toFixed(0)}`, cls: "text-emerald-400" },
+                          { label: "Median", value: `$${report.baseline_price?.toFixed(0)}`, cls: "text-white" },
+                          { label: "Highest", value: `$${report.price_range?.[1].toFixed(0)}`, cls: "text-red-400" },
+                          { label: "Spread", value: `$${report.max_price_spread?.toFixed(0)}`, sub: `${report.max_price_spread_pct?.toFixed(1)}%`, cls: "text-white/60" },
+                        ].map(m => (
+                          <div key={m.label} className="text-center bg-white/[0.02] rounded p-2">
+                            <div className="text-[8px] font-mono text-white/20 uppercase">{m.label}</div>
+                            <div className={`text-sm font-mono ${m.cls}`}>{m.value}</div>
+                            {m.sub && <div className="text-[8px] font-mono text-white/15">{m.sub}</div>}
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
+                      <div className="h-32">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={(() => {
+                            const v = Object.values(report.all_prices).filter((p): p is number => p !== null);
+                            if (!v.length) return [];
+                            const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10;
+                            const bins: Record<number,number> = {};
+                            for (let b = mn; b <= mx; b+=10) bins[b] = 0;
+                            for (const p of v) bins[Math.floor(p/10)*10]++;
+                            return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket);
+                          })()} margin={{ top: 2, right: 4, left: 0, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
+                            <XAxis dataKey="bucket" tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} tickFormatter={(v:number) => `$${v}`} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
+                            <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} allowDecimals={false} />
+                            <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "9px", fontFamily: "monospace", color: "#fff" }} />
+                            <Bar dataKey="count" radius={[1,1,0,0]}>
+                              {(() => { 
+                                const v = Object.values(report.all_prices).filter((p): p is number => p !== null);
+                                const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10;
+                                const bins: Record<number,number> = {}; for (let b = mn; b <= mx; b+=10) bins[b]=0;
+                                for (const p of v) bins[Math.floor(p/10)*10]++;
+                                return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket);
+                              })().map((e,i) => {
+                                const pct = Math.abs(e.bucket - (report.baseline_price ?? 0)) / (report.baseline_price ?? 1);
+                                return <Cell key={i} fill={pct > 0.08 ? (e.bucket < (report.baseline_price ?? 0) ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.8)") : "rgba(255,255,255,0.15)"} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] font-mono text-white/20 mb-2">Distribution</div>
-                    <div className="h-36 relative">
-                      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-white/15" />
-                      <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r border-white/15" />
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={(() => {
-                          const v = Object.values(report.all_prices).filter((p): p is number => p !== null);
-                          if (!v.length) return [];
-                          const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10;
-                          const bins: Record<number, number> = {};
-                          for (let b = mn; b <= mx; b+=10) bins[b] = 0;
-                          for (const p of v) { bins[Math.floor(p/10)*10]++; }
-                          return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket);
-                        })()} margin={{ top: 4, right: 4, left: 0, bottom: 8 }}>
-                          <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
-                          <XAxis dataKey="bucket" tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9, fontFamily: "monospace" }} tickFormatter={(v: number) => `$${v}`} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
-                          <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} allowDecimals={false} />
-                          <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "9px", fontFamily: "monospace", color: "#fff" }} />
-                          <Bar dataKey="count" radius={[1,1,0,0]}>
-                            {(() => { const v = Object.values(report.all_prices).filter((p): p is number => p !== null); return v; })() && (() => { const v = Object.values(report.all_prices).filter((p): p is number => p !== null); return v; })().length > 0 && (() => { const v = Object.values(report.all_prices).filter((p): p is number => p !== null); const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10; const bins: Record<number,number> = {}; for (let b = mn; b <= mx; b+=10) bins[b] = 0; for (const p of v) bins[Math.floor(p/10)*10]++; return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket); })().map((e,i) => { const pct = Math.abs(e.bucket - (report.baseline_price ?? 0)) / (report.baseline_price ?? 1); return <Cell key={i} fill={pct > 0.08 ? (e.bucket < (report.baseline_price ?? 0) ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.8)") : "rgba(255,255,255,0.15)"} />; })}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Audit Summary */}
                 <div className="border border-neutral-900 rounded p-3 bg-white/[0.02]">
                   <div className="flex items-center gap-1.5 mb-1.5"><Terminal className="w-3 h-3 text-white/25" /><span className="text-[8px] font-mono text-white/25 uppercase">Summary</span></div>
                   <p className="font-mono text-[10px] text-white/60 leading-relaxed">{report.summary}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-2 text-[8px] font-mono">
-                    <span className="text-white/30">&gt; {report.max_discrimination_scenario}</span>
-                    <span className="text-emerald-400/40">&gt; {report.min_discrimination_scenario}</span>
-                  </div>
                 </div>
               </div>
             </div>

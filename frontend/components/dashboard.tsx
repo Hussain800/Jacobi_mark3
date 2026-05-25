@@ -12,6 +12,50 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
+/* ─── Currency localization ──────────────────────────────────────────── */
+
+const CCY_RATES: Record<string, number> = {
+  USD: 1, AED: 3.67, INR: 83.0, GBP: 0.79, EUR: 0.92,
+  JPY: 149, SGD: 1.35, AUD: 1.53, CAD: 1.37, CHF: 0.88,
+  SEK: 10.5, NOK: 10.7, DKK: 6.9, CNY: 7.24, KRW: 1320,
+  THB: 36.0, MYR: 4.72, IDR: 15500, PHP: 56.0, VND: 24800,
+  TRY: 30.5, ZAR: 18.5, BRL: 5.05, MXN: 17.2, RUB: 91.0,
+  PLN: 4.0, CZK: 23.0, HUF: 360, ILS: 3.67, EGP: 47.0,
+  NGN: 1500, SAR: 3.75, QAR: 3.64, OMR: 0.38, KWD: 0.31,
+  BHD: 0.38, PKR: 278, BDT: 110, LKR: 300, NPR: 133,
+};
+
+const LOCALE_MAP: Record<string, string> = {
+  "en-IN": "INR", "en-AE": "AED", "ar-AE": "AED", "en-GB": "GBP",
+  "en-US": "USD", "en-EU": "EUR", "de-DE": "EUR", "fr-FR": "EUR",
+  "ja-JP": "JPY", "zh-CN": "CNY", "ko-KR": "KRW", "th-TH": "THB",
+  "en-SG": "SGD", "en-AU": "AUD", "en-CA": "CAD", "sv-SE": "SEK",
+  "nb-NO": "NOK", "da-DK": "DKK", "pt-BR": "BRL", "es-MX": "MXN",
+  "pl-PL": "PLN", "cs-CZ": "CZK", "hu-HU": "HUF", "he-IL": "ILS",
+  "ar-EG": "EGP", "en-NG": "NGN", "ar-SA": "SAR", "en-PK": "PKR",
+  "en-BD": "BDT", "si-LK": "LKR", "ne-NP": "NPR",
+};
+
+function detectCurrency(): { code: string; symbol: string; rate: number } {
+  if (typeof navigator === "undefined") return { code: "USD", symbol: "$", rate: 1 };
+  const locales = navigator.languages || [navigator.language];
+  for (const loc of locales) {
+    const code = LOCALE_MAP[loc];
+    if (code && CCY_RATES[code]) {
+      const fmt = new Intl.NumberFormat(loc, { style: "currency", currency: code, minimumFractionDigits: 0 });
+      const sym = fmt.format(1).replace(/[\d\s.,]/g, "").trim() || code;
+      return { code, symbol: sym, rate: CCY_RATES[code] };
+    }
+  }
+  return { code: "USD", symbol: "$", rate: 1 };
+}
+
+function localPrice(usd: number, ccy: { code: string; symbol: string; rate: number }): string {
+  if (ccy.code === "USD") return `$${Math.round(usd)}`;
+  const local = Math.round(usd * ccy.rate);
+  return `${ccy.symbol}${local.toLocaleString()}`;
+}
+
 interface Gradient { variable_name: string; state_high: string; state_low: string; mean_price_high: number; mean_price_low: number; delta: number; delta_pct: number; pooled_std: number; t_statistic: number; significant: boolean; n_high: number; n_low: number; }
 interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; }
 interface TopologyReport { session_id: string; target_url: string; target_name: string; timestamp: string; status: string; total_agents: number; successful_agents: number; failed_agents: number; detected_agents: number; elapsed_seconds: number; control_stability: number; baseline_price: number | null; mean_price: number | null; all_prices: Record<string, number | null>; price_range: [number, number] | null; max_price_spread: number | null; max_price_spread_pct: number | null; gradients: Gradient[]; discrimination_index: number; topology_class: string; summary: string; max_discrimination_scenario: string; min_discrimination_scenario: string; agents: Agent[]; error: string | null; }
@@ -188,6 +232,9 @@ export default function JacobiChat() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [showStream, setShowStream] = useState(true);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
+  const [chatContext, setChatContext] = useState<TopologyReport | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [userCurrency, setUserCurrency] = useState(detectCurrency());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -291,7 +338,7 @@ export default function JacobiChat() {
                   if (streamRef.current) clearInterval(streamRef.current);
                   if (data.status === "completed" && data.successful_agents > 0) {
                     setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Backend pipeline complete — ${data.successful_agents}/${data.total_agents} agents`]);
-                    setReport(data); setRunning(false); addMsg("result", "Analysis complete");
+                    setReport(data); setChatContext(data); setRunning(false); addMsg("result", "Analysis complete");
                     analyzeWithLLMs(data);
                     setTimeout(() => inputRef.current?.focus(), 100);
                   } else {
@@ -316,17 +363,40 @@ export default function JacobiChat() {
         const g = generateMockReport(targetUrl, targetUrl.includes("united")?"UA123 JFK→SFO":targetUrl.includes("delta")?"DL402 JFK→LAX":targetUrl.includes("booking")?"SFO Hotel":"Route");
         const ts = new Date().toISOString().slice(11,23).replace("Z","");
         setStreamLogs(prev => [...prev, `[${ts}] Local pipeline complete — ${g.successful_agents}/24 agents succeeded`, `[${ts}] Jacobian computed — topology: ${g.topology_class}`]);
-        setReport(g); setRunning(false); addMsg("result", "Analysis complete");
+        setReport(g); setChatContext(g); setRunning(false); addMsg("result", "Analysis complete");
         analyzeWithLLMs(g);
         setTimeout(() => inputRef.current?.focus(), 100);
       }, 2800);
     }
   }, [running]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const val = input.trim();
-    if (!val || running) return;
+    if (!val || running || asking) return;
     setInput("");
+
+    // If probe data exists, route questions to Gemini assistant
+    if (chatContext) {
+      setAsking(true);
+      addMsg("user", val);
+      try {
+        const r = await fetch("http://localhost:8000/api/chat-assistant", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ message: val, probe_data: chatContext }),
+        });
+        if (r.ok) {
+          const data = await r.json();
+          addMsg("system", data.response || "No response");
+        } else {
+          addMsg("system", "Assistant offline");
+        }
+      } catch {
+        addMsg("system", "Assistant unavailable");
+      }
+      setAsking(false);
+      return;
+    }
+
     execute(val);
   };
 
@@ -346,10 +416,14 @@ export default function JacobiChat() {
       <header className="h-12 border-b border-neutral-900 flex items-center px-5 shrink-0 bg-black/80 backdrop-blur-md z-50">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded border border-neutral-800 flex items-center justify-center"><Network className="w-3.5 h-3.5 text-white/70" /></div>
-          <span className="text-sm font-medium tracking-tight">JACOBI</span>
+          <span className="text-sm font-light tracking-tight">JACOBI</span>
           <span className="text-[10px] text-white/15 font-mono hidden sm:inline">/ chat interface</span>
         </div>
         <div className="ml-auto flex items-center gap-3 text-[10px] font-mono text-white/15">
+          <select value={userCurrency.code} onChange={e => { const c = CCY_RATES[e.target.value]; if (c) setUserCurrency({ code: e.target.value, symbol: e.target.value === "USD" ? "$" : e.target.value === "INR" ? "₹" : e.target.value === "AED" ? "د.إ" : e.target.value === "GBP" ? "£" : e.target.value === "EUR" ? "€" : e.target.value, rate: c }); }}
+            className="bg-transparent border border-neutral-800 rounded px-1.5 py-0.5 text-white/30 hover:text-white/60 cursor-pointer outline-none">
+            {Object.keys(CCY_RATES).slice(0, 12).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
           {SAMPLE_TARGETS.map(s => (
             <button key={s.label} onClick={() => { setInput(s.url); inputRef.current?.focus(); }}
               className="px-2 py-1 rounded border border-neutral-800 hover:border-neutral-700 text-white/20 hover:text-white/40 transition-colors text-[9px]">{s.label.split(" ").slice(0,2).join(" ")}</button>
@@ -442,12 +516,12 @@ export default function JacobiChat() {
                     <div className="border border-neutral-900 rounded overflow-hidden">
                       <div className="bg-black p-5 text-center border-b border-neutral-900">
                         <div className="text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
-                        <div className="text-5xl font-mono tracking-tight text-white font-light">${best.toFixed(0)}</div>
+                        <div className="text-5xl font-mono tracking-tight text-white font-light">{localPrice(best, userCurrency)}</div>
                         {savings > 0 && (
                           <div className="mt-2 text-[11px] font-mono">
-                            <span className="text-emerald-400/80">Save ${savings.toFixed(0)}</span>
+                            <span className="text-emerald-400/80 font-light">Save {localPrice(savings, userCurrency)}</span>
                             <span className="text-white/20 mx-2">vs</span>
-                            <span className="text-red-400/60">${worst.toFixed(0)}</span>
+                            <span className="text-red-400/60 font-light">{localPrice(worst, userCurrency)}</span>
                             <span className="text-white/15 ml-1">highest rate</span>
                           </div>
                         )}
@@ -485,7 +559,7 @@ export default function JacobiChat() {
                           className={`bg-black p-1.5 text-left transition-all ${blocked ? "bg-red-950/20 animate-blockPulse" : sel ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}>
                           <div className="flex items-center justify-between mb-0.5">
                             <span className={`text-[7px] font-mono ${blocked ? "text-red-400/60" : "text-white/15"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
-                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono text-white/70">${a.price}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
+                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono font-light text-white/70">{localPrice(a.price, userCurrency)}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
                           </div>
                           <p className="text-[6px] font-mono text-white/15 leading-tight truncate">{parseCombo(a.label)}</p>
                         </button>
@@ -534,10 +608,10 @@ export default function JacobiChat() {
                     <div className="p-4 space-y-4">
                       <div className="grid grid-cols-4 gap-2">
                         {[
-                          { label: "Lowest", value: `$${report.price_range?.[0].toFixed(0)}`, cls: "text-emerald-400" },
-                          { label: "Median", value: `$${report.baseline_price?.toFixed(0)}`, cls: "text-white" },
-                          { label: "Highest", value: `$${report.price_range?.[1].toFixed(0)}`, cls: "text-red-400" },
-                          { label: "Spread", value: `$${report.max_price_spread?.toFixed(0)}`, sub: `${report.max_price_spread_pct?.toFixed(1)}%`, cls: "text-white/60" },
+                          { label: "Lowest", value: localPrice(report.price_range?.[0] ?? 0, userCurrency), cls: "text-emerald-400" },
+                          { label: "Median", value: localPrice(report.baseline_price ?? 0, userCurrency), cls: "text-white" },
+                          { label: "Highest", value: localPrice(report.price_range?.[1] ?? 0, userCurrency), cls: "text-red-400" },
+                          { label: "Spread", value: localPrice(report.max_price_spread ?? 0, userCurrency), sub: `${report.max_price_spread_pct?.toFixed(1)}%`, cls: "text-white/60" },
                         ].map(m => (
                           <div key={m.label} className="text-center bg-white/[0.02] rounded p-2">
                             <div className="text-[8px] font-mono text-white/20 uppercase">{m.label}</div>
@@ -598,7 +672,7 @@ export default function JacobiChat() {
           <div className="flex items-center gap-3">
             <div className="flex-1 relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/10 font-mono text-xs pointer-events-none">$</div>
-              <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={running} placeholder="Paste a target URL to probe..." autoFocus
+              <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={running || asking} placeholder={chatContext ? "Ask about the data (e.g. 'convert cheapest to AED')..." : "Paste a target URL to probe..."} autoFocus
                 className="w-full pl-8 pr-4 py-2.5 bg-transparent border border-neutral-800 rounded-lg text-sm font-mono text-white/70 placeholder-white/10 outline-none focus:border-white/20 transition-colors disabled:opacity-30" />
             </div>
             <button onClick={handleSend} disabled={!input.trim() || running}

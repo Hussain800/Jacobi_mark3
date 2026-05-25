@@ -28,7 +28,7 @@ BRIGHTDATA_API_KEY = "254d841d-f14d-4f4b-a394-3da0b03af036"
 API_TOKEN = BRIGHTDATA_API_KEY
 
 GROQ_API_KEY = "gsk_yA7b3f92K91mX048c7dEaB9182390fcdbDk7WCrrFLKkf4CkKf3B7FtQ7"
-GEMINI_API_KEY = "AI_STUDIO_KEY_72b389c910f384af1c92e3b4a5d6f7"
+GEMINI_API_KEY = "AIzaSyC4lVwbX48DJqXO6RwDrvVNgG3HreliMBQ"
 
 import groq
 from google import genai as google_genai
@@ -844,6 +844,39 @@ async def gemini_validate(input: "GeminiValidateInput"):
 class GeminiValidateInput(BaseModel):
     target_url: str
     prices: List[float]
+
+
+class ChatAssistantInput(BaseModel):
+    message: str
+    probe_data: Optional[dict] = None
+
+
+@app.post("/api/chat-assistant")
+async def chat_assistant(input: ChatAssistantInput):
+    client = get_gemini_client()
+    context = ""
+    if input.probe_data:
+        d = input.probe_data
+        agents_info = []
+        for a in (d.get("agents") or [])[:24]:
+            p = a.get("price")
+            agents_info.append(f"{a['agent_id']}: ${p}" if p else f"{a['agent_id']}: blocked")
+        context = (
+            f"Probe context:\n"
+            f"Target: {d.get('target_url', 'N/A')}\n"
+            f"Baseline price: ${d.get('baseline_price', 'N/A')}\n"
+            f"Price range: ${d.get('price_range', ['N/A', 'N/A'])[0]} - ${d.get('price_range', ['N/A', 'N/A'])[1]}\n"
+            f"Spread: ${d.get('max_price_spread', 'N/A')}\n"
+            f"Topology: {d.get('topology_class', 'N/A')}\n"
+            f"Discrimination index: ${d.get('discrimination_index', 'N/A')}\n"
+            f"24 agents: {', '.join(agents_info[:8])}...\n"
+        )
+    prompt = f"{context}\nUser question about this pricing data: {input.message}\n\nAnswer concisely and accurately using the data above. If they ask about currency conversion (AED, INR, etc.), use these rates: 1 AED = 0.27 USD, 1 INR = 0.012 USD, 1 GBP = 1.27 USD, 1 EUR = 1.09 USD."
+    try:
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=[prompt])
+        return {"response": response.text}
+    except Exception as e:
+        return {"response": f"Gemini error: {str(e)[:100]}"}
 
 
 @app.get("/api/optimize-shield/{session_id}")

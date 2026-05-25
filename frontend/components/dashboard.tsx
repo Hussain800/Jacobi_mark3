@@ -56,6 +56,12 @@ function localPrice(usd: number, ccy: { code: string; symbol: string; rate: numb
   return `${ccy.symbol}${local.toLocaleString()}`;
 }
 
+function localPriceWithUSD(usd: number, ccy: { code: string; symbol: string; rate: number }): string {
+  if (ccy.code === "USD") return `$${Math.round(usd)}`;
+  const local = Math.round(usd * ccy.rate);
+  return `${ccy.symbol}${local.toLocaleString()} ($${Math.round(usd)})`;
+}
+
 interface Gradient { variable_name: string; state_high: string; state_low: string; mean_price_high: number; mean_price_low: number; delta: number; delta_pct: number; pooled_std: number; t_statistic: number; significant: boolean; n_high: number; n_low: number; }
 interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; }
 interface TopologyReport { session_id: string; target_url: string; target_name: string; timestamp: string; status: string; total_agents: number; successful_agents: number; failed_agents: number; detected_agents: number; elapsed_seconds: number; control_stability: number; baseline_price: number | null; mean_price: number | null; all_prices: Record<string, number | null>; price_range: [number, number] | null; max_price_spread: number | null; max_price_spread_pct: number | null; gradients: Gradient[]; discrimination_index: number; topology_class: string; summary: string; max_discrimination_scenario: string; min_discrimination_scenario: string; agents: Agent[]; error: string | null; }
@@ -516,7 +522,7 @@ export default function JacobiChat() {
                     <div className="border border-neutral-900 rounded overflow-hidden">
                       <div className="bg-black p-5 text-center border-b border-neutral-900">
                         <div className="text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
-                        <div className="text-5xl font-mono tracking-tight text-white font-light">{localPrice(best, userCurrency)}</div>
+                        <div className="text-5xl font-mono tracking-tight text-white font-light">{localPriceWithUSD(best, userCurrency)}</div>
                         {savings > 0 && (
                           <div className="mt-2 text-[11px] font-mono">
                             <span className="text-emerald-400/80 font-light">Save {localPrice(savings, userCurrency)}</span>
@@ -559,7 +565,7 @@ export default function JacobiChat() {
                           className={`bg-black p-1.5 text-left transition-all ${blocked ? "bg-red-950/20 animate-blockPulse" : sel ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}>
                           <div className="flex items-center justify-between mb-0.5">
                             <span className={`text-[7px] font-mono ${blocked ? "text-red-400/60" : "text-white/15"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
-                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono font-light text-white/70">{localPrice(a.price, userCurrency)}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
+                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono font-light text-white/70">{localPriceWithUSD(a.price, userCurrency)}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
                           </div>
                           <p className="text-[6px] font-mono text-white/15 leading-tight truncate">{parseCombo(a.label)}</p>
                         </button>

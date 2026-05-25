@@ -491,6 +491,31 @@ def parse_page_prices(html: str, url: str) -> List[float]:
         cut = max(1, len(results) // 20)
         results = results[cut:-cut]
 
+    # Regex fallback: if BeautifulSoup found nothing, use broad regex on the raw HTML
+    if len(results) < 3:
+        # Double-check for a price ending with .00 right after a currency symbol
+        for patt in [
+            r'\$\s*(\d{2,5}(?:\.\d{2})?)',
+            r'(?:USD|AED|EUR|GBP)\s*(\d{2,5}(?:\.\d{2})?)',
+        ]:
+            for m in re.finditer(patt, html):
+                try:
+                    v = float(m.group(1))
+                    if 5 <= v <= 50000:
+                        results.append(round(v, 2))
+                except ValueError:
+                    continue
+        # Binary search for $X pattern with 2-4 digits
+        if len(results) < 3:
+            for m in re.finditer(r'\$\s*(\d{2,5}(?:\.\d{2})?)', html):
+                try:
+                    v = float(m.group(1))
+                    if 10 <= v <= 50000:
+                        results.append(round(v, 2))
+                except ValueError:
+                    continue
+        results = sorted(set(results))
+
     return sorted(set(round(p, 2) for p in results))
 
 

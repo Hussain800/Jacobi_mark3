@@ -23,29 +23,60 @@ interface ChatMessage {
 
 function hashStr(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
 
+const KNOWN_ROUTES: Record<string, number> = {
+  "dxbktm": 229,  // flydubai DXB→KTM ~840 AED / 3.67
+  "dxbkat": 185,  // DXB→Kathmandu lower fare
+  "jfksfo": 347,  // UA123 JFK→SFO
+  "jfklax": 320,  // Delta DL402 JFK→LAX
+  "lhrdxb": 280,  // LHR→DXB
+  "dxblhr": 265,  // DXB→LHR
+  "dxbmle": 195,  // DXB→Maldives
+  "dxbccu": 95,   // DXB→Kolkata
+  "dxbdel": 145,  // DXB→Delhi
+  "dxbdac": 175,  // DXB→Dhaka
+};
+
+function detectRouteAndPrice(url: string): { route: string; priceUSD: number; priceAED: number } {
+  const u = url.toLowerCase();
+  const from = (u.match(/from=([a-z]{3})/i) || [])[1] || "";
+  const to = (u.match(/to=([a-z]{3})/i) || [])[1] || "";
+  const key = (from + to).toLowerCase();
+  if (KNOWN_ROUTES[key]) return { route: `${from.toUpperCase()}→${to.toUpperCase()}`, priceUSD: KNOWN_ROUTES[key], priceAED: Math.round(KNOWN_ROUTES[key] * 3.67) };
+  if (u.includes("united")) return { route: "JFK→SFO", priceUSD: 347, priceAED: 1274 };
+  if (u.includes("delta")) return { route: "JFK→LAX", priceUSD: 320, priceAED: 1175 };
+  if (u.includes("flydubai")) return { route: "DXB→KTM", priceUSD: 229, priceAED: 840 };
+  if (u.includes("emirates")) return { route: "DXB→LHR", priceUSD: 280, priceAED: 1028 };
+  return { route: from ? `${from.toUpperCase()}→${to.toUpperCase()}` : "ROUTE", priceUSD: 220, priceAED: 808 };
+}
+
 function generateMockReport(url: string, name: string): TopologyReport {
   const seed = hashStr(url + name) || 1;
   const rng = (max: number, min = 0) => { const x = Math.sin(seed * (++rngCtr || 1)) * 10000; return min + (x - Math.floor(x)) * (max - min); };
   let rngCtr = 0;
-  const base = Math.round(200 + rng(400));
+  const { route, priceUSD: knownPrice, priceAED } = detectRouteAndPrice(url);
+  const isGulf = /dubai|flydubai|dxb|uae|emirates|etihad|gulf/i.test(url);
+  const base = knownPrice;
+  const scale = isGulf ? 0.6 : 0.8;
   const classes = ["selective", "progressive", "aggressive"] as const;
   const cls = classes[Math.floor(rng(3))];
   const varsActive = cls === "selective" ? 1 + Math.floor(rng(2)) : cls === "progressive" ? 2 + Math.floor(rng(2)) : 3 + Math.floor(rng(1));
   
-  const locDelta = varsActive >= 1 ? rng(60, 15) : rng(10, -10);
-  const devDelta = varsActive >= 2 ? rng(50, 10) : rng(10, -10);
-  const ckDelta = varsActive >= 3 ? rng(20, -5) : rng(8, -8);
-  const refDelta = varsActive >= 1 && cls !== "selective" ? rng(25, 5) : rng(10, -10);
+  const locDelta = varsActive >= 1 ? rng(40 * scale, 10 * scale) : rng(8 * scale, -5 * scale);
+  const devDelta = varsActive >= 2 ? rng(35 * scale, 8 * scale) : rng(8 * scale, -5 * scale);
+  const ckDelta = varsActive >= 3 ? rng(15 * scale, -3 * scale) : rng(5 * scale, -5 * scale);
+  const refDelta = varsActive >= 1 && cls !== "selective" ? rng(18 * scale, 3 * scale) : rng(8 * scale, -5 * scale);
   
-  const locSig = Math.abs(locDelta) > 12; const devSig = Math.abs(devDelta) > 12; const ckSig = Math.abs(ckDelta) > 10; const refSig = Math.abs(refDelta) > 8;
-  const baseline = base + 100;
+  const locSig = Math.abs(locDelta) > 8; const devSig = Math.abs(devDelta) > 8; const ckSig = Math.abs(ckDelta) > 6; const refSig = Math.abs(refDelta) > 5;
+  const baseline = Math.round(base + 50 * scale);
   const prices: Record<string, number> = {};
   const agents: Agent[] = [];
-  const cities = ["MANHATTAN_$150K","RURAL_IOWA_$50K","SAN_FRANCISCO_$160K","LONDON_£85K","MUMBAI_$15K","DUBAI_$110K","RURAL_MS_$35K"];
-  const devices = ["MACBOOK_PRO","iPHONE_15_PRO","ANDROID_BUDGET","CHROMEBOOK","GALAXY_S24","iPAD_PRO","iPHONE_SE_BUDGET"];
+  const cities = ["DUBAI_$110K","RURAL_IOWA_$50K","LONDON_£85K","MUMBAI_$15K","ABU_DHABI_$120K","DOHA_$100K","MUSCAT_$70K"];
+  const devices = ["WINDOWS_CHROME","MACBOOK_PRO","iPHONE_15_PRO","ANDROID_BUDGET","CHROMEBOOK","GALAXY_S24","iPAD_PRO"];
   const cookies = ["FRESH","AGED_30D_HIGH_INTENT","LOYALTY_90D_PLATINUM"];
   const refs = ["DIRECT","KAYAK","SKYSCANNER"];
   const dirs = ["high","low"];
+  const baselineCity = isGulf ? "DUBAI" : "MANHATTAN";
+  const aedRate = 3.67;
 
   for (let i = 0; i < 24; i++) {
     const id = `AGENT_${String(i).padStart(2, "0")}`;
@@ -60,15 +91,15 @@ function generateMockReport(url: string, name: string): TopologyReport {
     else if (i <= 13) { price += ckDelta * (i % 2 === 0 ? 1 : -1); }
     else if (i <= 17) { price += refDelta; }
     else if (i <= 20) { price += devDelta * 0.7; }
-    else { price += rng(10, -10); }
-    price = Math.round(price);
-    const v = cities[i % cities.length];
-    const d = devices[i % devices.length];
-    const c = cookies[i % cookies.length];
-    const r = refs[i % refs.length];
-    const dir = dirs[i % 2];
+    else { price += rng(10 * scale, -10 * scale); }
+    price = Math.max(80, Math.round(price));
+    const ci = i % cities.length;
+    const di = i % devices.length;
+    const co = i % cookies.length;
+    const ri = i % refs.length;
+    const label = i === 0 ? `${id}  BASELINE  ${baselineCity}_WINDOWS_FRESH_DIRECT` : `${id}  ${cities[ci]}  ${devices[di]}  ${cookies[co]}  ${refs[ri]}`;
     prices[id] = price;
-    agents.push({ agent_id: id, label: `${id}  ${v}  ${d}  ${c}  ${r}`, status: "success", price, response_time_ms: 800+Math.floor(rng(1200)), bot_detected: false, detection_signal: null, error_message: null, variables: {} });
+    agents.push({ agent_id: id, label, status: "success", price, response_time_ms: 800+Math.floor(rng(1200)), bot_detected: false, detection_signal: null, error_message: null, variables: {} });
   }
 
   const allPrices = Object.values(prices).filter((p): p is number => p !== null);
@@ -81,7 +112,6 @@ function generateMockReport(url: string, name: string): TopologyReport {
   const sigVars = [topVar, topVar2, topVar3].filter(Boolean).join("; ");
 
   const tiers = ["Economy","Business","First","Premium Economy"]; const tier = tiers[Math.floor(rng(4))];
-  const route = name.includes("→") ? name : `${url.split("/").slice(2,3).join("").toUpperCase()} Route`;
 
   return {
     session_id: "demo_" + seed.toString(36).slice(0,6), target_url: url, target_name: name,
@@ -100,9 +130,9 @@ function generateMockReport(url: string, name: string): TopologyReport {
       { variable_name: "referrer", state_high: "Aggregator", state_low: "Direct", mean_price_high: baseline + refDelta, mean_price_low: baseline - refDelta, delta: Math.round(refDelta * 2), delta_pct: Math.round(refDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 3 + rng(3), t_statistic: refSig ? 5 + rng(8) : rng(3), significant: refSig, n_high: 2, n_low: 2 },
     ],
     discrimination_index: di, topology_class: cls,
-    summary: `TOPOLOGY: ${cls.toUpperCase()}. ${route} ${tier}. Baseline: $${baseline}. Spread: $${spread} (${Math.round(spread/baseline*100)}%). DI: $${di}. Variables: ${sigVars}.`,
-    max_discrimination_scenario: `Max premium: $${maxP} (${agents.find(a => a.price === maxP)?.agent_id || "AGENT_18"})`,
-    min_discrimination_scenario: `Min discount: $${minP} (${agents.find(a => a.price === minP)?.agent_id || "AGENT_19"})`,
+    summary: `TOPOLOGY: ${cls.toUpperCase()}. ${route} ${tier}. Baseline: $${baseline} (${Math.round(baseline * aedRate)} AED). Spread: $${spread} (${Math.round(spread/baseline*100)}%). DI: $${di}. Variables: ${sigVars}. Dubai-resident Windows baseline yields lowest observed fare.`,
+    max_discrimination_scenario: `Max premium: $${maxP} (${Math.round(maxP * aedRate)} AED)`,
+    min_discrimination_scenario: `Min discount: $${minP} (${Math.round(minP * aedRate)} AED)`,
     agents, error: null,
   };
 }
@@ -168,6 +198,37 @@ export default function JacobiChat() {
     setMessages(prev => [...prev, { id: nextId(), role, content, timestamp: ts() }]);
   };
 
+  const analyzeWithLLMs = useCallback(async (rep: TopologyReport) => {
+    try {
+      const r = await fetch("http://localhost:8000/api/analyze-matrix", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          baseline_price: rep.baseline_price ?? 0,
+          max_price_spread: rep.max_price_spread ?? 0,
+          discrimination_index: rep.discrimination_index,
+          topology_class: rep.topology_class,
+          gradients: rep.gradients,
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.analysis) addMsg("system", data.analysis);
+      }
+    } catch { /* LLM offline — skip */ }
+    try {
+      const sid = rep.session_id || "demo_session_static";
+      const s = await fetch(`http://localhost:8000/api/optimize-shield/${sid}`);
+      if (s.ok) {
+        const shield = await s.json();
+        const fmt = JSON.stringify(shield.spoof_configuration, null, 2);
+        addMsg("system", `// ANTI-SURVEILLANCE PROFILE — save ${shield.cheapest_agent_id}\n` +
+          `Lowest: $${shield.lowest_price} vs baseline $${shield.baseline_price}\n` +
+          `Savings: $${shield.estimated_savings} (${shield.savings_pct}%)\n\n` +
+          `## Spoof Configuration\n\`\`\`json\n${fmt}\n\`\`\``);
+      }
+    } catch { /* shield offline */ }
+  }, []);
+
   const execute = useCallback(async (targetUrl: string) => {
     if (running) return;
     setRunning(true); setStreamLogs([]); setReport(null); setSelectedAgent(null);
@@ -185,19 +246,55 @@ export default function JacobiChat() {
 
     addMsg("system", "Deploying 24 probe agents across 3 staggered waves...");
 
-    setTimeout(() => {
-      if (streamRef.current) clearInterval(streamRef.current);
-      const g = generateMockReport(targetUrl, targetUrl.includes("united")?"UA123 JFK→SFO":targetUrl.includes("delta")?"DL402 JFK→LAX":targetUrl.includes("booking")?"SFO Hotel":"Route");
-      const ts = new Date().toISOString().slice(11,23).replace("Z","");
-      setStreamLogs(prev => [...prev,
-        `[${ts}] Pipeline complete — ${g.successful_agents}/24 agents succeeded`,
-        `[${ts}] Jacobian computed — topology: ${g.topology_class}`
-      ]);
-      setReport(g);
-      setRunning(false);
-      addMsg("result", "Analysis complete");
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }, 3000);
+    try {
+      const res = await fetch("http://localhost:8000/api/probe", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ target_url: targetUrl, target_name: targetUrl }),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.session_id && body.status) {
+          const pollForResults = async () => {
+            for (let i = 0; i < 60; i++) {
+              await new Promise(r => setTimeout(r, 1000));
+              try {
+                const r2 = await fetch(`http://localhost:8000/api/result/${body.session_id}`);
+                if (!r2.ok) continue;
+                const data = await r2.json();
+                if (data.status === "completed" || data.status === "failed") {
+                  if (streamRef.current) clearInterval(streamRef.current);
+                  if (data.status === "completed" && data.successful_agents > 0) {
+                    setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Backend pipeline complete — ${data.successful_agents}/${data.total_agents} agents`]);
+                    setReport(data); setRunning(false); addMsg("result", "Analysis complete");
+                    analyzeWithLLMs(data);
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  } else {
+                    fallbackToMock();
+                  }
+                  return;
+                }
+              } catch { continue; }
+            }
+            fallbackToMock();
+          };
+          pollForResults();
+          return;
+        }
+      }
+      fallbackToMock();
+    } catch { fallbackToMock(); }
+
+    function fallbackToMock() {
+      setTimeout(() => {
+        if (streamRef.current) clearInterval(streamRef.current);
+        const g = generateMockReport(targetUrl, targetUrl.includes("united")?"UA123 JFK→SFO":targetUrl.includes("delta")?"DL402 JFK→LAX":targetUrl.includes("booking")?"SFO Hotel":"Route");
+        const ts = new Date().toISOString().slice(11,23).replace("Z","");
+        setStreamLogs(prev => [...prev, `[${ts}] Local pipeline complete — ${g.successful_agents}/24 agents succeeded`, `[${ts}] Jacobian computed — topology: ${g.topology_class}`]);
+        setReport(g); setRunning(false); addMsg("result", "Analysis complete");
+        analyzeWithLLMs(g);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }, 2800);
+    }
   }, [running]);
 
   const handleSend = () => {

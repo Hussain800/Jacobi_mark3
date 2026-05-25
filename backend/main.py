@@ -814,15 +814,36 @@ class AuditInterfaceInput(BaseModel):
     target_url: str
 
 
-@app.post("/api/audit-interface")
-async def audit_interface(input: AuditInterfaceInput):
+@app.post("/api/gemini-validate")
+async def gemini_validate(input: "GeminiValidateInput"):
     client = get_gemini_client()
-    truncated = input.raw_html[:8000]
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
-        contents=[f"Audit this raw e-commerce layout structure for deceptive dark patterns, hidden surcharge mechanisms, or misleading pricing UI elements. Be specific and reference exact HTML patterns. Target URL: {input.target_url}\n\nRaw HTML:\n{truncated}"],
+    prices_str = ", ".join(str(p) for p in input.prices[:30])
+    prompt = (
+        f"These are prices extracted from a travel booking page. Some may be wrong "
+        f"(currency conversion errors, non-price numbers, cancellation fees, taxes). "
+        f"Return ONLY a JSON array of the CORRECT room rates in USD. "
+        f"Remove anything that's not an actual accommodation price. "
+        f"Target URL: {input.target_url}\n\n"
+        f"Extracted prices: [{prices_str}]\n\n"
+        f"Return format: [120, 150, 200]"
     )
-    return {"audit": response.text}
+    try:
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=[prompt])
+        raw = response.text.strip()
+        import json as _json
+        if "[" in raw and "]" in raw:
+            arr = _json.loads(raw[raw.index("["):raw.index("]")+1])
+            validated = [float(p) for p in arr if isinstance(p, (int, float)) and 10 < p < 10000]
+            if validated:
+                return {"validated": validated, "raw": prices_str}
+    except Exception:
+        pass
+    return {"validated": input.prices, "raw": prices_str}
+
+
+class GeminiValidateInput(BaseModel):
+    target_url: str
+    prices: List[float]
 
 
 @app.get("/api/optimize-shield/{session_id}")

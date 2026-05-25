@@ -201,6 +201,7 @@ export default function JacobiChat() {
   };
 
   const analyzeWithLLMs = useCallback(async (rep: TopologyReport) => {
+    // 1. Groq audit
     try {
       const r = await fetch("http://localhost:8000/api/analyze-matrix", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -216,19 +217,42 @@ export default function JacobiChat() {
         const data = await r.json();
         if (data.analysis) addMsg("system", data.analysis);
       }
-    } catch { /* LLM offline — skip */ }
+    } catch { /* skip */ }
+
+    // 2. Gemini price validation
+    try {
+      const prices = Object.values(rep.all_prices).filter((p): p is number => p !== null);
+      if (prices.length > 2) {
+        const g = await fetch("http://localhost:8000/api/gemini-validate", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ target_url: rep.target_url, prices }),
+        });
+        if (g.ok) {
+          const gd = await g.json();
+          if (gd.validated && gd.validated.length > 0) {
+            const v = gd.validated;
+            const summary = `// GEMINI VALIDATION — ${v.length} prices confirmed\n` +
+              `Range: $${Math.min(...v).toFixed(0)} – $${Math.max(...v).toFixed(0)}\n` +
+              `Cheapest confirmed: $${Math.min(...v).toFixed(0)}`;
+            addMsg("system", summary);
+          }
+        }
+      }
+    } catch { /* skip */ }
+
+    // 3. Shield profile
     try {
       const sid = rep.session_id || "demo_session_static";
       const s = await fetch(`http://localhost:8000/api/optimize-shield/${sid}`);
       if (s.ok) {
         const shield = await s.json();
         const fmt = JSON.stringify(shield.spoof_configuration, null, 2);
-        addMsg("system", `// ANTI-SURVEILLANCE PROFILE — save ${shield.cheapest_agent_id}\n` +
+        addMsg("system", `// ANTI-SURVEILLANCE PROFILE — copy ${shield.cheapest_agent_id}\n` +
           `Lowest: $${shield.lowest_price} vs baseline $${shield.baseline_price}\n` +
           `Savings: $${shield.estimated_savings} (${shield.savings_pct}%)\n\n` +
-          `## Spoof Configuration\n\`\`\`json\n${fmt}\n\`\`\``);
+          `## Spoof Config\n\`\`\`json\n${fmt}\n\`\`\``);
       }
-    } catch { /* shield offline */ }
+    } catch { /* skip */ }
   }, []);
 
   const execute = useCallback(async (targetUrl: string) => {

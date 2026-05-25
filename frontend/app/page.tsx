@@ -1,5 +1,5 @@
-import JacobiTerminal from "../components/dashboard";
+import JacobiChat from "../components/dashboard";
 
 export default function Page() {
-  return <JacobiTerminal />;
+  return <JacobiChat />;
 }

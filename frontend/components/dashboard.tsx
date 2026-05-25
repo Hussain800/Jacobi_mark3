@@ -47,6 +47,26 @@ function detectCurrency(): { code: string; symbol: string; rate: number } {
       return { code, symbol: sym, rate: CCY_RATES[code] };
     }
   }
+  // Timezone fallback: map tz to currency
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzMap: Record<string, string> = {
+      "Dubai": "AED", "Asia/Dubai": "AED", "Abu_Dhabi": "AED", "Muscat": "OMR",
+      "Asia/Kolkata": "INR", "Asia/Colombo": "LKR", "Asia/Kathmandu": "NPR",
+      "Asia/Dhaka": "BDT", "Asia/Karachi": "PKR", "Asia/Riyadh": "SAR",
+      "Asia/Qatar": "QAR", "Asia/Kuwait": "KWD", "Asia/Bahrain": "BHD",
+      "Europe/London": "GBP", "Europe/Berlin": "EUR", "Europe/Paris": "EUR",
+      "America/New_York": "USD", "America/Chicago": "USD", "America/Los_Angeles": "USD",
+      "Asia/Tokyo": "JPY", "Asia/Singapore": "SGD", "Asia/Hong_Kong": "HKD",
+      "Australia/Sydney": "AUD", "America/Toronto": "CAD", "Asia/Bangkok": "THB",
+    };
+    for (const [tzKey, ccyCode] of Object.entries(tzMap)) {
+      if (tz.includes(tzKey)) {
+        const rate = CCY_RATES[ccyCode];
+        if (rate) return { code: ccyCode, symbol: ccyCode === "AED" ? "د.إ" : ccyCode, rate };
+      }
+    }
+  } catch {}
   return { code: "USD", symbol: "$", rate: 1 };
 }
 

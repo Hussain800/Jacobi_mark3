@@ -188,6 +188,7 @@ class BrightDataMCPClient:
                 "url": url,
                 "zone": "mcp_unlocker",
                 "format": "raw",
+                "render": True,
             }
             resp = await asyncio.wait_for(
                 self.http_client.post(
@@ -491,30 +492,39 @@ def parse_page_prices(html: str, url: str) -> List[float]:
         cut = max(1, len(results) // 20)
         results = results[cut:-cut]
 
-    # Regex fallback: if BeautifulSoup found nothing, use broad regex on the raw HTML
+    # Regex fallback: if BeautifulSoup found nothing, use broad regex on visible text only
     if len(results) < 3:
-        # Double-check for a price ending with .00 right after a currency symbol
+        # Strip script and style blocks — they contain JS bundle prices, not real prices
+        visible = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        visible = re.sub(r'<style[^>]*>.*?</style>', '', visible, flags=re.DOTALL | re.IGNORECASE)
+        # Check for INR prices first (common on Booking.com for India hotels)
+        inr_found = []
+        for m in re.finditer(r'(?:₹|INR)\s*(\d[\d,]*)', visible):
+            try:
+                v = float(m.group(1).replace(",", ""))
+                if 500 <= v <= 200000:
+                    inr_found.append(round(v * 0.012, 2))
+            except ValueError:
+                continue
+        if inr_found:
+            results.extend(sorted(inr_found)[:8])
         for patt in [
-            r'\$\s*(\d{2,5}(?:\.\d{2})?)',
-            r'(?:USD|AED|EUR|GBP)\s*(\d{2,5}(?:\.\d{2})?)',
+            r'\$\s*(\d{2,4}(?:\.\d{2})?)',
+            r'(?:USD|AED|EUR|GBP|QAR|SAR)\s*(\d{2,4}(?:\.\d{2})?)',
         ]:
-            for m in re.finditer(patt, html):
+            for m in re.finditer(patt, visible):
                 try:
                     v = float(m.group(1))
-                    if 5 <= v <= 50000:
+                    if 15 <= v <= 5000:
                         results.append(round(v, 2))
                 except ValueError:
                     continue
-        # Binary search for $X pattern with 2-4 digits
-        if len(results) < 3:
-            for m in re.finditer(r'\$\s*(\d{2,5}(?:\.\d{2})?)', html):
-                try:
-                    v = float(m.group(1))
-                    if 10 <= v <= 50000:
-                        results.append(round(v, 2))
-                except ValueError:
-                    continue
-        results = sorted(set(results))
+
+    # Strip outliers from whatever we found
+    if len(results) >= 6:
+        results.sort()
+        cut = max(1, len(results) // 10)
+        results = results[cut:-cut]
 
     return sorted(set(round(p, 2) for p in results))
 
@@ -547,6 +557,19 @@ async def run_fast_probe(url: str, name: str) -> dict:
             return session
 
         all_found = parse_page_prices(text, url)
+
+        if len(all_found) < 2:
+            try:
+                gemini_prompt = f"Extract all hotel room prices in USD from this HTML. Return ONLY a JSON array of numbers like [120, 150, 200]. If prices are in INR, convert to USD (1 INR = 0.012 USD). Ignore taxes, fees, and non-room charges. HTML excerpt:\n\n{text[:15000]}"
+                gemini = get_gemini_client()
+                response = gemini.models.generate_content(model="gemini-2.0-flash-lite", contents=[gemini_prompt])
+                raw = response.text.strip()
+                import json as _json
+                if "[" in raw and "]" in raw:
+                    arr = _json.loads(raw[raw.index("["):raw.index("]")+1])
+                    all_found = [float(p) for p in arr if isinstance(p, (int, float)) and 10 < p < 10000]
+            except Exception:
+                pass
 
         if len(all_found) < 2:
             session["status"] = "failed"

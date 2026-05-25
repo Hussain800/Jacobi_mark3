@@ -21,32 +21,91 @@ interface ChatMessage {
   timestamp: string;
 }
 
-const DEMO: TopologyReport = { session_id: "demo", target_url: "", target_name: "UA123 JFK→SFO", timestamp: "2026-05-25T20:00:00Z", status: "completed", total_agents: 24, successful_agents: 22, failed_agents: 1, detected_agents: 1, elapsed_seconds: 8.7, control_stability: 0.994, baseline_price: 347, mean_price: 352.3, all_prices: {"AGENT_00":347,"AGENT_01":371,"AGENT_02":323,"AGENT_03":368,"AGENT_04":365,"AGENT_05":329,"AGENT_06":375,"AGENT_07":335,"AGENT_08":372,"AGENT_09":338,"AGENT_10":369,"AGENT_11":358,"AGENT_12":347,"AGENT_13":343,"AGENT_14":361,"AGENT_15":347,"AGENT_16":359,"AGENT_17":347,"AGENT_18":380,"AGENT_19":320,"AGENT_20":374,"AGENT_21":341,"AGENT_22":348,"AGENT_23":346}, price_range: [320, 380], max_price_spread: 60, max_price_spread_pct: 17.3, gradients: [{variable_name:"location",state_high:"High Income",state_low:"Low Income",mean_price_high:371,mean_price_low:324,delta:47,delta_pct:13.5,pooled_std:2.5,t_statistic:18.8,significant:true,n_high:3,n_low:3},{variable_name:"device",state_high:"Premium Device",state_low:"Budget Device",mean_price_high:372.5,mean_price_low:338,delta:34.5,delta_pct:9.9,pooled_std:3.1,t_statistic:11.13,significant:true,n_high:4,n_low:4},{variable_name:"cookie_profile",state_high:"Aged Profile",state_low:"Fresh Profile",mean_price_high:350.5,mean_price_low:347,delta:3.5,delta_pct:1,pooled_std:4.2,t_statistic:0.83,significant:false,n_high:2,n_low:2},{variable_name:"referrer",state_high:"Aggregator",state_low:"Direct",mean_price_high:360,mean_price_low:347,delta:13,delta_pct:3.7,pooled_std:3.8,t_statistic:3.42,significant:true,n_high:2,n_low:2}], discrimination_index: 94.5, topology_class: "progressive", summary: "TOPOLOGY: PROGRESSIVE. Baseline: $347.00. Spread: $60.00. DI: $94.50. Significant: 3 vars.", max_discrimination_scenario: "Max: AGENT_18 DUBAI_$110K @ $380.00", min_discrimination_scenario: "Min: AGENT_19 RURAL_MISSISSIPPI_$35K @ $320.00", agents: [
-  {agent_id:"AGENT_00",label:"AGENT_00  BASELINE  MACBOOK_MANHATTAN_FRESH_DIRECT",status:"success",price:347,response_time_ms:1120,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_01",label:"AGENT_01  LOCATION_HIGH  MANHATTAN_$150K",status:"success",price:371,response_time_ms:1350,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_02",label:"AGENT_02  LOCATION_LOW  RURAL_IOWA_$50K",status:"success",price:323,response_time_ms:1420,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_03",label:"AGENT_03  LOCATION_HIGH  SAN_FRANCISCO_$160K",status:"success",price:368,response_time_ms:1180,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_04",label:"AGENT_04  LOCATION_HIGH  LONDON_£85K",status:"success",price:365,response_time_ms:1310,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_05",label:"AGENT_05  LOCATION_LOW  MUMBAI_$15K",status:"success",price:329,response_time_ms:1450,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_06",label:"AGENT_06  DEVICE_HIGH  iPHONE_15_PRO",status:"success",price:375,response_time_ms:1080,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_07",label:"AGENT_07  DEVICE_LOW  ANDROID_BUDGET",status:"success",price:335,response_time_ms:1550,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_08",label:"AGENT_08  DEVICE_HIGH  MACBOOK_PRO_M3",status:"success",price:372,response_time_ms:1140,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_09",label:"AGENT_09  DEVICE_LOW  CHROMEBOOK",status:"success",price:338,response_time_ms:1280,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_10",label:"AGENT_10  DEVICE_HIGH  GALAXY_S24_ULTRA",status:"success",price:369,response_time_ms:1190,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_11",label:"AGENT_11  COOKIE_HIGH  30D_HIGH_INTENT",status:"success",price:358,response_time_ms:1310,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_12",label:"AGENT_12  COOKIE_LOW  FRESH_FIRST_VISIT",status:"success",price:347,response_time_ms:1120,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_13",label:"AGENT_13  COOKIE_HIGH  90D_PLATINUM",status:"success",price:343,response_time_ms:1250,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_14",label:"AGENT_14  REFERRER_HIGH  VIA_KAYAK",status:"success",price:361,response_time_ms:1480,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_15",label:"AGENT_15  REFERRER_LOW  DIRECT",status:"success",price:347,response_time_ms:1220,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_16",label:"AGENT_16  REFERRER_HIGH  SKYSCANNER",status:"success",price:359,response_time_ms:1350,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_17",label:"AGENT_17  REFERRER_LOW  DIRECT_BASELINE",status:"success",price:347,response_time_ms:1180,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_18",label:"AGENT_18  LOCATION_HIGH  DUBAI_$110K",status:"success",price:380,response_time_ms:1410,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_19",label:"AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K",status:"success",price:320,response_time_ms:1520,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_20",label:"AGENT_20  DEVICE_HIGH  iPAD_PRO_12.9",status:"success",price:374,response_time_ms:1160,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_21",label:"AGENT_21  DEVICE_LOW  iPHONE_SE_BUDGET",status:"detected",price:null,response_time_ms:341,bot_detected:true,detection_signal:"captcha",error_message:null,variables:{}},
-  {agent_id:"AGENT_22",label:"AGENT_22  CONTROL  BASELINE_REPEAT_1",status:"success",price:348,response_time_ms:1190,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-  {agent_id:"AGENT_23",label:"AGENT_23  CONTROL  BASELINE_REPEAT_2",status:"success",price:346,response_time_ms:1300,bot_detected:false,detection_signal:null,error_message:null,variables:{}},
-], error: null };
+function hashStr(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
+
+function generateMockReport(url: string, name: string): TopologyReport {
+  const seed = hashStr(url + name) || 1;
+  const rng = (max: number, min = 0) => { const x = Math.sin(seed * (++rngCtr || 1)) * 10000; return min + (x - Math.floor(x)) * (max - min); };
+  let rngCtr = 0;
+  const base = Math.round(200 + rng(400));
+  const classes = ["selective", "progressive", "aggressive"] as const;
+  const cls = classes[Math.floor(rng(3))];
+  const varsActive = cls === "selective" ? 1 + Math.floor(rng(2)) : cls === "progressive" ? 2 + Math.floor(rng(2)) : 3 + Math.floor(rng(1));
+  
+  const locDelta = varsActive >= 1 ? rng(60, 15) : rng(10, -10);
+  const devDelta = varsActive >= 2 ? rng(50, 10) : rng(10, -10);
+  const ckDelta = varsActive >= 3 ? rng(20, -5) : rng(8, -8);
+  const refDelta = varsActive >= 1 && cls !== "selective" ? rng(25, 5) : rng(10, -10);
+  
+  const locSig = Math.abs(locDelta) > 12; const devSig = Math.abs(devDelta) > 12; const ckSig = Math.abs(ckDelta) > 10; const refSig = Math.abs(refDelta) > 8;
+  const baseline = base + 100;
+  const prices: Record<string, number> = {};
+  const agents: Agent[] = [];
+  const cities = ["MANHATTAN_$150K","RURAL_IOWA_$50K","SAN_FRANCISCO_$160K","LONDON_£85K","MUMBAI_$15K","DUBAI_$110K","RURAL_MS_$35K"];
+  const devices = ["MACBOOK_PRO","iPHONE_15_PRO","ANDROID_BUDGET","CHROMEBOOK","GALAXY_S24","iPAD_PRO","iPHONE_SE_BUDGET"];
+  const cookies = ["FRESH","AGED_30D_HIGH_INTENT","LOYALTY_90D_PLATINUM"];
+  const refs = ["DIRECT","KAYAK","SKYSCANNER"];
+  const dirs = ["high","low"];
+
+  for (let i = 0; i < 24; i++) {
+    const id = `AGENT_${String(i).padStart(2, "0")}`;
+    let price = baseline;
+    if (i === 21 && rng(1) > 0.7) {
+      agents.push({ agent_id: id, label: `${id}  BLOCKED  ${cities[i%7]}`, status: "detected", price: null, response_time_ms: 300+Math.floor(rng(500)), bot_detected: true, detection_signal: "captcha", error_message: null, variables: {} });
+      continue;
+    }
+    if (i === 0) { price = baseline; }
+    else if (i <= 5) { price += locDelta * (i % 2 === 0 ? 1 : -1); }
+    else if (i <= 10) { price += devDelta * (i % 2 === 0 ? 1 : -1); }
+    else if (i <= 13) { price += ckDelta * (i % 2 === 0 ? 1 : -1); }
+    else if (i <= 17) { price += refDelta; }
+    else if (i <= 20) { price += devDelta * 0.7; }
+    else { price += rng(10, -10); }
+    price = Math.round(price);
+    const v = cities[i % cities.length];
+    const d = devices[i % devices.length];
+    const c = cookies[i % cookies.length];
+    const r = refs[i % refs.length];
+    const dir = dirs[i % 2];
+    prices[id] = price;
+    agents.push({ agent_id: id, label: `${id}  ${v}  ${d}  ${c}  ${r}`, status: "success", price, response_time_ms: 800+Math.floor(rng(1200)), bot_detected: false, detection_signal: null, error_message: null, variables: {} });
+  }
+
+  const allPrices = Object.values(prices).filter((p): p is number => p !== null);
+  const minP = Math.min(...allPrices); const maxP = Math.max(...allPrices);
+  const spread = maxP - minP; const di = Math.round(locSig ? Math.abs(locDelta) : 0) + Math.round(devSig ? Math.abs(devDelta) : 0) + Math.round(refSig ? Math.abs(refDelta) : 0);
+
+  const topVar = locSig ? `location: ${fmtDelta(locDelta)}` : "";
+  const topVar2 = devSig ? `device: ${fmtDelta(devDelta)}` : "";
+  const topVar3 = refSig ? `referrer: ${fmtDelta(refDelta)}` : "";
+  const sigVars = [topVar, topVar2, topVar3].filter(Boolean).join("; ");
+
+  const tiers = ["Economy","Business","First","Premium Economy"]; const tier = tiers[Math.floor(rng(4))];
+  const route = name.includes("→") ? name : `${url.split("/").slice(2,3).join("").toUpperCase()} Route`;
+
+  return {
+    session_id: "demo_" + seed.toString(36).slice(0,6), target_url: url, target_name: name,
+    timestamp: new Date().toISOString(), status: "completed",
+    total_agents: 24, successful_agents: agents.filter(a => a.status === "success").length,
+    failed_agents: agents.filter(a => a.status === "failed").length,
+    detected_agents: agents.filter(a => a.bot_detected).length,
+    elapsed_seconds: 7 + Math.round(rng(4) * 10) / 10, control_stability: 0.97 + rng(0.03),
+    baseline_price: baseline, mean_price: Math.round(allPrices.reduce((a,b) => a+b, 0) / allPrices.length),
+    all_prices: prices as any, price_range: [minP, maxP], max_price_spread: spread,
+    max_price_spread_pct: Math.round(spread / baseline * 100 * 10) / 10,
+    gradients: [
+      { variable_name: "location", state_high: "High Income", state_low: "Low Income", mean_price_high: baseline + locDelta, mean_price_low: baseline - locDelta, delta: Math.round(locDelta * 2), delta_pct: Math.round(locDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 2 + rng(3), t_statistic: locSig ? 8 + rng(10) : rng(3), significant: locSig, n_high: 3, n_low: 3 },
+      { variable_name: "device", state_high: "Premium Device", state_low: "Budget Device", mean_price_high: baseline + devDelta, mean_price_low: baseline - devDelta, delta: Math.round(devDelta * 2), delta_pct: Math.round(devDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 2 + rng(3), t_statistic: devSig ? 8 + rng(10) : rng(3), significant: devSig, n_high: 4, n_low: 4 },
+      { variable_name: "cookie_profile", state_high: "Aged Profile", state_low: "Fresh Profile", mean_price_high: baseline + ckDelta, mean_price_low: baseline - ckDelta, delta: Math.round(ckDelta * 2), delta_pct: Math.round(ckDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 3 + rng(4), t_statistic: ckSig ? 5 + rng(8) : rng(3), significant: ckSig, n_high: 2, n_low: 2 },
+      { variable_name: "referrer", state_high: "Aggregator", state_low: "Direct", mean_price_high: baseline + refDelta, mean_price_low: baseline - refDelta, delta: Math.round(refDelta * 2), delta_pct: Math.round(refDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 3 + rng(3), t_statistic: refSig ? 5 + rng(8) : rng(3), significant: refSig, n_high: 2, n_low: 2 },
+    ],
+    discrimination_index: di, topology_class: cls,
+    summary: `TOPOLOGY: ${cls.toUpperCase()}. ${route} ${tier}. Baseline: $${baseline}. Spread: $${spread} (${Math.round(spread/baseline*100)}%). DI: $${di}. Variables: ${sigVars}.`,
+    max_discrimination_scenario: `Max premium: $${maxP} (${agents.find(a => a.price === maxP)?.agent_id || "AGENT_18"})`,
+    min_discrimination_scenario: `Min discount: $${minP} (${agents.find(a => a.price === minP)?.agent_id || "AGENT_19"})`,
+    agents, error: null,
+  };
+}
 
 const SAMPLE_TARGETS = [
   { label: "United UA123 JFK→SFO", url: "https://www.united.com/en/us/flightdetails?flight=UA123&date=2026-06-01" },
@@ -59,12 +118,18 @@ function clsColor(cls: string): string { switch (cls) { case "uniform": return "
 function fmtDelta(d: number): string { return d >= 0 ? `+$${d.toFixed(0)}` : `-$${Math.abs(d).toFixed(0)}`; }
 function parseCombo(l: string): string { const p = l.split("  ").filter(Boolean); return p.length >= 3 ? p.slice(1).join(" | ").replace(/_/g, " ") : l; }
 
-const MOCK_DOM: Record<string, { text: string; price: string; node: string }> = {
-  "AGENT_00": { text: "UA123 JFK→SFO  Economy  $347.00  Nonstop  6h 22m  Depart 8:00AM  Arrive 10:22AM  Seat 14A  Fare Class K  Fully refundable", price: "$347.00", node: "<span class=\"fare-amount\">$347.00</span>" },
-  "AGENT_01": { text: "UA123 JFK→SFO  Economy  $371.00  Nonstop  6h 22m  Depart 8:00AM  Arrive 10:22AM  Seat 14A  Fare Class L  Fully refundable  Seat selection $15", price: "$371.00", node: "<span class=\"fare-amount\">$371.00</span>" },
-  "AGENT_18": { text: "UA123 JFK→SFO  Economy  $380.00  Nonstop  6h 22m  Depart 8:00AM  Arrive 10:22AM  Seat 14A  Fare Class M  Change fee $75", price: "$380.00", node: "<span class=\"fare-amount\">$380.00</span>" },
-  "AGENT_19": { text: "UA123 JFK→SFO  Economy  $320.00  Nonstop  6h 22m  Depart 8:00AM  Arrive 10:22AM  Seat 14A  Fare Class K  Seat selection free", price: "$320.00", node: "<span class=\"fare-amount\">$320.00</span>" },
-};
+function genDOM(agent_id: string, price: number | null): { text: string; price: string; node: string } {
+  const p = price || 347;
+  const pStr = `$${p}.00`;
+  const tier = p > 370 ? "L" : p < 330 ? "K" : "M";
+  const fee = p > 370 ? "$15" : p < 330 ? "$0" : "$25";
+  const change = p > 350 ? "$50" : "$0";
+  return {
+    text: `Route  ${tier} Class  ${pStr}  Nonstop  6h 22m  Seat selection ${fee}  Change fee ${change}  Fully refundable`,
+    price: pStr,
+    node: `<span class="fare-amount">${pStr}</span>`,
+  };
+}
 
 const MCP_LOGS = [
   (id: string) => `Initializing Scraping Browser session for ${id}...`,
@@ -122,8 +187,13 @@ export default function JacobiChat() {
 
     setTimeout(() => {
       if (streamRef.current) clearInterval(streamRef.current);
-      setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Pipeline complete — 22/24 agents succeeded`]);
-      setReport(DEMO);
+      const g = generateMockReport(targetUrl, targetUrl.includes("united")?"UA123 JFK→SFO":targetUrl.includes("delta")?"DL402 JFK→LAX":targetUrl.includes("booking")?"SFO Hotel":"Route");
+      const ts = new Date().toISOString().slice(11,23).replace("Z","");
+      setStreamLogs(prev => [...prev,
+        `[${ts}] Pipeline complete — ${g.successful_agents}/24 agents succeeded`,
+        `[${ts}] Jacobian computed — topology: ${g.topology_class}`
+      ]);
+      setReport(g);
       setRunning(false);
       addMsg("result", "Analysis complete");
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -141,8 +211,9 @@ export default function JacobiChat() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const agentDOM = selectedAgent ? (MOCK_DOM[selectedAgent.agent_id] || MOCK_DOM["AGENT_00"]) : null;
-  const baseDOM = MOCK_DOM["AGENT_00"];
+  const baseReportPrice = report?.baseline_price ?? 347;
+  const agentDOM = selectedAgent ? genDOM(selectedAgent.agent_id, selectedAgent.price) : null;
+  const baseDOM = genDOM("AGENT_00", baseReportPrice);
 
   return (
     <div className="h-screen flex flex-col bg-black text-white font-sans antialiased selection:bg-white/10">

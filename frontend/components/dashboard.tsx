@@ -447,7 +447,60 @@ export default function JacobiChat() {
                   );
                 })()}
 
-                {/* Discount Matrix — collapsed row */}
+                {/* ── 24-AGENT GRID ── */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[9px] font-mono text-white/20">24 Probe Agents — click for details</span>
+                    <span className="text-[8px] font-mono text-white/15">{report.elapsed_seconds.toFixed(1)}s</span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-[1px] bg-neutral-900">
+                    {report.agents.map((a) => {
+                      const blocked = a.bot_detected; const sel = selectedAgent?.agent_id === a.agent_id;
+                      return (
+                        <button key={a.agent_id} onClick={() => setSelectedAgent(sel ? null : a)}
+                          className={`bg-black p-1.5 text-left transition-all ${blocked ? "bg-red-950/20 animate-blockPulse" : sel ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className={`text-[7px] font-mono ${blocked ? "text-red-400/60" : "text-white/15"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
+                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono text-white/70">${a.price}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
+                          </div>
+                          <p className="text-[6px] font-mono text-white/15 leading-tight truncate">{parseCombo(a.label)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── DOM EXPLORER ── */}
+                {selectedAgent && agentDOM && (
+                  <div className="border border-neutral-900 rounded overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-900 bg-black/60">
+                      <div className="flex items-center gap-1.5"><Code className="w-3 h-3 text-white/25" /><span className="text-[8px] font-mono text-white/25 uppercase">DOM Explorer</span></div>
+                      <div className="flex items-center gap-2 text-[9px] font-mono">
+                        <span className="text-white/15">Base ${report.baseline_price?.toFixed(0) || "—"}</span>
+                        <span className="text-white/15">vs</span>
+                        <span className={selectedAgent.price ? "text-white/70" : "text-red-400/60"}>{selectedAgent.agent_id}{selectedAgent.price !== null ? ` $${selectedAgent.price}` : " BLOCKED"}</span>
+                        <button onClick={() => setSelectedAgent(null)} className="text-white/15 hover:text-white/40"><X className="w-2.5 h-2.5" /></button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-px bg-neutral-900">
+                      <div className="bg-black p-3">
+                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">Baseline</div>
+                        <div className="font-mono text-[8px] text-white/30 leading-relaxed break-all">{baseDOM.text}</div>
+                        <code className="text-[8px] text-emerald-400/80 bg-emerald-950/20 px-1.5 py-0.5 rounded block mt-1">{baseDOM.node}</code>
+                      </div>
+                      <div className="bg-black p-3">
+                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">{selectedAgent.agent_id}</div>
+                        <div className="font-mono text-[8px] leading-relaxed break-all">
+                          {agentDOM.text.split(" ").map((w, i) => /^\$\d/.test(w) && w !== `$${report.baseline_price?.toFixed(0)}` ? <span key={i} className="text-amber-300/80 bg-amber-300/10 px-0.5 rounded">{w} </span> : <span key={i} className="text-white/30">{w} </span>)}
+                        </div>
+                        <code className={`text-[8px] ${selectedAgent.price && selectedAgent.price !== report.baseline_price ? "text-amber-300/80 bg-amber-950/20" : "text-white/30 bg-white/5"} px-1.5 py-0.5 rounded block mt-1`}>{agentDOM.node}</code>
+                        {selectedAgent.bot_detected && <div className="mt-1 flex items-center gap-1 text-[8px] font-mono text-red-400/60"><AlertOctagon className="w-2 h-2" />BLOCKED</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── ANALYTICS (collapsible) ──*/}
                 <div className="border border-neutral-900 rounded overflow-hidden">
                   <button onClick={() => setShowStream(!showStream)} className="w-full flex items-center justify-between px-4 py-2.5 text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] hover:text-white/40 transition-colors bg-black/40">
                     <span className="flex items-center gap-2"><BarChart3 className="w-3 h-3" />Price Distribution &amp; Sensitivity</span>

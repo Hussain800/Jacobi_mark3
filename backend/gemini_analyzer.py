@@ -1,19 +1,17 @@
 """
-Gemini-powered analysis of Jacobi probe results.
-Transforms statistical topology data into plain-English consumer advice.
-
-⚠️ CRITICAL: Use google-genai (v2.6+), NOT google-generativeai (DEPRECATED).
+Multi-provider AI analysis of Jacobi probe results.
+Priority: OpenCode Zen (DeepSeek V4 Flash Free) → Gemini → statistical fallback.
 """
 
 import hashlib
 import json
 import os
-import time
 from typing import List, Optional
 
+import httpx
 from pydantic import BaseModel, Field
 
-# ─── Gemini SDK — google-genai v2.6+ (NOT google.generativeai) ────────
+# ─── Gemini SDK (fallback provider) ────────────────────────────────────
 try:
     from google.genai import Client, types
 except ImportError:
@@ -164,14 +162,86 @@ def _build_probe_context(probe_data: dict) -> str:
 
 GeminiReport = GeminiVerdict
 
+# ─── OpenCode Zen (DeepSeek V4 Flash Free) — Primary Provider ──────────
+
+OPENCODE_API_URL = "https://opencode.ai/zen/v1/chat/completions"
+OPENCODE_MODEL = "deepseek-v4-flash-free"
+
+_VERDICT_SCHEMA_JSON = json.dumps(GeminiVerdict.model_json_schema(), indent=2)
+
+
+def _build_opencode_messages(probe_data: dict) -> list:
+    """Build messages array for OpenCode/OpenAI-compatible chat completions."""
+    context = _build_probe_context(probe_data)
+    schema_prompt = (
+        "You MUST respond with valid JSON matching this exact schema:\n"
+        f"{_VERDICT_SCHEMA_JSON}\n\n"
+        "Return ONLY the JSON object. No markdown, no code fences, no extra text."
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Probe results to analyze:\n\n{context}\n\n{schema_prompt}"},
+    ]
+
+
+def _parse_verdict_from_json(raw: str, model_tag: str, probe_ts: str) -> Optional[GeminiVerdict]:
+    """Parse and validate a JSON string into a GeminiVerdict."""
+    try:
+        data = json.loads(raw)
+        # If the model wrapped the JSON in markdown code fences, strip them
+        if isinstance(data, str):
+            data = json.loads(data)
+        verdict = GeminiVerdict.model_validate(data)
+        verdict.analysis_timestamp = probe_ts
+        verdict.model_used = model_tag
+        return verdict
+    except Exception as e:
+        print(f"[AI] Failed to parse verdict JSON from {model_tag}: {e}")
+        return None
+
+
+def _analyze_with_opencode(probe_data: dict) -> Optional[GeminiVerdict]:
+    """Analyze probe results via OpenCode Zen (DeepSeek V4 Flash Free)."""
+    api_key = os.getenv("OPENCODE_API_KEY")
+    if not api_key:
+        return None
+
+    messages = _build_opencode_messages(probe_data)
+    try:
+        response = httpx.post(
+            OPENCODE_API_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OPENCODE_MODEL,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 4096,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=30.0,
+        )
+        if response.status_code != 200:
+            print(f"[OPENCODE] API returned {response.status_code}: {response.text[:200]}")
+            return None
+
+        body = response.json()
+        content = body["choices"][0]["message"]["content"]
+        return _parse_verdict_from_json(content, "deepseek-v4-flash-free (OpenCode)", probe_data.get("timestamp", ""))
+    except Exception as e:
+        print(f"[OPENCODE] Request failed: {e}")
+        return None
+
+
+# ─── Main Analysis Pipeline ────────────────────────────────────────────
+
 
 def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
     """
-    Synchronous wrapper around the Gemini analysis pipeline.
-
-    Called by main.py's /api/analyze endpoint. Uses the heuristic fallback
-    when the Gemini SDK is unavailable or no API key is configured.
-    Returns None if probe_data is empty.
+    Analyze probe results using the best available AI provider.
+    Priority: OpenCode Zen (DeepSeek) → Gemini → heuristic fallback.
     """
     if not probe_data:
         return None
@@ -183,7 +253,13 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
     if ck in _analysis_cache:
         return _analysis_cache[ck]
 
-    # Attempt Gemini sync call if available
+    # 1. Try OpenCode Zen (DeepSeek V4 Flash Free)
+    verdict = _analyze_with_opencode(probed)
+    if verdict is not None:
+        _analysis_cache[ck] = verdict
+        return verdict
+
+    # 2. Try Gemini (fallback provider)
     if Client is not None:
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
@@ -208,9 +284,9 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 _analysis_cache[ck] = verdict
                 return verdict
             except Exception as e:
-                print(f"[GEMINI] API call failed (using statistical fallback): {e}")
+                print(f"[GEMINI] API call failed: {e}")
 
-    # Heuristic fallback (always works, no network needed)
+    # 3. Heuristic fallback (always works)
     verdict = _fallback_verdict(probed)
     _analysis_cache[ck] = verdict
     return verdict

@@ -1,0 +1,198 @@
+{
+  "profiles": [
+    {
+      "id": "apple_m1_macos",
+      "label": "Apple M1 – macOS Ventura",
+      "platform": "MacIntel",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+      "vendor": "Apple",
+      "hardwareConcurrency": 8,
+      "deviceMemory": 16,
+      "maxTouchPoints": 0,
+      "screen": {
+        "width": 2560,
+        "height": 1600,
+        "colorDepth": 30,
+        "pixelRatio": 2
+      },
+      "webgl": {
+        "vendor": "Apple",
+        "renderer": "Apple M1",
+        "unmaskedVendor": "Apple",
+        "unmaskedRenderer": "Apple M1",
+        "shaderPrecision": {
+          "vertexHighFloat":   { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "vertexHighInt":     { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  },
+          "fragmentHighFloat": { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "fragmentHighInt":   { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  }
+        }
+      },
+      "navigator": {
+        "language": "en-US",
+        "languages": ["en-US", "en"],
+        "doNotTrack": null,
+        "appVersion": "5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15"
+      },
+      "fonts": [
+        "Arial", "Courier New", "Georgia", "Helvetica", "Helvetica Neue",
+        "Monaco", "Palatino", "Times New Roman", "Trebuchet MS", "Verdana",
+        "Menlo", "SF Pro Display", "SF Mono"
+      ]
+    },
+    {
+      "id": "intel_i7_windows",
+      "label": "Intel i7-13700K – Windows 11",
+      "platform": "Win32",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "hardwareConcurrency": 16,
+      "deviceMemory": 32,
+      "maxTouchPoints": 0,
+      "screen": {
+        "width": 2560,
+        "height": 1440,
+        "colorDepth": 24,
+        "pixelRatio": 1
+      },
+      "webgl": {
+        "vendor": "Google Inc. (NVIDIA)",
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "unmaskedVendor": "Google Inc. (NVIDIA)",
+        "unmaskedRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "shaderPrecision": {
+          "vertexHighFloat":   { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "vertexHighInt":     { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  },
+          "fragmentHighFloat": { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "fragmentHighInt":   { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  }
+        }
+      },
+      "navigator": {
+        "language": "en-US",
+        "languages": ["en-US", "en"],
+        "doNotTrack": "1",
+        "appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      "fonts": [
+        "Arial", "Calibri", "Cambria", "Consolas", "Courier New",
+        "Georgia", "Impact", "Lucida Console", "Segoe UI", "Tahoma",
+        "Times New Roman", "Trebuchet MS", "Verdana"
+      ]
+    },
+    {
+      "id": "amd_ryzen_linux",
+      "label": "AMD Ryzen 9 7950X – Ubuntu 24.04",
+      "platform": "Linux x86_64",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "hardwareConcurrency": 32,
+      "deviceMemory": 64,
+      "maxTouchPoints": 0,
+      "screen": {
+        "width": 3840,
+        "height": 2160,
+        "colorDepth": 24,
+        "pixelRatio": 1.5
+      },
+      "webgl": {
+        "vendor": "Google Inc. (AMD)",
+        "renderer": "ANGLE (AMD, AMD Radeon RX 7900 XTX (radeonsi, navi31, LLVM 17.0.6, DRM 3.57, 6.8.0-40-generic), OpenGL 4.6)",
+        "unmaskedVendor": "Google Inc. (AMD)",
+        "unmaskedRenderer": "ANGLE (AMD, AMD Radeon RX 7900 XTX (radeonsi, navi31, LLVM 17.0.6, DRM 3.57, 6.8.0-40-generic), OpenGL 4.6)",
+        "shaderPrecision": {
+          "vertexHighFloat":   { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "vertexHighInt":     { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  },
+          "fragmentHighFloat": { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "fragmentHighInt":   { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  }
+        }
+      },
+      "navigator": {
+        "language": "en-US",
+        "languages": ["en-US", "en"],
+        "doNotTrack": null,
+        "appVersion": "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      "fonts": [
+        "Arial", "Courier New", "DejaVu Sans", "DejaVu Sans Mono",
+        "DejaVu Serif", "FreeMono", "FreeSans", "FreeSerif",
+        "Liberation Mono", "Liberation Sans", "Liberation Serif",
+        "Noto Sans", "Ubuntu", "Ubuntu Mono"
+      ]
+    },
+    {
+      "id": "snapdragon_android",
+      "label": "Snapdragon 8 Gen 3 – Android 14 (Samsung Galaxy S24 Ultra)",
+      "platform": "Linux armv8l",
+      "userAgent": "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36",
+      "vendor": "Google Inc.",
+      "hardwareConcurrency": 8,
+      "deviceMemory": 12,
+      "maxTouchPoints": 5,
+      "screen": {
+        "width": 412,
+        "height": 915,
+        "colorDepth": 24,
+        "pixelRatio": 3.5
+      },
+      "webgl": {
+        "vendor": "Qualcomm",
+        "renderer": "Adreno (TM) 750",
+        "unmaskedVendor": "Qualcomm",
+        "unmaskedRenderer": "Adreno (TM) 750",
+        "shaderPrecision": {
+          "vertexHighFloat":   { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "vertexHighInt":     { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  },
+          "fragmentHighFloat": { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "fragmentHighInt":   { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  }
+        }
+      },
+      "navigator": {
+        "language": "en-US",
+        "languages": ["en-US", "en"],
+        "doNotTrack": null,
+        "appVersion": "5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
+      },
+      "fonts": [
+        "Roboto", "Droid Sans", "Droid Sans Mono", "Droid Serif",
+        "Noto Sans", "Noto Serif", "Noto Color Emoji"
+      ]
+    },
+    {
+      "id": "intel_chromebook",
+      "label": "Intel Celeron N5100 – ChromeOS 124",
+      "platform": "Linux x86_64",
+      "userAgent": "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "hardwareConcurrency": 4,
+      "deviceMemory": 4,
+      "maxTouchPoints": 10,
+      "screen": {
+        "width": 1366,
+        "height": 768,
+        "colorDepth": 24,
+        "pixelRatio": 1
+      },
+      "webgl": {
+        "vendor": "Google Inc. (Intel)",
+        "renderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics (JSL), OpenGL ES 3.1)",
+        "unmaskedVendor": "Google Inc. (Intel)",
+        "unmaskedRenderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics (JSL), OpenGL ES 3.1)",
+        "shaderPrecision": {
+          "vertexHighFloat":   { "rangeMin": 127, "rangeMax": 127, "precision": 23 },
+          "vertexHighInt":     { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  },
+          "fragmentHighFloat": { "rangeMin": 62,  "rangeMax": 62,  "precision": 16 },
+          "fragmentHighInt":   { "rangeMin": 31,  "rangeMax": 30,  "precision": 0  }
+        }
+      },
+      "navigator": {
+        "language": "en-US",
+        "languages": ["en-US", "en"],
+        "doNotTrack": null,
+        "appVersion": "5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      "fonts": [
+        "Arial", "Courier New", "Georgia", "Noto Sans", "Noto Serif",
+        "Roboto", "Times New Roman", "Verdana"
+      ]
+    }
+  ]
+}

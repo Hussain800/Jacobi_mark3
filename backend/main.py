@@ -30,7 +30,7 @@ from supabase_client import save_probe
 from cognee_memory import remember_probe, is_available as cognee_available
 
 load_dotenv()
-BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
+BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
 
 
 class TargetProbeInput(BaseModel):

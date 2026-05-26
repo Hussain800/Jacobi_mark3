@@ -253,7 +253,7 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         return _analysis_cache[ck]
 
     # 1. Try AI/ML API (partner provider, primary)
-    aiml_key = os.getenv("AIMLAPI_KEY") or "b5ed48320ab1652a227672b8185180aa"
+    aiml_key = os.getenv("AIMLAPI_KEY")
     if aiml_key:
         try:
             aiml_model = os.getenv("AIMLAPI_MODEL", "gpt-4o")

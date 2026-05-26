@@ -235,7 +235,7 @@ function ExportButtons({ report }: { report: TopologyReport }) {
       <select
         value={format}
         onChange={(e) => setFormat(e.target.value as "json" | "csv")}
-        className="bg-transparent text-[10px] font-mono text-white/40 border border-white/[0.06] rounded px-1.5 py-1 outline-none"
+        className="bg-transparent text-[10px] font-mono text-white/60 border border-white/[0.10] rounded px-1.5 py-1 outline-none"
       >
         <option value="json">JSON</option>
         <option value="csv">CSV</option>
@@ -285,33 +285,56 @@ function AgentGrid({
   });
 
   return (
-    <div className="border border-white/[0.06] rounded-lg p-3 bg-white/[0.01]">
+    <div className="border border-white/[0.08] rounded-lg p-3 bg-white/[0.02]">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">Probe Network</span>
-        <span className="text-[10px] font-mono text-white/40">
+        <span className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Probe Network</span>
+        <span className="text-[10px] font-mono text-white/60">
           {responded}/{totalAgents} responded
         </span>
       </div>
       <div className="grid grid-cols-6 gap-1">
-        {cells.map((cell) => (
-          <div
-            key={cell.id}
-            className={`aspect-square rounded-sm ${cell.color} transition-all duration-500`}
-            title={`${cell.id}: ${cell.status}`}
-          />
+        {cells.map(cell => (
+          <div key={cell.id} className={`aspect-square rounded-sm ${cell.color} transition-all duration-500`} title={`${cell.id}: ${cell.status}`} />
         ))}
       </div>
       <div className="flex gap-3 mt-2 text-[9px] font-mono">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-emerald-400/80" /> {successfulAgents} success
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-400/50" /> {failedAgents} failed
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-orange-400/60" /> {detectedAgents} blocked
-        </span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400/80" /> {successfulAgents} success</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/60" /> {failedAgents} failed</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400/60" /> {detectedAgents} blocked</span>
       </div>
+    </div>
+  );
+}
+
+/* ─── Leaderboard ───────────────────────────────────────────────────── */
+
+function Leaderboard() {
+  const [entries, setEntries] = useState<{name: string; savings: number; url: string}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/leaderboard`)
+      .then(r => r.json())
+      .then(data => setEntries((data || []).slice(0, 10)))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
+  }, [apiBase]);
+
+  if (loading) return <div className="text-[10px] font-mono text-white/30 text-center py-4">Loading leaderboard...</div>;
+  if (!entries.length) return null;
+
+  return (
+    <div className="border border-white/[0.08] rounded-lg overflow-hidden">
+      <div className="px-4 py-2 border-b border-white/[0.08] text-[10px] font-mono text-white/50 uppercase tracking-wider">
+        🏆 Savings Leaderboard
+      </div>
+      {entries.map((e, i) => (
+        <div key={i} className="px-4 py-1.5 border-b border-white/[0.04] flex items-center justify-between text-[11px]">
+          <span className="text-white/60">{i + 1}. {e.name}</span>
+          <span className="text-emerald-400 font-mono">-${e.savings.toFixed(0)}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -330,27 +353,27 @@ function ResultCard({ report }: { report: TopologyReport }) {
   const savings = analysis?.savings_verdict;
 
   return (
-    <div className="border border-white/[0.08] rounded-lg bg-white/[0.02] overflow-hidden">
+    <div className="border border-white/[0.10] rounded-lg bg-white/[0.03] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]">
         <div className="flex items-center gap-3">
           <Shield className={`w-4 h-4 ${cls}`} />
           <span className={`text-sm font-mono font-medium ${cls}`}>{report.topology_class.toUpperCase()}</span>
-          <span className="text-xs text-white/40 font-mono">${report.baseline_price?.toFixed(0)} baseline</span>
+          <span className="text-xs text-white/60 font-mono">${report.baseline_price?.toFixed(0)} baseline</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-white/30 font-mono hidden sm:inline">{report.elapsed_seconds.toFixed(1)}s &middot; {report.successful_agents}/{report.total_agents} agents</span>
+          <span className="text-[11px] text-white/50 font-mono hidden sm:inline">{report.elapsed_seconds.toFixed(1)}s &middot; {report.successful_agents}/{report.total_agents} agents</span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => exportJSON(report, targetLabel)}
-              className="p-1.5 rounded hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors"
+              className="p-1.5 rounded hover:bg-white/[0.08] text-white/50 hover:text-white/80 transition-colors"
               title="Export JSON"
             >
               <Download className="w-3 h-3" />
             </button>
             <button
               onClick={() => exportCSV(report, targetLabel)}
-              className="p-1.5 rounded hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors text-[9px] font-mono"
+              className="p-1.5 rounded hover:bg-white/[0.08] text-white/50 hover:text-white/80 transition-colors text-[9px] font-mono"
               title="Export CSV"
             >
               CSV
@@ -361,9 +384,9 @@ function ResultCard({ report }: { report: TopologyReport }) {
 
       {/* Demo mode warning banner */}
       {(report as any)._demo && (
-        <div className="border-b border-yellow-900/30 px-4 py-2 bg-yellow-950/15 flex items-center gap-2">
-          <AlertTriangle className="w-3 h-3 text-yellow-400/50 shrink-0" />
-          <span className="text-[10px] font-mono text-yellow-400/60">
+        <div className="border-b border-yellow-800/40 px-4 py-2 bg-yellow-500/10 flex items-center gap-2">
+          <AlertTriangle className="w-3 h-3 text-yellow-400/70 shrink-0" />
+          <span className="text-[10px] font-mono text-yellow-300/80">
             SIMULATED DATA — the demo toggle is on. Toggle it off and start the backend for live probes.
           </span>
         </div>
@@ -371,13 +394,13 @@ function ResultCard({ report }: { report: TopologyReport }) {
 
       {/* Gemini verdict banner */}
       {gemini && (
-        <div className="border-b border-white/[0.06] px-4 py-3 bg-white/[0.02]">
-          <p className="text-[10px] font-mono text-white/30 uppercase tracking-[0.1em] mb-1">AI Analysis</p>
-          <p className="text-sm text-white/80 leading-relaxed">{gemini.plain_english_summary}</p>
+        <div className="border-b border-white/[0.08] px-4 py-3 bg-white/[0.03]">
+          <p className="text-[10px] font-mono text-white/50 uppercase tracking-[0.1em] mb-1">AI Analysis</p>
+          <p className="text-sm text-white/85 leading-relaxed">{gemini.plain_english_summary}</p>
           {gemini.action_items && gemini.action_items.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {gemini.action_items.map((item: string, i: number) => (
-                <span key={i} className="text-[10px] font-mono bg-white/[0.04] text-white/50 px-2 py-0.5 rounded-full border border-white/[0.06]">
+                <span key={i} className="text-[10px] font-mono bg-white/[0.06] text-white/60 px-2 py-0.5 rounded-full border border-white/[0.08]">
                   {item}
                 </span>
               ))}
@@ -388,10 +411,10 @@ function ResultCard({ report }: { report: TopologyReport }) {
 
       {/* Savings verdict — moved to top */}
       {report.gradients.some((g) => g.significant) && (
-        <div className="border-b border-white/[0.06] px-4 py-3 bg-gradient-to-r from-emerald-950/20 to-transparent">
+        <div className="border-b border-white/[0.08] px-4 py-3 bg-white/[0.03]">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-mono text-emerald-400/60 uppercase tracking-[0.1em] mb-1">Potential savings</p>
+              <p className="text-[10px] font-mono text-emerald-400/70 uppercase tracking-[0.1em] mb-1">Potential savings</p>
               <p className="text-2xl font-light text-emerald-400">
                 -${(savings?.total_potential_savings ?? (() => {
                   const base = report.baseline_price || 0;
@@ -399,14 +422,14 @@ function ResultCard({ report }: { report: TopologyReport }) {
                   return sigs.reduce((s, g) => s + g.delta, 0);
                 })()).toFixed(0)}
               </p>
-              <p className="text-[11px] font-mono text-white/30 mt-0.5">
+              <p className="text-[11px] font-mono text-white/40 mt-0.5">
                 Cheapest achievable: ${(savings?.cheapest_achievable_price ?? 0).toFixed(0)}
               </p>
             </div>
             <div className="hidden sm:block text-right">
               {report.gradients.filter((g) => g.significant && g.delta > 0).slice(0, 3).map((g) => (
-                <p key={g.variable_name} className="text-[10px] font-mono text-white/40">
-                  {g.variable_name}: -${g.delta.toFixed(0)}
+                  <p key={g.variable_name} className="text-[10px] font-mono text-white/50">
+                    {g.variable_name}: -${g.delta.toFixed(0)}
                 </p>
               ))}
             </div>
@@ -447,11 +470,11 @@ function ResultCard({ report }: { report: TopologyReport }) {
           const sig = g.significant;
           return (
             <div key={g.variable_name} className="flex items-center gap-3">
-              <div className="w-28 flex items-center gap-1.5 text-[11px] font-mono text-white/40 shrink-0">
+              <div className="w-28 flex items-center gap-1.5 text-[11px] font-mono text-white/50 shrink-0">
                 {VAR_ICONS[g.variable_name]}
                 {g.variable_name.replace("_", " ")}
               </div>
-              <div className="flex-1 h-4 bg-white/[0.04] rounded-full overflow-hidden relative">
+              <div className="flex-1 h-4 bg-white/[0.06] rounded-full overflow-hidden relative">
                 {sig && (
                   <div
                     className="h-full bg-white/10 rounded-full transition-all"
@@ -475,15 +498,15 @@ function ResultCard({ report }: { report: TopologyReport }) {
       </div>
 
       {/* Meta row */}
-      <div className="px-4 py-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-white/25">
+      <div className="px-4 py-2 border-t border-white/[0.08] flex items-center justify-between text-[10px] font-mono text-white/40">
         <span>DI: ${report.discrimination_index.toFixed(0)}</span>
         <span>Spread: ${report.max_price_spread?.toFixed(0)} ({report.max_price_spread_pct?.toFixed(1)}%)</span>
         <span>σ: {report.control_stability.toFixed(3)}</span>
       </div>
 
       {/* Toggle sections */}
-      <div className="border-t border-white/[0.06]">
-        <button onClick={() => setShowAgents(!showAgents)} className="w-full flex items-center justify-between px-4 py-2 text-[11px] font-mono text-white/30 hover:text-white/50 hover:bg-white/[0.02] transition-colors">
+      <div className="border-t border-white/[0.08]">
+        <button onClick={() => setShowAgents(!showAgents)} className="w-full flex items-center justify-between px-4 py-2 text-[11px] font-mono text-white/50 hover:text-white/70 hover:bg-white/[0.03] transition-colors">
           <span>Agent swarm ({report.agents.length} probes)</span>
           {showAgents ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         </button>
@@ -508,7 +531,7 @@ function ResultCard({ report }: { report: TopologyReport }) {
           </div>
         )}
 
-        <button onClick={() => setShowHistogram(!showHistogram)} className="w-full flex items-center justify-between px-4 py-2 text-[11px] font-mono text-white/30 hover:text-white/50 hover:bg-white/[0.02] transition-colors border-t border-white/[0.06]">
+        <button onClick={() => setShowHistogram(!showHistogram)} className="w-full flex items-center justify-between px-4 py-2 text-[11px] font-mono text-white/50 hover:text-white/70 hover:bg-white/[0.03] transition-colors border-t border-white/[0.08]">
           <span>Price distribution</span>
           {showHistogram ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         </button>
@@ -543,65 +566,11 @@ function ResultCard({ report }: { report: TopologyReport }) {
       </div>
 
       {/* Scenario footer */}
-      <div className="px-4 py-2 border-t border-white/[0.06] text-[10px] font-mono text-white/20 space-y-0.5 bg-black/40">
+      <div className="px-4 py-2 border-t border-white/[0.08] text-[10px] font-mono text-white/35 space-y-0.5 bg-black/30">
         <p>{report.max_discrimination_scenario}</p>
         <p>{report.min_discrimination_scenario}</p>
       </div>
 
-    </div>
-  );
-}
-
-/* ─── Savings Leaderboard ────────────────────────────────────────────── */
-
-function Leaderboard() {
-  const [entries, setEntries] = useState<{ name: string; savings: number; url: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [collapsed, setCollapsed] = useState(true);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-  useEffect(() => {
-    fetch(`${apiBase}/api/leaderboard`)
-      .then((r) => r.json())
-      .then((data) => setEntries(data.slice(0, 10)))
-      .catch(() => setEntries([]))
-      .finally(() => setLoading(false));
-  }, [apiBase]);
-
-  if (loading) {
-    return (
-      <div className="text-[10px] font-mono text-white/20 text-center py-4">
-        Loading leaderboard...
-      </div>
-    );
-  }
-
-  if (!entries.length) return null;
-
-  return (
-    <div className="border border-white/[0.06] rounded-lg overflow-hidden">
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="w-full px-4 py-2 border-b border-white/[0.06] text-[10px] font-mono text-white/30 uppercase tracking-wider flex items-center justify-between hover:text-white/50 hover:bg-white/[0.02] transition-colors"
-      >
-        <span>🏆 Savings Leaderboard</span>
-        {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-      </button>
-      {!collapsed && (
-        <div>
-          {entries.map((e, i) => (
-            <div
-              key={i}
-              className="px-4 py-1.5 border-b border-white/[0.03] flex items-center justify-between text-[11px]"
-            >
-              <span className="text-white/40">
-                {i + 1}. {e.name}
-              </span>
-              <span className="text-emerald-400 font-mono">-${e.savings.toFixed(0)}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -802,24 +771,24 @@ export default function JacobiTerminal() {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="h-screen flex flex-col bg-black text-white">
+    <div className="h-screen flex flex-col bg-[#0e0f14] text-white">
       {/* ─── Top bar ─────────────────────────────────────────────── */}
-      <header className="h-12 border-b border-white/[0.06] flex items-center px-5 bg-black/80 backdrop-blur-md shrink-0">
+      <header className="h-12 border-b border-white/[0.08] flex items-center px-5 bg-[#0e0f14]/95 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded border border-white/10 flex items-center justify-center">
             <Network className="w-3.5 h-3.5 text-white/70" />
           </div>
           <span className="text-sm font-medium tracking-tight">JACOBI</span>
-          <span className="text-[10px] text-white/30 font-mono hidden sm:inline">/ adversarial pricing probe</span>
+          <span className="text-[10px] text-white/50 font-mono hidden sm:inline">/ adversarial pricing probe</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-[10px] text-white/20 font-mono hidden sm:inline">{session?.user?.email?.split("@")[0] || "guest"}</span>
+          <span className="text-[10px] text-white/40 font-mono hidden sm:inline">{session?.user?.email?.split("@")[0] || "guest"}</span>
           <AuthButton />
           <label className="flex items-center gap-2 cursor-pointer group">
             <div className={`w-7 h-3.5 rounded-full border transition-colors relative ${useCache ? "bg-white/20 border-white/20" : "bg-transparent border-white/10"}`}>
               <div className={`w-2.5 h-2.5 rounded-full bg-white/40 absolute top-0.5 transition-transform ${useCache ? "translate-x-[11px]" : "translate-x-[2px]"}`} />
             </div>
-            <span className="text-[10px] font-mono text-white/25 group-hover:text-white/40">{useCache ? "demo on" : "demo off"}</span>
+            <span className="text-[10px] font-mono text-white/40 group-hover:text-white/60">{useCache ? "demo on" : "demo off"}</span>
           </label>
           <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-white animate-pulse" : hasMessages ? "bg-emerald-400/80" : "bg-white/20"}`} />
         </div>
@@ -830,11 +799,11 @@ export default function JacobiTerminal() {
         <div className="max-w-3xl mx-auto w-full px-4 py-6 space-y-5">
           {!hasMessages && (
             <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-              <div className="w-12 h-12 rounded-full border border-white/[0.06] flex items-center justify-center mb-5">
-                <Network className="w-5 h-5 text-white/30" />
+              <div className="w-12 h-12 rounded-full border border-white/[0.10] flex items-center justify-center mb-5">
+                <Network className="w-5 h-5 text-white/50" />
               </div>
-              <h1 className="text-lg font-medium tracking-tight mb-2">JACOBI</h1>
-              <p className="text-sm text-white/40 mb-8 max-w-md">
+              <h1 className="text-xl font-medium tracking-tight mb-2 text-white/90">JACOBI</h1>
+              <p className="text-sm text-white/60 mb-8 max-w-md">
                 Paste a product URL or describe a target to probe for pricing discrimination.
               </p>
               <div className="flex flex-wrap justify-center gap-2">
@@ -842,7 +811,7 @@ export default function JacobiTerminal() {
                   <button
                     key={s.label}
                     onClick={() => selectSample(s)}
-                    className="px-3 py-1.5 rounded-full border border-white/10 text-[11px] font-mono text-white/40 hover:text-white/70 hover:border-white/30 transition-all"
+                    className="px-3 py-1.5 rounded-full border border-white/[0.12] text-[11px] font-mono text-white/60 hover:text-white/90 hover:border-white/40 transition-all"
                   >
                     {s.label}
                   </button>
@@ -856,8 +825,8 @@ export default function JacobiTerminal() {
               {/* User message */}
               {msg.role === "user" && (
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] bg-white/[0.06] rounded-2xl rounded-br-md px-4 py-2.5">
-                    <p className="text-sm text-white/80 whitespace-pre-wrap break-words">{msg.content}</p>
+                  <div className="max-w-[85%] bg-white/[0.08] rounded-2xl rounded-br-md px-4 py-2.5">
+                    <p className="text-sm text-white/90 whitespace-pre-wrap break-words">{msg.content}</p>
                   </div>
                 </div>
               )}
@@ -869,8 +838,8 @@ export default function JacobiTerminal() {
                   {msg.status === "scanning" && (
                     <div className="space-y-3">
                       <div className="flex items-start gap-3">
-                        <Loader2 className="w-3.5 h-3.5 mt-1 text-white/40 animate-spin shrink-0" />
-                        <p className="text-sm text-white/50 font-mono whitespace-pre-line">{msg.content}</p>
+                        <Loader2 className="w-3.5 h-3.5 mt-1 text-white/60 animate-spin shrink-0" />
+                        <p className="text-sm text-white/70 font-mono whitespace-pre-line">{msg.content}</p>
                       </div>
                       {msg.report && (
                         <AgentGrid
@@ -895,10 +864,10 @@ export default function JacobiTerminal() {
 
                   {/* Error */}
                   {msg.status === "error" && (
-                    <div className="flex items-start gap-3 p-4 border border-red-900/30 bg-red-950/10 rounded-lg">
-                      <AlertTriangle className="w-4 h-4 mt-0.5 text-red-400/60 shrink-0" />
+                    <div className="flex items-start gap-3 p-4 border border-red-800/40 bg-red-950/15 rounded-lg">
+                      <AlertTriangle className="w-4 h-4 mt-0.5 text-red-400/80 shrink-0" />
                       <div>
-                        <p className="text-sm text-red-400/70 font-mono">{msg.error || msg.content}</p>
+                        <p className="text-sm text-red-300/90 font-mono">{msg.error || msg.content}</p>
                       </div>
                     </div>
                   )}
@@ -925,11 +894,11 @@ export default function JacobiTerminal() {
           {hasMessages && !running && (
             <div className="flex flex-wrap gap-2 pt-2">
               {SAMPLE_TARGETS.map((s) => (
-                <button
-                  key={s.label}
-                  onClick={() => selectSample(s)}
-                  className="px-3 py-1.5 rounded-full border border-white/[0.06] text-[10px] font-mono text-white/30 hover:text-white/60 hover:border-white/20 transition-all"
-                >
+                  <button
+                    key={s.label}
+                    onClick={() => selectSample(s)}
+                    className="px-3 py-1.5 rounded-full border border-white/[0.08] text-[10px] font-mono text-white/50 hover:text-white/80 hover:border-white/30 transition-all"
+                  >
                   {s.label}
                 </button>
               ))}
@@ -948,9 +917,9 @@ export default function JacobiTerminal() {
       </div>
 
       {/* ─── Input bar ───────────────────────────────────────────── */}
-      <div className="border-t border-white/[0.06] bg-black/80 backdrop-blur-md shrink-0">
+      <div className="border-t border-white/[0.08] bg-[#0e0f14]/95 backdrop-blur-md shrink-0">
         <div className="max-w-3xl mx-auto w-full px-4 py-3">
-          <div className="flex items-end gap-2 border border-white/10 rounded-2xl bg-white/[0.03] focus-within:border-white/20 transition-colors px-4 py-2">
+          <div className="flex items-end gap-2 border border-white/[0.15] rounded-2xl bg-white/[0.05] focus-within:border-white/30 transition-colors px-4 py-2">
             <textarea
               ref={inputRef}
               value={input}
@@ -959,22 +928,22 @@ export default function JacobiTerminal() {
               placeholder="Paste a URL or describe a target..."
               disabled={running}
               rows={1}
-              className="flex-1 bg-transparent text-sm text-white/80 placeholder-white/20 outline-none resize-none font-mono max-h-32 py-1 disabled:opacity-40"
+              className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/30 outline-none resize-none font-mono max-h-32 py-1 disabled:opacity-40"
               style={{ minHeight: "24px" }}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || running}
-              className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all shrink-0"
+              className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/15 hover:bg-white/25 disabled:opacity-20 disabled:cursor-not-allowed transition-all shrink-0"
             >
               {running ? (
-                <Loader2 className="w-3.5 h-3.5 text-white/60 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 text-white/70 animate-spin" />
               ) : (
-                <Send className="w-3.5 h-3.5 text-white/60" />
+                <Send className="w-3.5 h-3.5 text-white/70" />
               )}
             </button>
           </div>
-          <p className="text-[10px] text-white/15 font-mono text-center mt-2">
+          <p className="text-[10px] text-white/30 font-mono text-center mt-2">
             Agents probe pricing algorithms across location, device, cookies, and referrer dimensions
           </p>
         </div>

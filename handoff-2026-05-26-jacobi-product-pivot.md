@@ -19,7 +19,7 @@ USER REQUESTS (AS-IS)
 - "analyze everything summon 5-10 ds4 v flash subagents"
 - "execute all phases of the plan simultaneously"
 - "get the full stack up and running locally (along with our existing brightdata api key)"
-- "use this api key for gemini AIzaSyB1morcDuMYz6HKT2K8sJ6BOVUmDgvgsBs"
+- "use this api key for gemini [REDACTED]"
 - "summon 5 hyper sub agents and ensure the UX is amazing, ai is fully functioning, bright data is fully functioning, website feels premium, no bugs/crashes"
 - "i type youtube.com how do i even get these results? i thought this was legit real data not mock bs"
 - "no bro i dont need demo i need actual legit working"
@@ -40,7 +40,7 @@ USER REQUESTS (AS-IS)
 - "add it to the pr"
 - "are we actually using the gemini api and how"
 - "also getting Probe timed out"
-- "use deepseek v4 flash free sk-0EqmrKVAbVNz5WHjf0Tb944QiSAmuW2F2stP7YoqArLSBy2LfDagtyKkzGZRMaIe api key opencode zen free search for the exact endpoint to use"
+- "use deepseek v4 flash free [REDACTED] api key opencode zen free search for the exact endpoint to use"
 - "yes go for it but keep gemini as fallback. opencode is main priority"
 - "add this to the pr"
 - "add in working sign in, absolutely sick mind bending landing page, chats, history"
@@ -98,9 +98,9 @@ CURRENT STATE
 - Both servers survive session restart (launched in separate PowerShell windows)
 - Git: main at c518a86, 10 commits ahead of upstream 90bb26b
 - Supabase project csfijqbfywdquuuwwplu has zones: mcp_unlocker (unblocker), mcp_browser (browser_api)
-- BrightData API key: 254d841d-f14d-4f4b-a394-3da0b03af036
-- OpenCode Zen API key: sk-0EqmrKVAbVNz5WHjf0Tb944QiSAmuW2F2stP7YoqArLSBy2LfDagtyKkzGZRMaIe
-- Gemini API key: AIzaSyB1morcDuMYz6HKT2K8sJ6BOVUmDgvgsBs (free tier, rate-limited)
+- BrightData API key: [REDACTED]
+- OpenCode Zen API key: [REDACTED]
+- Gemini API key: [REDACTED] (free tier, rate-limited)
 - Demo mode defaults to OFF (useCache=false in dashboard.tsx line ~585)
 - Uncommitted files only: copy-spec.md, ux-architecture.md (orphaned agent outputs)
 

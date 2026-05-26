@@ -1,10 +1,11 @@
 import httpx, asyncio, re
+from brightdata_config import BRIGHTDATA_UNLOCKER_ZONE, brightdata_auth_headers
 
 async def t():
     async with httpx.AsyncClient(timeout=30) as c:
         url = "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB"
-        payload = {'url': url, 'zone': 'mcp_unlocker', 'format': 'raw'}
-        r = await c.post('https://api.brightdata.com/request', json=payload, headers={'Authorization': 'Bearer 254d841d-f14d-4f4b-a394-3da0b03af036'})
+        payload = {'url': url, 'zone': BRIGHTDATA_UNLOCKER_ZONE, 'format': 'raw'}
+        r = await c.post('https://api.brightdata.com/request', json=payload, headers=brightdata_auth_headers())
         text = r.text
         
         # Find all dollar prices

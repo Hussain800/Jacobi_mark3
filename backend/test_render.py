@@ -1,18 +1,19 @@
 import httpx, asyncio, re, json
+from brightdata_config import BRIGHTDATA_UNLOCKER_ZONE, brightdata_auth_headers
 
 async def t():
     async with httpx.AsyncClient(timeout=90) as c:
         url = "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html?checkin=2026-06-10&checkout=2026-06-11"
         
         # Test with render=true (full JS rendering)
-        payload = {"url": url, "zone": "mcp_unlocker", "format": "raw"}
-        r = await c.post("https://api.brightdata.com/request", json=payload, headers={"Authorization": "Bearer 254d841d-f14d-4f4b-a394-3da0b03af036"})
+        payload = {"url": url, "zone": BRIGHTDATA_UNLOCKER_ZONE, "format": "raw"}
+        r = await c.post("https://api.brightdata.com/request", json=payload, headers=brightdata_auth_headers())
         print(f"NO RENDER - Status: {r.status_code}, size: {len(r.text)}")
         
         # Try with render parameter (BrightData supports this)
-        payload2 = {"url": url, "zone": "mcp_unlocker", "format": "raw", "render": True}
+        payload2 = {"url": url, "zone": BRIGHTDATA_UNLOCKER_ZONE, "format": "raw", "render": True}
         try:
-            r2 = await c.post("https://api.brightdata.com/request", json=payload2, headers={"Authorization": "Bearer 254d841d-f14d-4f4b-a394-3da0b03af036"})
+            r2 = await c.post("https://api.brightdata.com/request", json=payload2, headers=brightdata_auth_headers())
             print(f"RENDER=true - Status: {r2.status_code}, size: {len(r2.text)}")
             if r2.status_code == 200:
                 visible = re.sub(r'<script[^>]*>.*?</script>', '', r2.text, flags=re.DOTALL|re.I)

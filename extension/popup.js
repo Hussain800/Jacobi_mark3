@@ -1,67 +1,136 @@
 /**
- * Jacobi Price Shield — Popup Script
+ * JACOBI — Popup Script
  *
- * Reads the latest verdict from chrome.storage.local and renders it.
- * Manages the enable/disable toggle for price monitoring.
+ * Displays:
+ *  - The current tab URL.
+ *  - A "Probe this price" button that sends the page to JACOBI chat.
+ *  - A scrolling list of recent probes from chrome.storage.local.
  */
 
 "use strict";
 
 (async () => {
-  const dotEl   = document.getElementById("verdict-dot");
-  const textEl  = document.getElementById("verdict-text");
-  const metaEl  = document.getElementById("verdict-meta");
-  const toggleEl = document.getElementById("toggle-enabled");
+  // ─── DOM refs ────────────────────────────────────────────────────────────
+  const urlEl = document.getElementById("current-url");
+  const btnProbe = document.getElementById("btn-probe");
+  const btnClear = document.getElementById("btn-clear");
+  const listEl = document.getElementById("recent-list");
 
-  // ─── Load current verdict ────────────────────────────────────────────────
-  async function loadVerdict() {
-    const { jacobi_last_verdict } = await chrome.storage.local.get("jacobi_last_verdict");
+  // ─── Load current tab URL ────────────────────────────────────────────────
+  let currentTabUrl = null;
 
-    if (!jacobi_last_verdict) {
-      dotEl.className = "verdict-dot";
-      textEl.textContent = "No data";
-      metaEl.textContent = "Navigate to a supported booking site.";
-      return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.url && /^https?:\/\//i.test(tab.url)) {
+      currentTabUrl = tab.url;
+      urlEl.textContent = tab.url;
+      urlEl.classList.remove("empty");
+    } else {
+      urlEl.textContent = "No probeable page in this tab";
+      urlEl.classList.add("empty");
+      btnProbe.disabled = true;
     }
-
-    const { verdict, confidence, url, ts } = jacobi_last_verdict;
-
-    switch (verdict) {
-      case "FAIR":
-        dotEl.className = "verdict-dot fair";
-        textEl.textContent = "Fair pricing detected";
-        break;
-      case "INFLATED":
-        dotEl.className = "verdict-dot inflated";
-        textEl.textContent = "Possible price inflation";
-        break;
-      case "UNKNOWN":
-        dotEl.className = "verdict-dot";
-        textEl.textContent = "Insufficient data";
-        break;
-      default:
-        dotEl.className = "verdict-dot error";
-        textEl.textContent = "Error";
-    }
-
-    const domain = url ? new URL(url).hostname : "—";
-    const time = ts ? new Date(ts).toLocaleTimeString() : "—";
-    metaEl.textContent = `${domain} · ${time}`;
+  } catch {
+    urlEl.textContent = "Could not read tab";
+    urlEl.classList.add("empty");
+    btnProbe.disabled = true;
   }
 
-  // ─── Load toggle state ──────────────────────────────────────────────────
-  async function loadToggle() {
-    const { jacobi_settings } = await chrome.storage.local.get("jacobi_settings");
-    const enabled = jacobi_settings?.enabled ?? true;
-    toggleEl.checked = enabled;
-  }
+  // ─── Probe button handler ────────────────────────────────────────────────
+  btnProbe.addEventListener("click", async () => {
+    if (!currentTabUrl) return;
 
-  // ─── Toggle handler ────────────────────────────────────────────────────
-  toggleEl.addEventListener("change", async () => {
-    const enabled = toggleEl.checked;
-    await chrome.storage.local.set({ jacobi_settings: { enabled } });
+    btnProbe.classList.add("loading");
+    btnProbe.disabled = true;
+
+    try {
+      await chrome.runtime.sendMessage({ type: "PROBE_CURRENT_TAB" });
+      // The background will open the chat tab — close the popup.
+      window.close();
+    } catch (err) {
+      console.error("[JACOBI] Probe failed:", err);
+      btnProbe.classList.remove("loading");
+      btnProbe.disabled = false;
+    }
   });
 
-  // ─── Initialise ────────────────────────────────────────────────────────
-  await Promise.all([loadVerdict(), loadToggle()]);
+  // ─── Load & render recent probes ─────────────────────────────────────────
+  async function renderRecent() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "GET_RECENT" });
+      const recent = response?.recent || [];
+
+      if (!recent.length) {
+        listEl.innerHTML = '<li class="recent-none">No probes yet</li>';
+        return;
+      }
+
+      listEl.innerHTML = recent
+        .map((entry) => {
+          const time = formatTime(entry.timestamp);
+          const domain = entry.domain || entry.url;
+          return `
+            <li class="recent-item" data-url="${escapeAttr(entry.url)}">
+              <span class="recent-dot"></span>
+              <div class="recent-info">
+                <div class="recent-domain">${escapeHtml(domain)}</div>
+                <div class="recent-time">${time}</div>
+              </div>
+            </li>`;
+        })
+        .join("");
+
+      // Clicking a recent item re-probes that URL.
+      listEl.querySelectorAll(".recent-item").forEach((item) => {
+        item.addEventListener("click", async () => {
+          const url = item.dataset.url;
+          if (!url) return;
+
+          const chatUrl = `http://localhost:3000/chat?url=${encodeURIComponent(url)}`;
+          try {
+            await chrome.tabs.create({ url: chatUrl });
+            window.close();
+          } catch (err) {
+            console.error("[JACOBI] Failed to open chat:", err);
+          }
+        });
+      });
+    } catch (err) {
+      console.error("[JACOBI] Failed to load recent probes:", err);
+    }
+  }
+
+  // ─── Clear recent probes ─────────────────────────────────────────────────
+  btnClear.addEventListener("click", async () => {
+    try {
+      await chrome.runtime.sendMessage({ type: "CLEAR_RECENT" });
+      await renderRecent();
+    } catch (err) {
+      console.error("[JACOBI] Clear failed:", err);
+    }
+  });
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function escapeAttr(str) {
+    return str.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function formatTime(ts) {
+    if (!ts) return "—";
+    const now = Date.now();
+    const diff = now - ts;
+    if (diff < 60000) return "just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  // ─── Kick off ────────────────────────────────────────────────────────────
+  await renderRecent();
 })();

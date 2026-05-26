@@ -7,6 +7,31 @@ export default function NavAuth() {
   const { data: session } = useSession();
   const [showDevSignIn, setShowDevSignIn] = useState(false);
   const [devName, setDevName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleDevSignIn() {
+    const name = devName.trim();
+    if (!name) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await signIn("credentials", {
+        name,
+        redirect: false,
+      });
+      if (result?.error) {
+        setError(result.error);
+      } else if (result?.ok) {
+        setShowDevSignIn(false);
+        setDevName("");
+      }
+    } catch {
+      setError("Sign in failed. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   if (session?.user) {
     return (
@@ -49,31 +74,35 @@ export default function NavAuth() {
           <input
             type="text"
             value={devName}
-            onChange={(e) => setDevName(e.target.value)}
+            onChange={(e) => { setDevName(e.target.value); setError(""); }}
             placeholder="Your name..."
             onKeyDown={(e) => {
-              if (e.key === "Enter" && devName.trim()) {
-                signIn("credentials", { name: devName.trim() });
+              if (e.key === "Enter" && devName.trim() && !loading) {
+                handleDevSignIn();
               }
             }}
-            className="w-28 sm:w-36 bg-white/[0.06] border border-white/[0.12] rounded px-2 py-1 text-[10px] font-mono text-white/80 placeholder:text-white/20 outline-none focus:border-white/30"
+            disabled={loading}
+            className="w-28 sm:w-36 bg-white/[0.06] border border-white/[0.12] rounded px-2 py-1 text-[10px] font-mono text-white/80 placeholder:text-white/20 outline-none focus:border-white/30 disabled:opacity-40"
             autoFocus
           />
           <button
-            onClick={() => {
-              if (devName.trim()) signIn("credentials", { name: devName.trim() });
-            }}
-            disabled={!devName.trim()}
+            onClick={handleDevSignIn}
+            disabled={!devName.trim() || loading}
             className="text-[10px] font-mono text-white/50 hover:text-white/80 border border-white/10 px-2 py-1 rounded disabled:opacity-20 transition-all"
           >
-            go
+            {loading ? "..." : "go"}
           </button>
           <button
-            onClick={() => { setShowDevSignIn(false); setDevName(""); }}
+            onClick={() => { setShowDevSignIn(false); setDevName(""); setError(""); }}
             className="text-[10px] font-mono text-white/20 hover:text-white/40 transition-colors"
           >
             ✕
           </button>
+          {error && (
+            <span className="absolute top-full mt-1 text-[8px] font-mono text-rose-400/70">
+              {error}
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -80,6 +80,12 @@ export default function RootLayout({
                 Probe
               </Link>
               <Link
+                href="/about"
+                className="text-white/40 hover:text-white/80 transition-colors"
+              >
+                About
+              </Link>
+              <Link
                 href="/history"
                 className="text-white/40 hover:text-white/80 transition-colors"
               >

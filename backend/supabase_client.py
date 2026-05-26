@@ -65,6 +65,34 @@ async def save_probe(session_data: dict) -> Optional[str]:
         return None
 
 
+async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
+    """Retrieve a full probe result from Supabase by its session_id (stored in raw_result JSONB)."""
+    client = get_supabase()
+    if not client:
+        return None
+
+    def _fetch():
+        result = client.table("probes") \
+            .select("*") \
+            .filter("raw_result->>session_id", "eq", session_id) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            # Reconstruct TopologyReport from stored columns + raw_result
+            raw = row.get("raw_result") or {}
+            raw["session_id"] = session_id
+            return raw
+        return None
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        print(f"[SUPABASE] Failed to fetch probe by session_id: {e}")
+        return None
+
+
 async def get_probe_history(limit: int = 10) -> list:
     """Get recent probes with key fields (for leaderboard/admin)."""
     client = get_supabase()

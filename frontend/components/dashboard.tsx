@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Send, Loader2, Globe, Smartphone, Cookie, ExternalLink,
   AlertTriangle, Network, ChevronDown, ChevronRight,
-  Shield, Download, Signal, Zap, X, Radio, Info,
+  Shield, Download, Signal, Zap, X, Radio, Info, Share2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import AuthButton from "./auth-button";
@@ -36,7 +36,7 @@ interface Agent {
   variables: Record<string, string>; network_tier?: number; proxy_type?: string;
 }
 
-interface TopologyReport {
+export interface TopologyReport {
   session_id: string; target_url: string; target_name: string;
   timestamp: string; status: string;
   total_agents: number; successful_agents: number;
@@ -381,9 +381,21 @@ function Leaderboard() {
 
 /* ─── Result Card ──────────────────────────────────────────────────────── */
 
-function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
+export function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+
+  const copyShareLink = () => {
+    const sid = report.session_id;
+    if (!sid) return;
+    const url = `${window.location.origin}/share/${sid}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 2000);
+    }).catch(() => {});
+  };
+  const [showComparison, setShowComparison] = useState(false);
   const histData = buildHistogram(report.all_prices);
   const cls = clsColor(report.topology_class);
   const analysis = (report as any)._analysis;
@@ -408,6 +420,10 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
         <div className="flex items-center gap-1">
           <button onClick={()=>exportJSON(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="JSON"><Download className="w-3 h-3"/></button>
           <button onClick={()=>exportCSV(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70 text-[8px] font-mono" title="CSV">CSV</button>
+          <div className="relative">
+            <button onClick={copyShareLink} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Copy share link"><Share2 className="w-3 h-3"/></button>
+            {copyToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Link copied!</span>}
+          </div>
           {onClose && <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-white/50 ml-1 text-[10px]">X</button>}
         </div>
       </div>
@@ -457,6 +473,73 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
               </div>
             );
           })}
+        </div>
+
+        {/* Comparison Table */}
+        <div>
+          <button onClick={() => setShowComparison(!showComparison)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+            <span>Variable Comparison</span>
+            {showComparison ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {showComparison && report.gradients.length > 0 && (
+            <div className="overflow-x-auto -mx-1 mt-2">
+              <table className="w-full text-[9px] font-mono border-collapse">
+                <thead>
+                  <tr className="text-white/25 font-light">
+                    <th className="text-left py-2 px-2 whitespace-nowrap">Variable</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">High State</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Low State</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">Delta</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">&Delta;%</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Sig</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.gradients.map(g => (
+                    <tr key={g.variable_name} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white/30">{VAR_ICONS[g.variable_name] || null}</span>
+                          <span className="text-white/50 font-light capitalize">{g.variable_name.replace(/_/g, " ")}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_high}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-neon/80">${g.mean_price_high.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_high})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_low}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-white/50">${g.mean_price_low.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_low})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? (g.delta > 0 ? "text-rose-400/70" : "text-neon/70") : "text-white/15"}>
+                          {fmtDelta(g.delta)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? "text-white/40" : "text-white/12"}>
+                          {g.delta_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        {g.significant ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-neon/10 text-neon/80 text-[8px] font-bold" title="Statistically significant (p &lt; 0.05)">&#10003;</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/[0.03] text-white/15 text-[8px]" title="Not statistically significant">&mdash;</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <AgentGrid report={report} />

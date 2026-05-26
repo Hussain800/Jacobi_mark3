@@ -65,6 +65,7 @@ class ProbeAgentStatus(BaseModel):
     variables: Dict[str, str] = Field(default_factory=dict)
     network_tier: Optional[int] = None
     proxy_type: Optional[str] = None
+    retried: bool = False
 
 
 class TopologyReport(BaseModel):
@@ -166,6 +167,196 @@ PRICE_RANGES = {
     "default": {"min": 5, "max": 50000},
 }
 
+# ─── Site-Specific Price Parser Registry ──────────────────────────────────
+# Allows registering custom parsers for domains where the generic
+# CSS-selector approach fails (e.g. Google Flights, Expedia, Shopify sites).
+
+_SITE_PARSERS: Dict[str, callable] = {}
+
+
+def register_site_parser(domain: str, parser_func: callable):
+    """Register a custom price-parsing function for a specific domain.
+
+    The parser receives (html: str, url: str) and must return List[float].
+    When `parse_page_prices` is called, registered parsers are checked
+    first (by substring match against the URL) before the default logic.
+    """
+    _SITE_PARSERS[domain] = parser_func
+
+
+# ─── Built-in Site Parsers ───────────────────────────────────────────────
+
+def _parse_google_flights(html: str, url: str) -> List[float]:
+    """Extract flight prices from Google Flights result pages.
+
+    Relies on regex patterns for currency amounts near
+    'total', 'price', and 'fare' keywords in visible text.
+    """
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    results: List[float] = []
+    visible = soup.get_text()
+    currency_code, rate = _detect_currency(html, url)
+    pr = PRICE_RANGES["default"]
+
+    # Look for price amounts close to flight-related keyword anchors
+    for kw in ["total", "price", "fare", "round trip", "one way", "per person"]:
+        idx = 0
+        while True:
+            idx = visible.lower().find(kw, idx)
+            if idx == -1:
+                break
+            # Search a 120-char window around the keyword
+            window = visible[max(0, idx - 20):idx + len(kw) + 100]
+            for m in re.finditer(r'\$\s*(\d{2,4}(?:,\d{3})*(?:\.\d{2})?)', window):
+                try:
+                    v = float(m.group(1).replace(",", ""))
+                    if pr["min"] <= v <= pr["max"]:
+                        results.append(round(v * rate, 2))
+                except ValueError:
+                    continue
+            idx += len(kw)
+
+    return sorted(set(results))
+
+
+def _parse_expedia(html: str, url: str) -> List[float]:
+    """Extract hotel/flight prices from Expedia pages.
+
+    Targets data-testid price attributes and JSON-LD structured data
+    which Expedia renders reliably across its geo-variants.
+    """
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    results: List[float] = []
+    currency_code, rate = _detect_currency(html, url)
+    pr = PRICE_RANGES["expedia"]
+
+    # data-testid price elements (Expedia's primary price rendering)
+    for sel in [
+        '[data-testid="price-summary"]',
+        '[data-testid*="price"]',
+        '[data-testid*="total"]',
+        '[data-stid*="price"]',
+        'span[class*="uitk-lockup-price"]',
+        'div[class*="uitk-price"]',
+        '[data-testid*="offer-card"] [class*="price"]',
+    ]:
+        for el in soup.select(sel):
+            t = el.get_text(strip=True)
+            if t and len(t) < 80:
+                n = _parse_number(t)
+                if n and pr["min"] <= n <= pr["max"]:
+                    results.append(round(n * rate, 2))
+
+    # JSON-LD structured data
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.string)
+            items = [data] if isinstance(data, dict) else data if isinstance(data, list) else []
+            for item in items:
+                if isinstance(item, dict):
+                    for key in ["price", "lowPrice", "highPrice", "totalPrice"]:
+                        v = _parse_number(str(item.get(key, "0")))
+                        if v and v > 5:
+                            cur = str(item.get("priceCurrency", currency_code))
+                            r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+                            results.append(round(v * r, 2))
+        except Exception:
+            pass
+
+    return sorted(set(results))
+
+
+def _parse_generic_ecommerce(html: str, url: str) -> List[float]:
+    """Extract prices from generic e-commerce pages via meta tags and JSON-LD.
+
+    Many Shopify/WooCommerce/BigCommerce sites expose prices through
+    og:price:amount / product:price:amount meta tags and JSON-LD Product
+    schemas. This parser targets those before falling back to CSS selectors.
+    """
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    results: List[float] = []
+    currency_code, rate = _detect_currency(html, url)
+    pr = PRICE_RANGES["default"]
+
+    # Meta tag price hints (og:price:amount, product:price:amount, etc.)
+    for meta in soup.find_all("meta"):
+        prop = (meta.get("property", "") or meta.get("name", "")).lower()
+        content = meta.get("content", "")
+        if not content:
+            continue
+        if any(kw in prop for kw in ["price:amount", "product:price:amount",
+                                       "sale_price:amount", "og:price:amount"]):
+            n = _parse_number(content)
+            if n and n > 0.5:
+                # Check for currency in sibling meta
+                cur = "USD"
+                for sibling in soup.find_all("meta"):
+                    sprop = (sibling.get("property", "") or sibling.get("name", "")).lower()
+                    if sprop.replace(":amount", ":currency") == prop.replace(":amount", ":currency"):
+                        cur = sibling.get("content", "USD").upper()
+                        break
+                r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+                if pr["min"] <= (n * r) <= pr["max"]:
+                    results.append(round(n * r, 2))
+
+    # JSON-LD Product/Offer structured data
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.string)
+            items = [data] if isinstance(data, dict) else data if isinstance(data, list) else []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                # Direct price on Product
+                for key in ["price", "lowPrice", "highPrice"]:
+                    v = _parse_number(str(item.get(key, "0")))
+                    if v and v > 0.5:
+                        cur = str(item.get("priceCurrency", "USD"))
+                        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+                        if pr["min"] <= (v * r) <= pr["max"]:
+                            results.append(round(v * r, 2))
+                # Nested offers
+                offers = item.get("offers", item)
+                if isinstance(offers, dict):
+                    p = _parse_number(str(offers.get("price", "0")))
+                    if p and p > 0.5:
+                        cur = str(offers.get("priceCurrency", "USD"))
+                        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+                        if pr["min"] <= (p * r) <= pr["max"]:
+                            results.append(round(p * r, 2))
+                elif isinstance(offers, list):
+                    for offer in offers:
+                        if isinstance(offer, dict):
+                            p = _parse_number(str(offer.get("price", "0")))
+                            if p and p > 0.5:
+                                cur = str(offer.get("priceCurrency", "USD"))
+                                r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+                                if pr["min"] <= (p * r) <= pr["max"]:
+                                    results.append(round(p * r, 2))
+        except Exception:
+            pass
+
+    return sorted(set(results))
+
+
+# Register the built-in site-specific parsers
+register_site_parser("google.com/travel/flights", _parse_google_flights)
+register_site_parser("google.travel", _parse_google_flights)
+register_site_parser("expedia.", _parse_expedia)
+register_site_parser("hotels.com", _parse_expedia)  # Expedia-owned, same markup
+register_site_parser("vrbo.com", _parse_expedia)      # Expedia-owned
+register_site_parser("orbitz.com", _parse_expedia)    # Expedia-owned
+register_site_parser("travelocity.com", _parse_expedia)
+for ecom_domain in ["shopify.com", "myshopify.com", "bigcommerce.com",
+                     "woocommerce", "etsy.com", "ebay.com", "walmart.com",
+                     "target.com", "bestbuy.com", "homedepot.com",
+                     "costco.com", "wayfair.com", "aliexpress.com",
+                     "alibaba.com", "rakuten.com", "newegg.com"]:
+    register_site_parser(ecom_domain, _parse_generic_ecommerce)
+
 
 def _parse_number(text: str) -> Optional[float]:
     digits = re.sub(r'[^\d.]', '', text.replace(',', ''))
@@ -195,6 +386,18 @@ def parse_page_prices(html: str, url: str) -> List[float]:
     soup = BeautifulSoup(html, "lxml")
     url_lower = url.lower()
     results: List[float] = []
+
+    # Check site-specific parser registry first — registered parsers take
+    # precedence over the generic CSS-selector fallback below.
+    for domain_fragment, parser_func in _SITE_PARSERS.items():
+        if domain_fragment in url_lower:
+            try:
+                site_results = parser_func(html, url)
+                if site_results:
+                    return sorted(set(round(p, 2) for p in site_results))
+            except Exception:
+                pass  # parser failed — fall through to default logic
+
     currency_code, rate = _detect_currency(html, url)
     pr = PRICE_RANGES["default"]
     for domain, r in PRICE_RANGES.items():
@@ -550,11 +753,26 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
-        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
+        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"),
+        retried=False)
     try:
         r = await bd.probe_url(url, cfg, 60.0)
         if not r["success"]:
-            s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
+            err = r.get("error", "Unknown")
+            elapsed = r.get("elapsed_ms", 0)
+            geo = cfg.get("geo", "")
+            # Non-US agents that timed out get one retry with a datacenter proxy at 15s
+            if "Timeout" in err and not geo.startswith("US"):
+                retry_cfg = dict(cfg)
+                retry_cfg["proxy_type"] = "datacenter"
+                s["retried"] = True
+                s["proxy_type"] = "datacenter"
+                r = await bd.probe_url(url, retry_cfg, 15.0)
+                if not r["success"]:
+                    s["status"] = "failed"; s["error_message"] = err; s["response_time_ms"] = elapsed; return s
+                # Retry succeeded — fall through to success handling below
+            else:
+                s["status"] = "failed"; s["error_message"] = err; s["response_time_ms"] = elapsed; return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
         detected, signal = check_bot_detection(r.get("text", ""))
         if detected:
@@ -789,7 +1007,7 @@ def build_agent_list(session: dict) -> list:
             error_message=a.get("error_message"), variables=a.get("variables",{}),
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
             is_control=a.get("is_control", False), network_tier=a.get("network_tier"),
-            proxy_type=a.get("proxy_type"),
+            proxy_type=a.get("proxy_type"), retried=a.get("retried", False),
         ))
     return agents
 
@@ -801,6 +1019,45 @@ async def get_result(session_id: str):
     session = SESSION_STORE.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    agents = build_agent_list(session)
+    return dict(
+        session_id=session["session_id"], target_url=session["target_url"],
+        target_name=session["target_name"], timestamp=session["timestamp"],
+        status=session["status"], total_agents=session["total_agents"],
+        successful_agents=session["successful_agents"], failed_agents=session["failed_agents"],
+        detected_agents=session["detected_agents"], elapsed_seconds=session["elapsed_seconds"],
+        control_stability=session["control_stability"], baseline_price=session["baseline_price"],
+        mean_price=session["mean_price"], all_prices=session["all_prices"],
+        price_range=session["price_range"], max_price_spread=session["max_price_spread"],
+        max_price_spread_pct=session["max_price_spread_pct"], gradients=session["gradients"],
+        discrimination_index=session["discrimination_index"], topology_class=session["topology_class"],
+        summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
+        min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
+        discrimination_score=session.get("discrimination_score", 0),
+        error=session.get("error"),
+    )
+
+
+@app.get("/api/share/{session_id}")
+async def get_share_result(session_id: str):
+    """Retrieve a probe result for sharing. Tries Supabase first, falls back to in-memory."""
+    # Demo static
+    if session_id == "demo_session_static":
+        return DEMO_RESULT
+
+    # Try Supabase
+    try:
+        from supabase_client import get_probe_by_session_id
+        db_result = await get_probe_by_session_id(session_id)
+        if db_result:
+            return db_result
+    except Exception as e:
+        print(f"[SHARE] Supabase lookup failed: {e}")
+
+    # Fallback to in-memory SESSION_STORE
+    session = SESSION_STORE.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Share link expired or not found")
     agents = build_agent_list(session)
     return dict(
         session_id=session["session_id"], target_url=session["target_url"],

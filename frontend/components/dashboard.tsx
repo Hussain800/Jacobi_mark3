@@ -83,7 +83,7 @@ function localPriceWithUSD(usd: number, ccy: { code: string; symbol: string; rat
 }
 
 interface Gradient { variable_name: string; state_high: string; state_low: string; mean_price_high: number; mean_price_low: number; delta: number; delta_pct: number; pooled_std: number; t_statistic: number; significant: boolean; n_high: number; n_low: number; }
-interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; }
+interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; network_tier?: number; proxy_type?: string; }
 interface TopologyReport { session_id: string; target_url: string; target_name: string; timestamp: string; status: string; total_agents: number; successful_agents: number; failed_agents: number; detected_agents: number; elapsed_seconds: number; control_stability: number; baseline_price: number | null; mean_price: number | null; all_prices: Record<string, number | null>; price_range: [number, number] | null; max_price_spread: number | null; max_price_spread_pct: number | null; gradients: Gradient[]; discrimination_index: number; topology_class: string; summary: string; max_discrimination_scenario: string; min_discrimination_scenario: string; agents: Agent[]; error: string | null; }
 
 interface ChatMessage {
@@ -570,6 +570,93 @@ export default function JacobiChat() {
                     </div>
                   );
                 })()}
+
+                {/* ── NETWORK FINGERPRINT CHART ── */}
+                {(() => {
+                  const agents = report.agents.filter(a => a.status === "success" && a.price);
+                  const dc = agents.filter(a => a.network_tier === 0).map(a => a.price!);
+                  const res = agents.filter(a => a.network_tier === 1).map(a => a.price!);
+                  const mob = agents.filter(a => a.network_tier === 2).map(a => a.price!);
+                  const dcAvg = dc.length ? Math.round(dc.reduce((a,b)=>a+b,0)/dc.length) : 0;
+                  const resAvg = res.length ? Math.round(res.reduce((a,b)=>a+b,0)/res.length) : 0;
+                  const mobAvg = mob.length ? Math.round(mob.reduce((a,b)=>a+b,0)/mob.length) : 0;
+                  const hasNetVar = dc.length && res.length;
+                  const netData = [];
+                  if (dc.length) netData.push({ name: "Datacenter", price: dcAvg, fill: "#6366f1" });
+                  if (res.length) netData.push({ name: "Residential", price: resAvg, fill: "#a5b4fc" });
+                  if (mob.length) netData.push({ name: "Mobile", price: mobAvg, fill: "#f59e0b" });
+                  return hasNetVar ? (
+                    <div className="border border-neutral-900 rounded p-3">
+                      <div className="text-[9px] font-mono text-white/25 uppercase tracking-[0.15em] mb-3">Network Fingerprint Variance</div>
+                      <div className="h-36">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={netData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
+                            <XAxis dataKey="name" tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 9, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
+                            <YAxis tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 9, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} domain={[0, 'dataMax + 20']} />
+                            <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "10px", fontFamily: "monospace", color: "#fff" }} formatter={(v: number) => [localPriceWithUSD(v, userCurrency), "Avg"]} />
+                            <Bar dataKey="price" radius={[2,2,0,0]} maxBarSize={50}>
+                              {netData.map((e,i) => <Cell key={i} fill={e.fill} fillOpacity={0.8} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* ── VARIABLE IMPACT GRID ── */}
+                <div className="border border-neutral-900 rounded overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-neutral-900 bg-black/40">
+                    <span className="text-[9px] font-mono text-white/25 uppercase tracking-[0.15em]">Price Impact by Variable</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-px bg-neutral-900">
+                    {[
+                      ...report.gradients.filter(g => g.variable_name !== "network_tier").map(g => ({
+                        label: g.variable_name === "cookie_profile" ? "Cookie Profile" : g.variable_name.charAt(0).toUpperCase() + g.variable_name.slice(1),
+                        delta: Math.round(g.delta),
+                        significant: g.significant,
+                        highState: g.state_high,
+                        lowState: g.state_low,
+                        pct: g.delta_pct.toFixed(1),
+                      })),
+                      ...(() => {
+                        const agents = report.agents.filter(a => a.status === "success" && a.price);
+                        const dc = agents.filter(a => a.network_tier === 0).map(a => a.price!);
+                        const res = agents.filter(a => a.network_tier === 1).map(a => a.price!);
+                        const mob = agents.filter(a => a.network_tier === 2).map(a => a.price!);
+                        const dcAvg = dc.length ? Math.round(dc.reduce((a,b)=>a+b,0)/dc.length) : 0;
+                        const resAvg = res.length ? Math.round(res.reduce((a,b)=>a+b,0)/res.length) : 0;
+                        const mobAvg = mob.length ? Math.round(mob.reduce((a,b)=>a+b,0)/mob.length) : 0;
+                        const netDelta = resAvg ? mobAvg - resAvg : 0;
+                        return [{
+                          label: "Network Tier", delta: netDelta,
+                          significant: Math.abs(netDelta) > 10,
+                          highState: "Mobile 4G/5G", lowState: "Residential",
+                          pct: resAvg ? (netDelta/resAvg*100).toFixed(1) : "0",
+                        }];
+                      })(),
+                    ].filter(Boolean).map((v: any, i) => {
+                      const isPremium = v.delta > 0;
+                      const intensity = Math.min(Math.abs(v.delta) / 50, 1);
+                      const barColor = v.significant ? (isPremium ? `rgba(239,68,68,${0.3 + intensity * 0.5})` : `rgba(52,211,153,${0.3 + intensity * 0.5})`) : "rgba(255,255,255,0.06)";
+                      const textColor = v.significant ? (isPremium ? "text-red-400" : "text-emerald-400") : "text-white/20";
+                      return (
+                        <div key={v.label} className="bg-black p-3 relative overflow-hidden">
+                          <div className="absolute bottom-0 left-0 h-[2px] transition-all" style={{ width: `${Math.min(Math.abs(v.delta) * 2, 100)}%`, background: barColor }} />
+                          <div className="text-[8px] font-mono text-white/25 mb-2 uppercase tracking-wider">{v.label}</div>
+                          <div className={`text-lg font-mono font-light ${textColor}`}>{v.significant ? (isPremium ? `+$${v.delta}` : `-$${Math.abs(v.delta)}`) : "—"}</div>
+                          <div className="text-[8px] font-mono text-white/15 mt-1">
+                            {v.significant ? `${v.pct}% ${isPremium ? "premium" : "discount"}` : "not significant"}
+                          </div>
+                          <div className="text-[7px] font-mono text-white/10 mt-1 leading-tight">
+                            {v.highState} → {v.lowState}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 {/* ── 24-AGENT GRID ── */}
                 <div>

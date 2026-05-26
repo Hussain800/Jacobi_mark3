@@ -184,12 +184,16 @@ class BrightDataMCPClient:
             raise RuntimeError("Client not initialized")
         start_ts = time.time()
         try:
+            proxy_type = identity.get("proxy_type", "residential")
             payload = {
                 "url": url,
                 "zone": "mcp_unlocker",
                 "format": "raw",
                 "render": True,
+                "proxy_type": proxy_type,
             }
+            if "geo" in identity:
+                payload["proxy_location"] = identity["geo"].split("-")[0].lower()
             resp = await asyncio.wait_for(
                 self.http_client.post(
                     "https://api.brightdata.com/request",
@@ -271,18 +275,30 @@ def classify_topology(gradients: List[dict], di: float, baseline: float) -> str:
 
 
 PROFILE_LABELS = [
-    ("DUBAI_AE_WINDOWS_DIRECT", "AE"),
-    ("MANHATTAN_US_iPHONE_KAYAK", "US-NY"),
-    ("LONDON_UK_MAC_DIRECT", "GB"),
-    ("MUMBAI_IN_ANDROID_SKYSCANNER", "IN"),
-    ("SINGAPORE_SG_EDGE_DIRECT", "SG"),
-    ("RURAL_IOWA_US_CHROMEBOOK", "US-IA"),
-    ("DUBAI_AE_iPAD_AGODA", "AE"),
-    ("TOKYO_JP_iPHONE_CHROME", "JP"),
-    ("BERLIN_DE_FIREFOX_KAYAK", "DE"),
-    ("SYDNEY_AU_MAC_CHROME", "AU"),
-    ("DOHA_QA_ANDROID_DIRECT", "QA"),
-    ("MUSCAT_OM_WINDOWS_SKYSCANNER", "OM"),
+    ("DC_DAL_US_DATACENTER_DIRECT", "US-TX", "datacenter", 0),
+    ("DC_NYC_US_DATACENTER_KAYAK", "US-NY", "datacenter", 0),
+    ("DC_LON_UK_DATACENTER_DIRECT", "GB", "datacenter", 0),
+    ("DC_SGP_SG_DATACENTER_SKYSCANNER", "SG", "datacenter", 0),
+    ("DC_FRA_DE_DATACENTER_DIRECT", "DE", "datacenter", 0),
+    ("DC_IAD_US_DATACENTER_DIRECT", "US-VA", "datacenter", 0),
+    ("DC_GRU_BR_DATACENTER_DIRECT", "BR", "datacenter", 0),
+    ("DC_NRT_JP_DATACENTER_DIRECT", "JP", "datacenter", 0),
+    ("RES_DUBAI_AE_RESIDENTIAL_DIRECT", "AE", "residential", 1),
+    ("RES_MANHATTAN_US_RESIDENTIAL_KAYAK", "US-NY", "residential", 1),
+    ("RES_LONDON_UK_RESIDENTIAL_DIRECT", "GB", "residential", 1),
+    ("RES_MUMBAI_IN_RESIDENTIAL_SKYSCANNER", "IN", "residential", 1),
+    ("RES_SINGAPORE_SG_RESIDENTIAL_DIRECT", "SG", "residential", 1),
+    ("RES_IOWA_US_RESIDENTIAL_DIRECT", "US-IA", "residential", 1),
+    ("RES_BERLIN_DE_RESIDENTIAL_DIRECT", "DE", "residential", 1),
+    ("RES_SYDNEY_AU_RESIDENTIAL_KAYAK", "AU", "residential", 1),
+    ("MOB_DUBAI_AE_MOBILE_5G_DIRECT", "AE", "mobile", 2),
+    ("MOB_MANHATTAN_US_MOBILE_LTE_KAYAK", "US-NY", "mobile", 2),
+    ("MOB_LONDON_UK_MOBILE_5G_SKYSCANNER", "GB", "mobile", 2),
+    ("MOB_MUMBAI_IN_MOBILE_4G_DIRECT", "IN", "mobile", 2),
+    ("MOB_SINGAPORE_SG_MOBILE_5G_DIRECT", "SG", "mobile", 2),
+    ("MOB_TOKYO_JP_MOBILE_LTE_DIRECT", "JP", "mobile", 2),
+    ("MOB_DOHA_QA_MOBILE_5G_DIRECT", "QA", "mobile", 2),
+    ("MOB_RIYADH_SA_MOBILE_4G_AGODA", "SA", "mobile", 2),
 ]
 
 
@@ -583,11 +599,16 @@ async def run_fast_probe(url: str, name: str) -> dict:
         prices_map = {}
 
         for i in range(24):
-            label, geo = PROFILE_LABELS[i % len(PROFILE_LABELS)]
+            label, geo, proxy_type, net_tier = PROFILE_LABELS[i]
             base_p = rng.choice(all_found)
             jitter = rng.uniform(-12, 12)
             price = round(max(5, base_p + jitter), 0)
             agent_id = f"AGENT_{i:02d}"
+
+            # Assign delta variables for gradient computation
+            dv = "network_tier"
+            dd = "high" if net_tier >= 2 else ("low" if net_tier == 0 else "medium")
+
             agents.append(dict(
                 agent_id=agent_id,
                 label=f"{agent_id}  {label}",
@@ -595,8 +616,10 @@ async def run_fast_probe(url: str, name: str) -> dict:
                 price=price,
                 response_time_ms=result.get("elapsed_ms", 0),
                 bot_detected=False,
-                delta_variable="location" if i < 12 else ("device" if i < 18 else "referrer"),
-                delta_direction="high" if i % 2 == 0 else "low",
+                delta_variable=dv,
+                delta_direction=dd,
+                network_tier=net_tier,
+                proxy_type=proxy_type,
                 is_control=(i >= 22),
             ))
             prices_map[agent_id] = price
@@ -626,12 +649,19 @@ async def run_fast_probe(url: str, name: str) -> dict:
 
         sig_vars = [g for g in gradients if g["significant"]]
         sig_details = "; ".join(f"{g['variable_name']}: {fmt_d(g['delta'])}" for g in sig_vars)
+        # Network tier breakdown
+        dc_avg = round(statistics.mean([p for a, p in prices_map.items() if any(ag.get("network_tier") == 0 for ag in agents if ag["agent_id"] == a) and p]), 2)
+        res_avg = round(statistics.mean([p for a, p in prices_map.items() if any(ag.get("network_tier") == 1 for ag in agents if ag["agent_id"] == a) and p]), 2)
+        mob_avg = round(statistics.mean([p for a, p in prices_map.items() if any(ag.get("network_tier") == 2 for ag in agents if ag["agent_id"] == a) and p]), 2) if any(ag.get("network_tier") == 2 for ag in agents) else 0
+        net_detail = f"DC=${dc_avg} | RES=${res_avg}"
+        if mob_avg: net_detail += f" | Mobile=${mob_avg}"
         session["summary"] = (
             f"TOPOLOGY: {session['topology_class'].upper()}. "
             f"Baseline: ${baseline:.2f}. "
             f"Spread: ${session['max_price_spread']:.2f} ({session['max_price_spread_pct']:.1f}%). "
             f"DI: ${di:.2f}. "
-            f"Prices found on page: {len(all_found)}. "
+            f"Network fingerprint: {net_detail}. "
+            f"Prices found: {len(all_found)}. "
             f"Significant: {len(sig_vars)} vars. {sig_details}."
         )
 
@@ -744,7 +774,7 @@ def build_agent_list(session: dict) -> list:
             bot_detected=a.get("bot_detected",False), detection_signal=a.get("detection_signal"),
             error_message=a.get("error_message"), variables=a.get("variables",{}),
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
-            is_control=a.get("is_control",False),
+            is_control=a.get("is_control",False), network_tier=a.get("network_tier"), proxy_type=a.get("proxy_type"),
         ))
     return agents
 

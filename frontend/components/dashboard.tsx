@@ -316,46 +316,47 @@ export default function JacobiChat() {
 
             {/* ── LANDING HERO ── */}
             {!report && !running && !messages.length && (
-              <div className="pt-6 pb-2">
-                <div className="text-center mb-6">
-                  <div className="w-14 h-14 rounded-2xl border border-neutral-800 flex items-center justify-center mx-auto mb-3 bg-white/[0.02]">
-                    <Network className="w-6 h-6 text-white/30" />
+              <div className="pt-4 pb-2">
+                <div className="text-center mb-5">
+                  <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
+                    <Network className="w-5 h-5 text-white/40" />
                   </div>
-                  <h1 className="text-base font-light tracking-tight text-white/60 mb-1">JACOBI</h1>
-                  <p className="text-[10px] font-mono text-white/15 mb-5">Paste a URL to probe or ask about pricing data</p>
+                  <h1 className="text-xl font-thin tracking-tight text-white/50 mb-1">JACOBI</h1>
+                  <p className="text-[10px] font-mono text-white/12">Paste a URL or ask about pricing data</p>
                 </div>
 
-                {/* Market Overview Ticker */}
-                <div className="border border-neutral-900 rounded overflow-hidden mb-3 bg-black/40">
-                  <div className="px-3 py-1.5 border-b border-neutral-900 bg-black/40">
-                    <span className="text-[7px] font-mono text-white/15 uppercase tracking-[0.15em]">Market Rates</span>
+                {/* Market Rates */}
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden mb-3">
+                  <div className="px-4 py-2 border-b border-white/[0.04]">
+                    <span className="text-[9px] font-mono text-white/20 tracking-wider">FX Rates</span>
                   </div>
-                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-px bg-neutral-900">
+                  <div className="grid grid-cols-4 gap-px bg-white/[0.04]">
                     {[
-                      { pair: "USD/AED", bid: 3.67, ask: 3.67, chg: "+0.00%" },
-                      { pair: "USD/INR", bid: 83.05, ask: 83.06, chg: "-0.12%" },
-                      { pair: "USD/GBP", bid: 0.79, ask: 0.79, chg: "+0.08%" },
-                      { pair: "USD/EUR", bid: 0.92, ask: 0.92, chg: "-0.05%" },
-                      { pair: "USD/JPY", bid: 149.2, ask: 149.3, chg: "+0.22%" },
-                      { pair: "USD/SGD", bid: 1.35, ask: 1.35, chg: "-0.03%" },
-                      { pair: "USD/TRY", bid: 30.5, ask: 30.6, chg: "+0.45%" },
-                      { pair: "USD/BRL", bid: 5.05, ask: 5.06, chg: "-0.18%" },
+                      { pair: "USD/AED", bid: "3.6729", chg: "+0.01", dir: "up" },
+                      { pair: "USD/INR", bid: "83.05", chg: "-0.12", dir: "down" },
+                      { pair: "USD/GBP", bid: "0.7921", chg: "+0.08", dir: "up" },
+                      { pair: "USD/EUR", bid: "0.9218", chg: "-0.05", dir: "down" },
+                      { pair: "USD/JPY", bid: "149.28", chg: "+0.22", dir: "up" },
+                      { pair: "USD/SGD", bid: "1.3504", chg: "-0.03", dir: "down" },
+                      { pair: "USD/CHF", bid: "0.8812", chg: "+0.15", dir: "up" },
+                      { pair: "USD/TRY", bid: "30.54", chg: "+0.45", dir: "up" },
                     ].map(p => (
-                      <div key={p.pair} className="bg-black/60 p-2 text-center">
-                        <div className="text-[7px] font-mono text-white/20">{p.pair}</div>
-                        <div className="text-[9px] font-mono text-white/60 mt-0.5">{p.bid.toFixed(p.bid < 10 ? 2 : p.bid < 100 ? 2 : 1)}</div>
-                        <div className={`text-[6px] font-mono ${p.chg.startsWith("+") ? "text-emerald-400/60" : "text-red-400/60"}`}>{p.chg}</div>
+                      <div key={p.pair} className="bg-black/40 px-3 py-2.5">
+                        <div className="text-[8px] font-mono text-white/20">{p.pair}</div>
+                        <div className="text-sm font-mono font-light text-white/60 mt-0.5 tracking-tight">{p.bid}</div>
+                        <div className={`text-[7px] font-mono mt-0.5 ${p.dir === "up" ? "text-emerald-400/60" : "text-red-400/60"}`}>{p.chg}%</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Market News */}
-                <div className="border border-neutral-900 rounded overflow-hidden bg-black/40">
-                  <div className="px-3 py-1.5 border-b border-neutral-900 bg-black/40">
-                    <span className="text-[7px] font-mono text-white/15 uppercase tracking-[0.15em]">Market Brief</span>
+                {/* Briefs */}
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden">
+                  <div className="px-4 py-2 border-b border-white/[0.04] flex items-center justify-between">
+                    <span className="text-[9px] font-mono text-white/20 tracking-wider">Briefs</span>
+                    <span className="text-[7px] font-mono text-white/10">5 items</span>
                   </div>
-                  <div className="divide-y divide-neutral-900">
+                  <div className="divide-y divide-white/[0.04]">
                     {[
                       { time: "09:45", head: "Oil extends gains as OPEC+ maintains output cuts", src: "Reuters" },
                       { time: "09:32", head: "Fed minutes signal cautious approach to rate cuts", src: "Bloomberg" },
@@ -363,20 +364,18 @@ export default function JacobiChat() {
                       { time: "08:55", head: "Gold holds above $2,350 as safe-haven demand persists", src: "CNBC" },
                       { time: "08:30", head: "Travel demand surges 18% YoY — airlines raise fares", src: "WSJ" },
                     ].map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.02] transition-colors">
-                        <span className="text-[7px] font-mono text-white/15 shrink-0 w-8">{item.time}</span>
-                        <span className="text-[9px] font-mono text-white/40 leading-tight flex-1 truncate">{item.head}</span>
-                        <span className="text-[6px] font-mono text-white/10 shrink-0">{item.src}</span>
+                      <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.02] transition-colors cursor-default">
+                        <span className="text-[8px] font-mono text-white/15 w-8 shrink-0">{item.time}</span>
+                        <span className="text-[10px] font-mono text-white/35 leading-tight truncate flex-1">{item.head}</span>
+                        <span className="text-[6px] font-mono text-white/10 shrink-0 uppercase tracking-wider">{item.src}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="text-center mt-4">
-                  <div className="flex items-center justify-center gap-2 text-[9px] font-mono text-white/10">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/50" />
-                    All systems operational · 24-Agent Matrix
-                  </div>
+                <div className="flex items-center justify-center gap-2 mt-4 text-[8px] font-mono text-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60" />
+                  24-Agent Matrix · BrightData MCP · Gemini
                 </div>
               </div>
             )}

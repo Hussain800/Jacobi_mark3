@@ -239,6 +239,12 @@ export default function JacobiChat() {
     const val = input.trim();
     if (!val || running || asking) return;
     setInput("");
+    // If input looks like a URL, always probe — don't route to Gemini
+    if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("www.") || val.includes(".com") || val.includes(".ae") || val.includes(".in") || val.includes(".uk")) {
+      execute(val);
+      return;
+    }
+    // Otherwise, if probe data exists, route questions to Gemini assistant
     if (chatContext) {
       setAsking(true);
       addMsg("user", val);

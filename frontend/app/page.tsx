@@ -348,6 +348,24 @@ export default function LandingPage() {
 
   return (
     <div className="hud-crt-screen min-h-screen bg-[#08090c] text-white overflow-x-hidden font-mono selection:bg-[#00d992]/20 selection:text-white">
+      <style>{`
+        :root { --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1); --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
+        .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.7s var(--ease-out-quart), transform 0.7s var(--ease-out-quart); }
+        .reveal.in { opacity: 1; transform: translateY(0); }
+        .reveal-delay-1 { transition-delay: 0.1s; }
+        .reveal-delay-2 { transition-delay: 0.2s; }
+        .reveal-delay-3 { transition-delay: 0.3s; }
+        .reveal-delay-4 { transition-delay: 0.4s; }
+        .hover-lift { transition: transform 0.3s var(--ease-out-quart), box-shadow 0.3s var(--ease-out-quart); }
+        .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,217,146,0.08); }
+        .btn-pulse { transition: transform 0.15s var(--ease-out-quart); }
+        .btn-pulse:active { transform: scale(0.96); }
+      `}</style>
       {/* ═══════════════ HERO WORKSTATION ═══════════════ */}
       <section className="relative min-h-[95vh] md:min-h-screen flex items-center px-4 sm:px-6 lg:px-8 pt-16 pb-12 overflow-hidden border-b border-white/[0.04]">
         
@@ -691,7 +709,7 @@ export default function LandingPage() {
           </div>
 
           <div className="space-y-6">
-            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01] hover-lift" style={{ animation: "slideUp 0.6s cubic-bezier(0.22,1,0.36,1) both" }}>
               <div className="shrink-0 w-12 h-12 rounded-lg bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center">
                 <Network className="w-5 h-5 text-emerald-400" />
               </div>
@@ -702,7 +720,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01] hover-lift" style={{ animation: "slideUp 0.6s cubic-bezier(0.22,1,0.36,1) both", animationDelay: "0.15s" }}>
               <div className="shrink-0 w-12 h-12 rounded-lg bg-blue-400/10 border border-blue-400/20 flex items-center justify-center">
                 <Eye className="w-5 h-5 text-blue-400" />
               </div>
@@ -713,7 +731,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01] hover-lift" style={{ animation: "slideUp 0.6s cubic-bezier(0.22,1,0.36,1) both", animationDelay: "0.3s" }}>
               <div className="shrink-0 w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
                 <BarChart3 className="w-5 h-5 text-amber-400" />
               </div>

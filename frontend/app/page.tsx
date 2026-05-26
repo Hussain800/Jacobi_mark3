@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import Tactical3DNetwork from "../components/Tactical3DNetwork";
+import MatricesCursor from "../components/MatricesCursor";
+import { useScrollReveal, StaggerReveal } from "../components/ScrollReveal";
 
 /* ─── Presets for Interactive Sandbox ────────────────────────────────── */
 
@@ -271,6 +273,9 @@ function VerticalStep({ step, title, desc, icon: Icon, isLast = false }: { step:
 
 export default function LandingPage() {
   const [statsRef, statsInView] = useInView(0.15);
+  const revealProps = useScrollReveal({ direction: "up", distance: 30 });
+  const simRevealProps = useScrollReveal({ direction: "up", distance: 24, delay: 100 });
+  const howRevealProps = useScrollReveal({ direction: "up", distance: 24, delay: 150 });
   const [heroVisible, setHeroVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [probeUrl, setProbeUrl] = useState("");
@@ -348,6 +353,7 @@ export default function LandingPage() {
 
   return (
     <div className="hud-crt-screen min-h-screen bg-[#08090c] text-white overflow-x-hidden font-mono selection:bg-[#00d992]/20 selection:text-white">
+      <MatricesCursor />
       {/* ═══════════════ HERO WORKSTATION ═══════════════ */}
       <section className="relative min-h-[95vh] md:min-h-screen flex items-center px-4 sm:px-6 lg:px-8 pt-16 pb-12 overflow-hidden border-b border-white/[0.04]">
         
@@ -675,7 +681,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════ VALUE PROPS SECTION ═══════════════ */}
-      <section className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04]">
+      <section ref={revealProps.ref} className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04]" style={revealProps.style}>
         <div className="max-w-6xl mx-auto">
           
           <div className="text-center mb-16">
@@ -729,7 +735,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════ DYNAMIC PARAMETER CALCULATOR ═══════════════ */}
-      <section className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04] bg-[#0c0d12]/20">
+      <section className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04] bg-[#0c0d12]/20" ref={simRevealProps.ref} style={simRevealProps.style}>
         <div className="max-w-5xl mx-auto">
           
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
@@ -905,7 +911,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════ HOW IT WORKS SECTION ═══════════════ */}
-      <section className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04]">
+      <section className="relative py-24 px-4 sm:px-6 lg:px-8 border-b border-white/[0.04]" ref={howRevealProps.ref} style={howRevealProps.style}>
         <div className="max-w-5xl mx-auto">
           
           <div className="text-center mb-16">

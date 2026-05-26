@@ -735,7 +735,7 @@ export default function JacobiTerminal() {
           updateLastAssistant({ status: "error", error: "Probe timed out", content: "Probe timed out after 60s." });
           setRunning(false);
         }
-      }, 60000);
+      }, 180000);
     } catch (e: any) {
       updateLastAssistant({ status: "error", error: e.message, content: `Error: ${e.message}` });
       setRunning(false);

@@ -207,8 +207,8 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 verdict.model_used = model_name
                 _analysis_cache[ck] = verdict
                 return verdict
-            except Exception:
-                pass  # Fall through to heuristic fallback
+            except Exception as e:
+                print(f"[GEMINI] API call failed (using statistical fallback): {e}")
 
     # Heuristic fallback (always works, no network needed)
     verdict = _fallback_verdict(probed)

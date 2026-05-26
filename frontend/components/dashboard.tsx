@@ -6,7 +6,8 @@ import {
   AlertTriangle, Network, ChevronDown, ChevronRight,
   Shield, Download, Signal, Zap, X, Radio, Info, Share2,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "../lib/supabase/client";
 import AuthButton from "./auth-button";
 import JacobiLogo from "./jacobi-logo";
 import DotMatrix from "./dot-matrix";
@@ -593,7 +594,21 @@ function FloatingOrbs() {
 /* ─── Main Chat Component ────────────────────────────────────────────── */
 
 export default function Terminal() {
-  const {data: session} = useSession();
+  const [user, setUser] = useState<User | null>(null);
+  const [supabase] = useState(() => createClient());
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (active) setUser(data.user ?? null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setUser(sess?.user ?? null);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
@@ -693,7 +708,7 @@ export default function Terminal() {
           <span className="text-[8px] text-white/12 font-mono hidden sm:inline font-light ml-2">/ Probe Interface</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-[8px] text-white/20 font-mono hidden sm:inline font-light">{session?.user?.email?.split("@")[0]||"guest"}</span>
+          <span className="text-[8px] text-white/20 font-mono hidden sm:inline font-light">{user?.email?.split("@")[0] || "guest"}</span>
           <AuthButton />
           <label className="flex items-center gap-1.5 cursor-pointer group">
             <div className={`w-6 h-3 rounded-full border transition-colors relative ${useCache?"bg-neon/20 border-neon/20":"bg-white/[0.04] border-white/[0.06]"}`}>

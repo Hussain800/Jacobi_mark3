@@ -9,9 +9,10 @@
   },
   "dependencies": {
     "@auth/core": "^0.37.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.0",
     "lucide-react": "^0.400.0",
     "next": "14.2",
-    "next-auth": "^5.0.0-beta.25",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "recharts": "^2.12.0",

@@ -588,6 +588,23 @@ export default function JacobiTerminal() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+  const saveConversation = useCallback((report: any) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem("jacobi-conversations") || "[]");
+      existing.unshift({
+        id: report.session_id,
+        title: (report.target_name || report.target_url || "Probe").slice(0, 50),
+        timestamp: Date.now(),
+        targetUrl: report.target_url,
+        targetName: report.target_name,
+        baselinePrice: report.baseline_price,
+        savings: report.max_price_spread,
+        topologyClass: report.topology_class,
+      });
+      localStorage.setItem("jacobi-conversations", JSON.stringify(existing.slice(0, 50)));
+    } catch {}
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -692,6 +709,7 @@ export default function JacobiTerminal() {
           if (data.status === "completed" || data.status === "failed") {
             if (pollRef.current) clearInterval(pollRef.current);
             if (data.status === "completed") {
+              saveConversation(data);
               // Fetch Gemini analysis for live probe results
               try {
                 const ar = await fetch(`${apiBase}/api/analyze`, {

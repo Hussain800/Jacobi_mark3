@@ -579,6 +579,56 @@ async def get_leaderboard(limit: int = 10):
         return []
 
 
+@app.get("/api/history")
+async def get_history(limit: int = 50):
+    """Return recent probe sessions. Tries Supabase first, falls back to in-memory store."""
+    sessions = []
+
+    # First try Supabase
+    try:
+        from supabase_client import get_probe_history
+        db_probes = await get_probe_history(limit=limit)
+        for p in db_probes:
+            sessions.append({
+                "session_id": p.get("id", ""),
+                "target_url": p.get("target_url", ""),
+                "target_name": p.get("target_name", ""),
+                "timestamp": p.get("created_at", ""),
+                "status": "completed",
+                "baseline_price": p.get("baseline_price"),
+                "max_price_spread": p.get("max_price_spread"),
+                "topology_class": p.get("topology_class"),
+                "discrimination_score": None,
+                "elapsed_seconds": None,
+                "successful_agents": None,
+                "total_agents": 24,
+            })
+    except Exception:
+        pass
+
+    # Fall back to in-memory store if Supabase returned nothing or failed
+    if not sessions:
+        for sid, session in SESSION_STORE.items():
+            if session.get("status") in ("completed", "failed"):
+                sessions.append({
+                    "session_id": sid,
+                    "target_url": session.get("target_url", ""),
+                    "target_name": session.get("target_name", ""),
+                    "timestamp": session.get("timestamp", ""),
+                    "status": session.get("status"),
+                    "baseline_price": session.get("baseline_price"),
+                    "max_price_spread": session.get("max_price_spread"),
+                    "topology_class": session.get("topology_class"),
+                    "discrimination_score": session.get("discrimination_score"),
+                    "elapsed_seconds": session.get("elapsed_seconds"),
+                    "successful_agents": session.get("successful_agents"),
+                    "total_agents": session.get("total_agents", 24),
+                })
+        sessions.sort(key=lambda s: str(s.get("timestamp", "")), reverse=True)
+
+    return sessions[:limit]
+
+
 @app.post("/api/analyze")
 async def analyze_session(input: TargetProbeInput):
     """Run Gemini analysis on a completed probe session."""

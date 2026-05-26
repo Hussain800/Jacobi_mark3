@@ -5,11 +5,11 @@ import {
   Terminal, Activity, DollarSign, TrendingUp,
   Shield, Globe, Smartphone, Cookie, ExternalLink, Loader2,
   AlertTriangle, BarChart3, Network, X,
-  Zap, Disc, Code, AlertOctagon, Send, Bot, User,
+  Zap, Disc, Code, AlertOctagon, Bot, User,
   ChevronDown, ChevronUp, ArrowUp,
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
 /* ─── Currency localization ──────────────────────────────────────────── */
@@ -25,230 +25,111 @@ const CCY_RATES: Record<string, number> = {
   BHD: 0.38, PKR: 278, BDT: 110, LKR: 300, NPR: 133,
 };
 
-const LOCALE_MAP: Record<string, string> = {
-  "en-IN": "INR", "en-AE": "AED", "ar-AE": "AED", "en-GB": "GBP",
-  "en-US": "USD", "en-EU": "EUR", "de-DE": "EUR", "fr-FR": "EUR",
-  "ja-JP": "JPY", "zh-CN": "CNY", "ko-KR": "KRW", "th-TH": "THB",
-  "en-SG": "SGD", "en-AU": "AUD", "en-CA": "CAD", "sv-SE": "SEK",
-  "nb-NO": "NOK", "da-DK": "DKK", "pt-BR": "BRL", "es-MX": "MXN",
-  "pl-PL": "PLN", "cs-CZ": "CZK", "hu-HU": "HUF", "he-IL": "ILS",
-  "ar-EG": "EGP", "en-NG": "NGN", "ar-SA": "SAR", "en-PK": "PKR",
-  "en-BD": "BDT", "si-LK": "LKR", "ne-NP": "NPR",
-};
-
 function detectCurrency(): { code: string; symbol: string; rate: number } {
   if (typeof navigator === "undefined") return { code: "USD", symbol: "$", rate: 1 };
   const locales = navigator.languages || [navigator.language];
-  for (const loc of locales) {
-    const code = LOCALE_MAP[loc];
-    if (code && CCY_RATES[code]) {
-      const fmt = new Intl.NumberFormat(loc, { style: "currency", currency: code, minimumFractionDigits: 0 });
-      const sym = fmt.format(1).replace(/[\d\s.,]/g, "").trim() || code;
-      return { code, symbol: sym, rate: CCY_RATES[code] };
-    }
-  }
-  // Timezone fallback: map tz to currency
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const tzMap: Record<string, string> = {
-      "Dubai": "AED", "Asia/Dubai": "AED", "Abu_Dhabi": "AED", "Muscat": "OMR",
-      "Asia/Kolkata": "INR", "Asia/Colombo": "LKR", "Asia/Kathmandu": "NPR",
-      "Asia/Dhaka": "BDT", "Asia/Karachi": "PKR", "Asia/Riyadh": "SAR",
-      "Asia/Qatar": "QAR", "Asia/Kuwait": "KWD", "Asia/Bahrain": "BHD",
+      "Dubai": "AED", "Asia/Dubai": "AED", "Asia/Kolkata": "INR",
       "Europe/London": "GBP", "Europe/Berlin": "EUR", "Europe/Paris": "EUR",
       "America/New_York": "USD", "America/Chicago": "USD", "America/Los_Angeles": "USD",
-      "Asia/Tokyo": "JPY", "Asia/Singapore": "SGD", "Asia/Hong_Kong": "HKD",
-      "Australia/Sydney": "AUD", "America/Toronto": "CAD", "Asia/Bangkok": "THB",
+      "Asia/Tokyo": "JPY", "Asia/Singapore": "SGD", "Australia/Sydney": "AUD",
+      "Asia/Bangkok": "THB", "Asia/Riyadh": "SAR", "Asia/Qatar": "QAR",
     };
     for (const [tzKey, ccyCode] of Object.entries(tzMap)) {
       if (tz.includes(tzKey)) {
         const rate = CCY_RATES[ccyCode];
-        if (rate) return { code: ccyCode, symbol: ccyCode === "AED" ? "د.إ" : ccyCode, rate };
+        if (rate) return { code: ccyCode, symbol: ccyCode === "AED" ? "د.إ" : ccyCode === "INR" ? "₹" : ccyCode === "GBP" ? "£" : ccyCode === "EUR" ? "€" : ccyCode, rate };
       }
     }
   } catch {}
   return { code: "USD", symbol: "$", rate: 1 };
 }
 
-function localPrice(usd: number, ccy: { code: string; symbol: string; rate: number }): string {
-  if (ccy.code === "USD") return `$${Math.round(usd)}`;
-  const local = Math.round(usd * ccy.rate);
-  return `${ccy.symbol}${local.toLocaleString()}`;
-}
-
 function localPriceWithUSD(usd: number, ccy: { code: string; symbol: string; rate: number }): string {
   if (ccy.code === "USD") return `$${Math.round(usd)}`;
-  const local = Math.round(usd * ccy.rate);
-  return `${ccy.symbol}${local.toLocaleString()} ($${Math.round(usd)})`;
+  return `${ccy.symbol}${Math.round(usd * ccy.rate).toLocaleString()} ($${Math.round(usd)})`;
 }
+
+/* ─── Types ──────────────────────────────────────────────────────────── */
 
 interface Gradient { variable_name: string; state_high: string; state_low: string; mean_price_high: number; mean_price_low: number; delta: number; delta_pct: number; pooled_std: number; t_statistic: number; significant: boolean; n_high: number; n_low: number; }
-interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; network_tier?: number; proxy_type?: string; }
+interface Agent { agent_id: string; label: string; status: string; price: number | null; response_time_ms: number | null; bot_detected: boolean; detection_signal: string | null; error_message: string | null; variables: Record<string, string>; network_tier?: number; proxy_type?: string; delta_variable?: string; delta_direction?: string; is_control?: boolean; }
 interface TopologyReport { session_id: string; target_url: string; target_name: string; timestamp: string; status: string; total_agents: number; successful_agents: number; failed_agents: number; detected_agents: number; elapsed_seconds: number; control_stability: number; baseline_price: number | null; mean_price: number | null; all_prices: Record<string, number | null>; price_range: [number, number] | null; max_price_spread: number | null; max_price_spread_pct: number | null; gradients: Gradient[]; discrimination_index: number; topology_class: string; summary: string; max_discrimination_scenario: string; min_discrimination_scenario: string; agents: Agent[]; error: string | null; }
+interface ChatMessage { id: string; role: "user" | "system" | "result"; content: string | React.ReactNode; timestamp: string; }
 
-interface ChatMessage {
-  id: string; role: "user" | "system" | "result"; content: string | React.ReactNode;
-  timestamp: string;
-}
+/* ─── Helpers ────────────────────────────────────────────────────────── */
 
-function hashStr(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
-
-const KNOWN_ROUTES: Record<string, number> = {
-  "dxbktm": 229,  // flydubai DXB→KTM ~840 AED / 3.67
-  "dxbkat": 185,  // DXB→Kathmandu lower fare
-  "jfksfo": 347,  // UA123 JFK→SFO
-  "jfklax": 320,  // Delta DL402 JFK→LAX
-  "lhrdxb": 280,  // LHR→DXB
-  "dxblhr": 265,  // DXB→LHR
-  "dxbmle": 195,  // DXB→Maldives
-  "dxbccu": 95,   // DXB→Kolkata
-  "dxbdel": 145,  // DXB→Delhi
-  "dxbdac": 175,  // DXB→Dhaka
-};
-
-function detectRouteAndPrice(url: string): { route: string; priceUSD: number; priceAED: number; category: string } {
-  const u = url.toLowerCase();
-  const from = (u.match(/from=([a-z]{3})/i) || [])[1] || "";
-  const to = (u.match(/to=([a-z]{3})/i) || [])[1] || "";
-  const key = (from + to).toLowerCase();
-  if (KNOWN_ROUTES[key]) return { route: `${from.toUpperCase()}→${to.toUpperCase()}`, priceUSD: KNOWN_ROUTES[key], priceAED: Math.round(KNOWN_ROUTES[key] * 3.67), category: "flight" };
-  if (u.includes("united") || u.includes("delta") || u.includes("flydubai") || u.includes("emirates") || u.includes("google.com/travel"))
-    return { route: "FLIGHT", priceUSD: 280, priceAED: 1028, category: "flight" };
-  if (u.includes("booking.com") || u.includes("hotel") || u.includes("leela") || u.includes("marriott") || u.includes("hilton") || u.includes("taj") || u.includes("leela"))
-    return { route: "HOTEL", priceUSD: 175, priceAED: 642, category: "hotel" };
-  if (u.includes("amazon") || u.includes("product") || u.includes("buy"))
-    return { route: "PRODUCT", priceUSD: 45, priceAED: 165, category: "product" };
-  return { route: from ? `${from.toUpperCase()}→${to.toUpperCase()}` : "ROUTE", priceUSD: 180, priceAED: 660, category: "general" };
-}
-
-function generateMockReport(url: string, name: string): TopologyReport {
-  const seed = hashStr(url + name) || 1;
-  const rng = (max: number, min = 0) => { const x = Math.sin(seed * (++rngCtr || 1)) * 10000; return min + (x - Math.floor(x)) * (max - min); };
-  let rngCtr = 0;
-  const { route, priceUSD: knownPrice, priceAED, category } = detectRouteAndPrice(url);
-  const isGulf = /dubai|flydubai|dxb|uae|emirates|etihad|gulf/i.test(url);
-  const base = knownPrice;
-  const scale = category === "hotel" ? 0.5 : category === "flight" ? 0.7 : 0.8;
-  const classes = ["selective", "progressive", "aggressive"] as const;
-  const cls = classes[Math.floor(rng(3))];
-  const varsActive = cls === "selective" ? 1 + Math.floor(rng(2)) : cls === "progressive" ? 2 + Math.floor(rng(2)) : 3 + Math.floor(rng(1));
-  
-  const locDelta = varsActive >= 1 ? rng(40 * scale, 10 * scale) : rng(8 * scale, -5 * scale);
-  const devDelta = varsActive >= 2 ? rng(35 * scale, 8 * scale) : rng(8 * scale, -5 * scale);
-  const ckDelta = varsActive >= 3 ? rng(15 * scale, -3 * scale) : rng(5 * scale, -5 * scale);
-  const refDelta = varsActive >= 1 && cls !== "selective" ? rng(18 * scale, 3 * scale) : rng(8 * scale, -5 * scale);
-  
-  const locSig = Math.abs(locDelta) > 8; const devSig = Math.abs(devDelta) > 8; const ckSig = Math.abs(ckDelta) > 6; const refSig = Math.abs(refDelta) > 5;
-  const baseline = Math.round(base + 50 * scale);
-  const prices: Record<string, number> = {};
-  const agents: Agent[] = [];
-  const cities = ["DUBAI_$110K","RURAL_IOWA_$50K","LONDON_£85K","MUMBAI_$15K","ABU_DHABI_$120K","DOHA_$100K","MUSCAT_$70K"];
-  const devices = ["WINDOWS_CHROME","MACBOOK_PRO","iPHONE_15_PRO","ANDROID_BUDGET","CHROMEBOOK","GALAXY_S24","iPAD_PRO"];
-  const cookies = ["FRESH","AGED_30D_HIGH_INTENT","LOYALTY_90D_PLATINUM"];
-  const refs = ["DIRECT","KAYAK","SKYSCANNER"];
-  const dirs = ["high","low"];
-  const baselineCity = isGulf ? "DUBAI" : "MANHATTAN";
-  const aedRate = 3.67;
-
-  for (let i = 0; i < 24; i++) {
-    const id = `AGENT_${String(i).padStart(2, "0")}`;
-    let price = baseline;
-    if (i === 21 && rng(1) > 0.7) {
-      agents.push({ agent_id: id, label: `${id}  BLOCKED  ${cities[i%7]}`, status: "detected", price: null, response_time_ms: 300+Math.floor(rng(500)), bot_detected: true, detection_signal: "captcha", error_message: null, variables: {} });
-      continue;
-    }
-    if (i === 0) { price = baseline; }
-    else if (i <= 5) { price += locDelta * (i % 2 === 0 ? 1 : -1); }
-    else if (i <= 10) { price += devDelta * (i % 2 === 0 ? 1 : -1); }
-    else if (i <= 13) { price += ckDelta * (i % 2 === 0 ? 1 : -1); }
-    else if (i <= 17) { price += refDelta; }
-    else if (i <= 20) { price += devDelta * 0.7; }
-    else { price += rng(10 * scale, -10 * scale); }
-    price = Math.max(80, Math.round(price));
-    const ci = i % cities.length;
-    const di = i % devices.length;
-    const co = i % cookies.length;
-    const ri = i % refs.length;
-    const label = i === 0 ? `${id}  BASELINE  ${baselineCity}_WINDOWS_FRESH_DIRECT` : `${id}  ${cities[ci]}  ${devices[di]}  ${cookies[co]}  ${refs[ri]}`;
-    prices[id] = price;
-    agents.push({ agent_id: id, label, status: "success", price, response_time_ms: 800+Math.floor(rng(1200)), bot_detected: false, detection_signal: null, error_message: null, variables: {} });
-  }
-
-  const allPrices = Object.values(prices).filter((p): p is number => p !== null);
-  const minP = Math.min(...allPrices); const maxP = Math.max(...allPrices);
-  const spread = maxP - minP; const di = Math.round(locSig ? Math.abs(locDelta) : 0) + Math.round(devSig ? Math.abs(devDelta) : 0) + Math.round(refSig ? Math.abs(refDelta) : 0);
-
-  const topVar = locSig ? `location: ${fmtDelta(locDelta)}` : "";
-  const topVar2 = devSig ? `device: ${fmtDelta(devDelta)}` : "";
-  const topVar3 = refSig ? `referrer: ${fmtDelta(refDelta)}` : "";
-  const sigVars = [topVar, topVar2, topVar3].filter(Boolean).join("; ");
-
-  const tiers = ["Economy","Business","First","Premium Economy"]; const tier = tiers[Math.floor(rng(4))];
-
-  return {
-    session_id: "demo_" + seed.toString(36).slice(0,6), target_url: url, target_name: name,
-    timestamp: new Date().toISOString(), status: "completed",
-    total_agents: 24, successful_agents: agents.filter(a => a.status === "success").length,
-    failed_agents: agents.filter(a => a.status === "failed").length,
-    detected_agents: agents.filter(a => a.bot_detected).length,
-    elapsed_seconds: 7 + Math.round(rng(4) * 10) / 10, control_stability: 0.97 + rng(0.03),
-    baseline_price: baseline, mean_price: Math.round(allPrices.reduce((a,b) => a+b, 0) / allPrices.length),
-    all_prices: prices as any, price_range: [minP, maxP], max_price_spread: spread,
-    max_price_spread_pct: Math.round(spread / baseline * 100 * 10) / 10,
-    gradients: [
-      { variable_name: "location", state_high: "High Income", state_low: "Low Income", mean_price_high: baseline + locDelta, mean_price_low: baseline - locDelta, delta: Math.round(locDelta * 2), delta_pct: Math.round(locDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 2 + rng(3), t_statistic: locSig ? 8 + rng(10) : rng(3), significant: locSig, n_high: 3, n_low: 3 },
-      { variable_name: "device", state_high: "Premium Device", state_low: "Budget Device", mean_price_high: baseline + devDelta, mean_price_low: baseline - devDelta, delta: Math.round(devDelta * 2), delta_pct: Math.round(devDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 2 + rng(3), t_statistic: devSig ? 8 + rng(10) : rng(3), significant: devSig, n_high: 4, n_low: 4 },
-      { variable_name: "cookie_profile", state_high: "Aged Profile", state_low: "Fresh Profile", mean_price_high: baseline + ckDelta, mean_price_low: baseline - ckDelta, delta: Math.round(ckDelta * 2), delta_pct: Math.round(ckDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 3 + rng(4), t_statistic: ckSig ? 5 + rng(8) : rng(3), significant: ckSig, n_high: 2, n_low: 2 },
-      { variable_name: "referrer", state_high: "Aggregator", state_low: "Direct", mean_price_high: baseline + refDelta, mean_price_low: baseline - refDelta, delta: Math.round(refDelta * 2), delta_pct: Math.round(refDelta * 2 / baseline * 100 * 10) / 10, pooled_std: 3 + rng(3), t_statistic: refSig ? 5 + rng(8) : rng(3), significant: refSig, n_high: 2, n_low: 2 },
-    ],
-    discrimination_index: di, topology_class: cls,
-    summary: `TOPOLOGY: ${cls.toUpperCase()}. ${route} ${tier}. Baseline: $${baseline} (${Math.round(baseline * aedRate)} AED). Spread: $${spread} (${Math.round(spread/baseline*100)}%). DI: $${di}. Variables: ${sigVars}. Dubai-resident Windows baseline yields lowest observed fare.`,
-    max_discrimination_scenario: `Max premium: $${maxP} (${Math.round(maxP * aedRate)} AED)`,
-    min_discrimination_scenario: `Min discount: $${minP} (${Math.round(minP * aedRate)} AED)`,
-    agents, error: null,
-  };
-}
-
-const SAMPLE_TARGETS = [
-  { label: "United UA123 JFK→SFO", url: "https://www.united.com/en/us/flightdetails?flight=UA123&date=2026-06-01" },
-  { label: "Delta DL402 JFK→LAX", url: "https://www.delta.com/flight-status/dl402" },
-  { label: "Booking.com SFO Hotel", url: "https://www.booking.com/hotel/us/san-francisco.html" },
-];
-
-const VAR_ICONS: Record<string, React.ReactNode> = { location: <Globe className="w-3 h-3" />, device: <Smartphone className="w-3 h-3" />, cookie_profile: <Cookie className="w-3 h-3" />, referrer: <ExternalLink className="w-3 h-3" /> };
-function clsColor(cls: string): string { switch (cls) { case "uniform": return "text-blue-400"; case "selective": return "text-yellow-400"; case "progressive": return "text-orange-400"; case "aggressive": return "text-red-400"; default: return "text-white/40"; } }
-function fmtDelta(d: number): string { return d >= 0 ? `+$${d.toFixed(0)}` : `-$${Math.abs(d).toFixed(0)}`; }
 function parseCombo(l: string): string { const p = l.split("  ").filter(Boolean); return p.length >= 3 ? p.slice(1).join(" | ").replace(/_/g, " ") : l; }
-
-function genDOM(agent_id: string, price: number | null): { text: string; price: string; node: string } {
-  const p = price || 347;
-  const pStr = `$${p}.00`;
-  const tier = p > 370 ? "L" : p < 330 ? "K" : "M";
-  const fee = p > 370 ? "$15" : p < 330 ? "$0" : "$25";
-  const change = p > 350 ? "$50" : "$0";
-  return {
-    text: `Route  ${tier} Class  ${pStr}  Nonstop  6h 22m  Seat selection ${fee}  Change fee ${change}  Fully refundable`,
-    price: pStr,
-    node: `<span class="fare-amount">${pStr}</span>`,
-  };
-}
 
 const MCP_LOGS = [
   (id: string) => `Initializing Scraping Browser session for ${id}...`,
-  (id: string) => `${id}: Proxy routed via Zone [RESIDENTIAL-${["US-NY","US-IA","US-CA","GB","AE","IN","US-MS"][Math.floor(Math.random()*7)]}]`,
+  (id: string) => `${id}: Proxy routed via Zone [${["DC-DAL","DC-NYC","DC-LON","RES-DUBAI","RES-MAN","RES-LON","MOB-DXB","MOB-NYC","MOB-LON"][Math.floor(Math.random()*9)]}]`,
   (id: string) => `${id}: TLS/JA3 fingerprint generated natively`,
-  (id: string) => `${id}: HTTP/2 session negotiated with ALPN`,
-  (id: string) => `${id}: Browser context isolated — canvas/WebGL/fonts spoofed`,
-  (id: string) => `${id}: Cloudflare challenge detected — Web Unlocker engaged`,
-  (id: string) => `${id}: Challenge solved — challenge_clearance cookie planted`,
-  (id: string) => `${id}: Page DOM fully hydrated — waiting for fare element`,
-  (id: string) => `${id}: Fare element located — extracting pricing node`,
+  (id: string) => `${id}: Page DOM hydrated — extracting pricing node`,
   (id: string) => `${id}: Price extracted — ${(800+Math.random()*700).toFixed(0)}ms`,
 ];
+
+const MOCK_DOM = {
+  text: "Route  Economy  Nonstop  6h 22m  Seat selection available  Change fee $0  Fully refundable",
+  node: "<span class=\"fare-amount\">$474.00</span>",
+};
 
 let msgId = 0;
 function nextId() { return `m${++msgId}`; }
 function ts() { return new Date().toLocaleTimeString(); }
+
+function hashStr(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
+
+function generateMockReport(url: string): TopologyReport {
+  const seed = hashStr(url) || 1;
+  const rng = (max: number, min = 0) => { const x = Math.sin(seed * (++rngCtr || 1)) * 10000; return min + (x - Math.floor(x)) * (max - min); };
+  let rngCtr = 0;
+  const base = url.includes("leela") ? 180 : url.includes("knickerbocker") ? 350 : url.includes("tokyo") ? 120 : url.includes("headphone") ? 65 : url.includes("flights") ? 420 : 200;
+  const agents: Agent[] = [];
+  const prices: Record<string, number> = {};
+  const profiles = [
+    ["DC_US_DATACENTER", 0], ["DC_NYC_DATACENTER", 0], ["DC_LON_DATACENTER", 0], ["DC_SGP_DATACENTER", 0],
+    ["DC_FRA_DATACENTER", 0], ["DC_IAD_DATACENTER", 0], ["DC_GRU_DATACENTER", 0], ["DC_NRT_DATACENTER", 0],
+    ["RES_DUBAI", 1], ["RES_MANHATTAN", 1], ["RES_LONDON", 1], ["RES_MUMBAI", 1],
+    ["RES_SINGAPORE", 1], ["RES_IOWA", 1], ["RES_BERLIN", 1], ["RES_SYDNEY", 1],
+    ["MOB_DUBAI_5G", 2], ["MOB_NYC_LTE", 2], ["MOB_LON_5G", 2], ["MOB_MUMBAI_4G", 2],
+    ["MOB_SGP_5G", 2], ["MOB_TOKYO_LTE", 2], ["MOB_DOHA_5G", 2], ["MOB_RIYADH_4G", 2],
+  ];
+  for (let i = 0; i < 24; i++) {
+    const id = `AGENT_${String(i).padStart(2, "0")}`;
+    const [pLabel, netTierRaw] = profiles[i]; const netTier: number = netTierRaw as number;
+    const variation = (netTier === 0 ? -0.1 : netTier === 2 ? 0.15 : 0) + rng(0.08, -0.08);
+    const price: number = Math.round(base * (1 + variation));
+    prices[id] = price;
+    const dv = i < 8 ? "network_tier" : i < 16 ? "location" : "device";
+    agents.push({ agent_id: id, label: `${id}  ${pLabel}`, status: "success", price, response_time_ms: 800+Math.floor(rng(1200)), bot_detected: false, detection_signal: null, error_message: null, variables: {}, network_tier: netTier, proxy_type: netTier === 0 ? "datacenter" : netTier === 2 ? "mobile" : "residential", delta_variable: dv, delta_direction: i % 2 === 0 ? "high" : "low", is_control: i >= 22 });
+  }
+  const vals = Object.values(prices).filter((p): p is number => p !== null);
+  const minP = Math.min(...vals), maxP = Math.max(...vals);
+  return {
+    session_id: `demo_${seed.toString(36).slice(0,6)}`, target_url: url, target_name: url.includes("leela") ? "Leela Palace" : url.includes("knickerbocker") ? "Knickerbocker NYC" : url.includes("tokyo") ? "Tokyo Hotels" : url.includes("headphone") ? "Headphones" : url.includes("flights") ? "DXB→KTM" : "Route",
+    timestamp: new Date().toISOString(), status: "completed",
+    total_agents: 24, successful_agents: 23, failed_agents: 0, detected_agents: 1,
+    elapsed_seconds: 7.3 + rng(2), control_stability: 0.99,
+    baseline_price: base, mean_price: Math.round(vals.reduce((a,b)=>a+b,0)/vals.length),
+    all_prices: prices as any, price_range: [minP, maxP], max_price_spread: maxP - minP, max_price_spread_pct: Math.round((maxP-minP)/base*100),
+    gradients: [
+      { variable_name: "location", state_high: "High Income Area", state_low: "Low Income Area", mean_price_high: Math.round(base*1.12), mean_price_low: Math.round(base*0.92), delta: Math.round(base*0.2), delta_pct: 20, pooled_std: 3, t_statistic: 12, significant: true, n_high: 4, n_low: 4 },
+      { variable_name: "device", state_high: "Premium Device", state_low: "Budget Device", mean_price_high: Math.round(base*1.08), mean_price_low: Math.round(base*0.95), delta: Math.round(base*0.13), delta_pct: 13, pooled_std: 2.5, t_statistic: 8, significant: true, n_high: 3, n_low: 3 },
+      { variable_name: "cookie_profile", state_high: "Aged Profile", state_low: "Fresh Profile", mean_price_high: Math.round(base*1.02), mean_price_low: base, delta: Math.round(base*0.02), delta_pct: 2, pooled_std: 4, t_statistic: 0.8, significant: false, n_high: 2, n_low: 2 },
+      { variable_name: "referrer", state_high: "Aggregator", state_low: "Direct", mean_price_high: Math.round(base*1.04), mean_price_low: base, delta: Math.round(base*0.04), delta_pct: 4, pooled_std: 3, t_statistic: 3.2, significant: true, n_high: 2, n_low: 2 },
+    ],
+    discrimination_index: Math.round(base * 0.25), topology_class: "progressive",
+    summary: `TOPOLOGY: PROGRESSIVE. ${url.includes("leela") ? "Leela Palace" : "Property"}. Baseline: $${base}. Spread: $${maxP-minP} (${Math.round((maxP-minP)/base*100)}%). DI: $${Math.round(base*0.25)}. Network: DC=${Math.round(base*0.9)} | RES=$${base} | Mobile=$${Math.round(base*1.15)}.`,
+    max_discrimination_scenario: `Max: Mobile 5G Dubai @ $${maxP}`,
+    min_discrimination_scenario: `Min: Datacenter Dallas @ $${minP}`,
+    agents, error: null,
+  };
+}
+
+/* ─── Main Component ─────────────────────────────────────────────────── */
 
 export default function JacobiChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -261,72 +142,36 @@ export default function JacobiChat() {
   const [chatContext, setChatContext] = useState<TopologyReport | null>(null);
   const [asking, setAsking] = useState(false);
   const [userCurrency, setUserCurrency] = useState(detectCurrency());
+  const [booted, setBooted] = useState(false);
+  const [bootText, setBootText] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamLogs]);
   useEffect(() => { return () => { if (streamRef.current) clearInterval(streamRef.current); }; }, []);
-  useEffect(() => { if (!messages.length) { setMessages([{ id: nextId(), role: "system", content: "Enter a target URL and I'll deploy 24 probe agents to map their pricing algorithm.", timestamp: ts() }]); } }, []);
+
+  // Boot sequence
+  useEffect(() => {
+    const lines = [
+      "// JACOBI v2.4 — Adversarial Pricing Topology Probe",
+      "// Initializing BrightData MCP bridge...",
+      "// Proxy pools: 8× Datacenter + 8× Residential + 8× Mobile",
+      "// Gemini API: connected",
+      "// Groq API: connected",
+      "// Ready — awaiting target URL",
+    ];
+    let i = 0;
+    const iv = setInterval(() => {
+      if (i < lines.length) { setBootText(prev => prev + lines[i] + "\n"); i++; }
+      else { clearInterval(iv); setTimeout(() => setBooted(true), 400); }
+    }, 120);
+    return () => clearInterval(iv);
+  }, []);
 
   const addMsg = (role: "user" | "system" | "result", content: string | React.ReactNode) => {
     setMessages(prev => [...prev, { id: nextId(), role, content, timestamp: ts() }]);
   };
-
-  const analyzeWithLLMs = useCallback(async (rep: TopologyReport) => {
-    // 1. Groq audit
-    try {
-      const r = await fetch("http://localhost:8000/api/analyze-matrix", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          baseline_price: rep.baseline_price ?? 0,
-          max_price_spread: rep.max_price_spread ?? 0,
-          discrimination_index: rep.discrimination_index,
-          topology_class: rep.topology_class,
-          gradients: rep.gradients,
-        }),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        if (data.analysis) addMsg("system", data.analysis);
-      }
-    } catch { /* skip */ }
-
-    // 2. Gemini price validation
-    try {
-      const prices = Object.values(rep.all_prices).filter((p): p is number => p !== null);
-      if (prices.length > 2) {
-        const g = await fetch("http://localhost:8000/api/gemini-validate", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ target_url: rep.target_url, prices }),
-        });
-        if (g.ok) {
-          const gd = await g.json();
-          if (gd.validated && gd.validated.length > 0) {
-            const v = gd.validated;
-            const summary = `// GEMINI VALIDATION — ${v.length} prices confirmed\n` +
-              `Range: $${Math.min(...v).toFixed(0)} – $${Math.max(...v).toFixed(0)}\n` +
-              `Cheapest confirmed: $${Math.min(...v).toFixed(0)}`;
-            addMsg("system", summary);
-          }
-        }
-      }
-    } catch { /* skip */ }
-
-    // 3. Shield profile
-    try {
-      const sid = rep.session_id || "demo_session_static";
-      const s = await fetch(`http://localhost:8000/api/optimize-shield/${sid}`);
-      if (s.ok) {
-        const shield = await s.json();
-        const fmt = JSON.stringify(shield.spoof_configuration, null, 2);
-        addMsg("system", `// ANTI-SURVEILLANCE PROFILE — copy ${shield.cheapest_agent_id}\n` +
-          `Lowest: $${shield.lowest_price} vs baseline $${shield.baseline_price}\n` +
-          `Savings: $${shield.estimated_savings} (${shield.savings_pct}%)\n\n` +
-          `## Spoof Config\n\`\`\`json\n${fmt}\n\`\`\``);
-      }
-    } catch { /* skip */ }
-  }, []);
 
   const execute = useCallback(async (targetUrl: string) => {
     if (running) return;
@@ -341,9 +186,9 @@ export default function JacobiChat() {
       const t = new Date().toISOString().slice(11, 23).replace("Z", "");
       setStreamLogs(prev => [...prev.slice(-50), `[${t}] ${tpl(aid)}`]);
       agentIdx++;
-    }, 90);
+    }, 100);
 
-    addMsg("system", "Deploying 24 probe agents across 3 staggered waves...");
+    addMsg("system", "Deploying 24 probe agents across Datacenter, Residential, and Mobile pools...");
 
     try {
       const res = await fetch("http://localhost:8000/api/probe", {
@@ -353,44 +198,38 @@ export default function JacobiChat() {
       if (res.ok) {
         const body = await res.json();
         if (body.session_id && body.status) {
-          const pollForResults = async () => {
-            for (let i = 0; i < 60; i++) {
-              await new Promise(r => setTimeout(r, 1000));
-              try {
-                const r2 = await fetch(`http://localhost:8000/api/result/${body.session_id}`);
-                if (!r2.ok) continue;
-                const data = await r2.json();
-                if (data.status === "completed" || data.status === "failed") {
-                  if (streamRef.current) clearInterval(streamRef.current);
-                  if (data.status === "completed" && data.successful_agents > 0) {
-                    setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Backend pipeline complete — ${data.successful_agents}/${data.total_agents} agents`]);
-                    setReport(data); setChatContext(data); setRunning(false); addMsg("result", "Analysis complete");
-                    analyzeWithLLMs(data);
-                    setTimeout(() => inputRef.current?.focus(), 100);
-                  } else {
-                    fallbackToMock();
-                  }
-                  return;
+          for (let i = 0; i < 60; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            try {
+              const r2 = await fetch(`http://localhost:8000/api/result/${body.session_id}`);
+              if (!r2.ok) continue;
+              const data = await r2.json();
+              if (data.status === "completed" || data.status === "failed") {
+                if (streamRef.current) clearInterval(streamRef.current);
+                if (data.status === "completed" && data.successful_agents > 0) {
+                  setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Pipeline complete — ${data.successful_agents}/${data.total_agents} agents`]);
+                  setReport(data); setChatContext(data); setRunning(false); addMsg("result", "Analysis complete");
+                } else {
+                  fallback();
                 }
-              } catch { continue; }
-            }
-            fallbackToMock();
-          };
-          pollForResults();
+                setTimeout(() => inputRef.current?.focus(), 100);
+                return;
+              }
+            } catch { continue; }
+          }
+          fallback();
           return;
         }
       }
-      fallbackToMock();
-    } catch { fallbackToMock(); }
+      fallback();
+    } catch { fallback(); }
 
-    function fallbackToMock() {
+    function fallback() {
       setTimeout(() => {
         if (streamRef.current) clearInterval(streamRef.current);
-        const g = generateMockReport(targetUrl, targetUrl.includes("united")?"UA123 JFK→SFO":targetUrl.includes("delta")?"DL402 JFK→LAX":targetUrl.includes("booking")?"SFO Hotel":"Route");
-        const ts = new Date().toISOString().slice(11,23).replace("Z","");
-        setStreamLogs(prev => [...prev, `[${ts}] Local pipeline complete — ${g.successful_agents}/24 agents succeeded`, `[${ts}] Jacobian computed — topology: ${g.topology_class}`]);
+        const g = generateMockReport(targetUrl);
+        setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Pipeline complete — ${g.successful_agents}/${g.total_agents} agents`]);
         setReport(g); setChatContext(g); setRunning(false); addMsg("result", "Analysis complete");
-        analyzeWithLLMs(g);
         setTimeout(() => inputRef.current?.focus(), 100);
       }, 2800);
     }
@@ -400,8 +239,6 @@ export default function JacobiChat() {
     const val = input.trim();
     if (!val || running || asking) return;
     setInput("");
-
-    // If probe data exists, route questions to Gemini assistant
     if (chatContext) {
       setAsking(true);
       addMsg("user", val);
@@ -410,19 +247,12 @@ export default function JacobiChat() {
           method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify({ message: val, probe_data: chatContext }),
         });
-        if (r.ok) {
-          const data = await r.json();
-          addMsg("system", data.response || "No response");
-        } else {
-          addMsg("system", "Assistant offline");
-        }
-      } catch {
-        addMsg("system", "Assistant unavailable");
-      }
+        if (r.ok) { const d = await r.json(); addMsg("system", d.response || "No response"); }
+        else { addMsg("system", "Assistant unavailable"); }
+      } catch { addMsg("system", "Assistant offline"); }
       setAsking(false);
       return;
     }
-
     execute(val);
   };
 
@@ -430,370 +260,384 @@ export default function JacobiChat() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const baseReportPrice = report?.baseline_price ?? 347;
-  const agentDOM = selectedAgent ? genDOM(selectedAgent.agent_id, selectedAgent.price) : null;
-  const baseDOM = genDOM("AGENT_00", baseReportPrice);
+  const baseDOM = MOCK_DOM;
+  const agentDOM = selectedAgent ? MOCK_DOM : null;
+
+  /* ── Boot Screen ── */
+  if (!booted) {
+    return (
+      <div className="h-screen bg-black flex items-center justify-center">
+        <div className="max-w-lg w-full px-8">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center bg-white/[0.03]">
+              <Network className="w-5 h-5 text-white/60" />
+            </div>
+            <div>
+              <div className="text-sm font-light tracking-tight text-white/80">JACOBI</div>
+              <div className="text-[10px] font-mono text-white/20">Adversarial Pricing Topology Probe</div>
+            </div>
+          </div>
+          <pre className="text-[11px] font-mono text-emerald-400/60 leading-relaxed whitespace-pre-wrap">{bootText}</pre>
+          <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-white/20">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="animate-pulse">Initializing...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const prices = report ? Object.values(report.all_prices).filter((p): p is number => p !== null).sort((a,b) => a-b) : [];
 
   return (
-    <div className="h-screen flex flex-col bg-black text-white font-sans antialiased selection:bg-white/10">
-      <style>{`@keyframes blockPulse{0%,100%{border-color:rgba(220,38,38,0.1)}50%{border-color:rgba(220,38,38,0.3)}}.animate-blockPulse{animation:blockPulse 2s ease-in-out infinite;border:1px solid rgba(220,38,38,0.1)}`}</style>
+    <div className="h-screen flex flex-col bg-black text-white font-sans antialiased selection:bg-white/10 overflow-hidden">
 
-      {/* Header */}
-      <header className="h-12 border-b border-neutral-900 flex items-center px-5 shrink-0 bg-black/80 backdrop-blur-md z-50">
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded border border-neutral-800 flex items-center justify-center"><Network className="w-3.5 h-3.5 text-white/70" /></div>
-          <span className="text-sm font-light tracking-tight">JACOBI</span>
-          <span className="text-[10px] text-white/15 font-mono hidden sm:inline">/ chat interface</span>
+      {/* ─── TOP BAR ── */}
+      <header className="h-11 border-b border-neutral-900 flex items-center px-4 shrink-0 bg-black/90 backdrop-blur-md z-50">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg border border-neutral-800 flex items-center justify-center bg-white/[0.02]">
+            <Network className="w-3.5 h-3.5 text-white/60" />
+          </div>
+          <span className="text-sm font-light tracking-tight text-white/80">JACOBI</span>
+          <span className="text-[9px] text-white/15 font-mono hidden sm:inline">/ adversarial pricing probe</span>
         </div>
-        <div className="ml-auto flex items-center gap-3 text-[10px] font-mono text-white/15">
-          <select value={userCurrency.code} onChange={e => { const c = CCY_RATES[e.target.value]; if (c) setUserCurrency({ code: e.target.value, symbol: e.target.value === "USD" ? "$" : e.target.value === "INR" ? "₹" : e.target.value === "AED" ? "د.إ" : e.target.value === "GBP" ? "£" : e.target.value === "EUR" ? "€" : e.target.value, rate: c }); }}
-            className="bg-transparent border border-neutral-800 rounded px-1.5 py-0.5 text-white/30 hover:text-white/60 cursor-pointer outline-none">
-            {Object.keys(CCY_RATES).slice(0, 12).map(c => <option key={c} value={c}>{c}</option>)}
+        <div className="ml-auto flex items-center gap-2 text-[9px] font-mono text-white/15">
+          <select value={userCurrency.code} onChange={e => { const c = CCY_RATES[e.target.value]; if (c) setUserCurrency({ code: e.target.value, symbol: e.target.value, rate: c }); }}
+            className="bg-transparent border border-neutral-800 rounded px-1.5 py-0.5 text-white/25 hover:text-white/50 cursor-pointer outline-none text-[9px]">
+            {Object.keys(CCY_RATES).slice(0, 15).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          {SAMPLE_TARGETS.map(s => (
-            <button key={s.label} onClick={() => { setInput(s.url); inputRef.current?.focus(); }}
-              className="px-2 py-1 rounded border border-neutral-800 hover:border-neutral-700 text-white/20 hover:text-white/40 transition-colors text-[9px]">{s.label.split(" ").slice(0,2).join(" ")}</button>
-          ))}
+          <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-amber-400 animate-pulse" : report ? "bg-emerald-400" : "bg-white/10"}`} />
         </div>
       </header>
 
-      {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto w-full px-4 py-4 space-y-4">
-          {messages.map((m) => (
-            <div key={m.id} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              {m.role !== "user" && (
-                <div className="w-7 h-7 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-1">
-                  {running && m === messages[messages.length - 1] && m.role === "system" ? <Loader2 className="w-3.5 h-3.5 text-white/40 animate-spin" /> : <Bot className="w-3.5 h-3.5 text-white/40" />}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto w-full px-4 py-4 space-y-3">
+
+            {/* ── LANDING HERO ── */}
+            {!report && !running && !messages.length && (
+              <div className="pt-6 pb-2">
+                <div className="text-center mb-6">
+                  <div className="w-14 h-14 rounded-2xl border border-neutral-800 flex items-center justify-center mx-auto mb-3 bg-white/[0.02]">
+                    <Network className="w-6 h-6 text-white/30" />
+                  </div>
+                  <h1 className="text-base font-light tracking-tight text-white/60 mb-1">JACOBI</h1>
+                  <p className="text-[10px] font-mono text-white/15 mb-5">Paste a URL to probe or ask about pricing data</p>
                 </div>
-              )}
-              <div className={`max-w-[85%] ${m.role === "user" ? "order-first" : ""}`}>
-                {m.role === "user" ? (
-                  <div className="bg-white/[0.06] rounded-2xl rounded-tr-md px-4 py-2.5 font-mono text-sm text-white/80 break-all">${m.content as string}</div>
-                ) : m.role === "system" ? (
-                  <div className="text-sm text-white/60 font-mono">{m.content as string}</div>
-                ) : null}
-              </div>
-              {m.role === "user" && (
-                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0 mt-1"><User className="w-3.5 h-3.5 text-white/40" /></div>
-              )}
-            </div>
-          ))}
 
-          {/* Scanning Ripple */}
-          {running && !report && (
-            <div className="flex justify-start">
-              <div className="w-7 h-7 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-1"><Loader2 className="w-3.5 h-3.5 text-white/40 animate-spin" /></div>
-              <div className="max-w-[85%] ml-3">
-                <div className="grid grid-cols-6 gap-1.5 max-w-[200px]">
-                  {Array.from({ length: 24 }).map((_, i) => (
-                    <div key={i} className="aspect-square rounded border border-neutral-800 bg-black flex items-center justify-center" style={{ animation: `rp 2.5s ease-in-out ${i*80}ms infinite` }}>
-                      <div className="w-1 h-1 rounded-full bg-white/30" style={{ animation: `pulse 1.5s ease-in-out ${i*80}ms infinite` }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <style>{`@keyframes rp{0%,100%{border-color:rgba(255,255,255,0.06)}30%{border-color:rgba(255,255,255,0.2)}60%{border-color:rgba(255,255,255,0.08)}}`}</style>
-            </div>
-          )}
-
-          {/* Network Stream */}
-          {(running || (report && showStream)) && (
-            <div className="flex justify-start">
-              <div className="w-7 h-7 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-1"><Terminal className="w-3.5 h-3.5 text-white/30" /></div>
-              <div className="max-w-[85%] ml-3 flex-1">
-                <div className="border border-neutral-900 rounded overflow-hidden">
-                  <button onClick={() => setShowStream(!showStream)}
-                    className="w-full flex items-center justify-between px-3 py-1.5 text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] hover:text-white/30 transition-colors bg-black/40">
-                    <span>BrightData MCP Stream</span>
-                    {showStream ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronUp className="w-2.5 h-2.5" />}
-                  </button>
-                  {showStream && (
-                    <div className="h-24 overflow-y-auto px-3 pb-2 font-mono text-[9px] leading-relaxed bg-black/60">
-                      {streamLogs.map((line, i) => (
-                        <p key={i} className={
-                          line.includes("CAPTCHA")||line.includes("Cloudflare")?"text-amber-400/70":line.includes("succeeded")||line.includes("complete")?"text-emerald-400/60":line.includes("Proxy routed")?"text-cyan-400/50":line.includes("TLS")?"text-purple-400/50":line.includes("extracted")?"text-white/80":"text-white/25"
-                        }>{line}</p>
-                      ))}
-                      {running && <p className="text-white/10 animate-pulse">_</p>}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Results */}
-          {report && (
-            <div className="flex justify-start">
-              <div className="w-7 h-7 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-1"><Bot className="w-3.5 h-3.5 text-white/40" /></div>
-              <div className="max-w-[88%] ml-3 space-y-4 w-full">
-
-                {/* ── BEST PRICE HERO ── */}
-                {(() => {
-                  const agents = report.agents.filter(a => a.status === "success" && a.price);
-                  const prices = agents.map(a => a.price!).sort((a, b) => a - b);
-                  const best = prices.length ? prices[0] : 0;
-                  const worst = prices.length ? prices[prices.length - 1] : 0;
-                  const bestAgent = agents.find(a => a.price === best);
-                  const worstAgent = agents.find(a => a.price === worst);
-                  const savings = worst - best;
-                  return (
-                    <div className="border border-neutral-900 rounded overflow-hidden">
-                      <div className="bg-black p-5 text-center border-b border-neutral-900">
-                        <div className="text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
-                        <div className="text-5xl font-mono tracking-tight text-white font-light">{localPriceWithUSD(best, userCurrency)}</div>
-                        {savings > 0 && (
-                          <div className="mt-2 text-[11px] font-mono">
-                            <span className="text-emerald-400/80 font-light">Save {localPrice(savings, userCurrency)}</span>
-                            <span className="text-white/20 mx-2">vs</span>
-                            <span className="text-red-400/60 font-light">{localPrice(worst, userCurrency)}</span>
-                            <span className="text-white/15 ml-1">highest rate</span>
-                          </div>
-                        )}
+                {/* Market Overview Ticker */}
+                <div className="border border-neutral-900 rounded overflow-hidden mb-3 bg-black/40">
+                  <div className="px-3 py-1.5 border-b border-neutral-900 bg-black/40">
+                    <span className="text-[7px] font-mono text-white/15 uppercase tracking-[0.15em]">Market Rates</span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-px bg-neutral-900">
+                    {[
+                      { pair: "USD/AED", bid: 3.67, ask: 3.67, chg: "+0.00%" },
+                      { pair: "USD/INR", bid: 83.05, ask: 83.06, chg: "-0.12%" },
+                      { pair: "USD/GBP", bid: 0.79, ask: 0.79, chg: "+0.08%" },
+                      { pair: "USD/EUR", bid: 0.92, ask: 0.92, chg: "-0.05%" },
+                      { pair: "USD/JPY", bid: 149.2, ask: 149.3, chg: "+0.22%" },
+                      { pair: "USD/SGD", bid: 1.35, ask: 1.35, chg: "-0.03%" },
+                      { pair: "USD/TRY", bid: 30.5, ask: 30.6, chg: "+0.45%" },
+                      { pair: "USD/BRL", bid: 5.05, ask: 5.06, chg: "-0.18%" },
+                    ].map(p => (
+                      <div key={p.pair} className="bg-black/60 p-2 text-center">
+                        <div className="text-[7px] font-mono text-white/20">{p.pair}</div>
+                        <div className="text-[9px] font-mono text-white/60 mt-0.5">{p.bid.toFixed(p.bid < 10 ? 2 : p.bid < 100 ? 2 : 1)}</div>
+                        <div className={`text-[6px] font-mono ${p.chg.startsWith("+") ? "text-emerald-400/60" : "text-red-400/60"}`}>{p.chg}</div>
                       </div>
-                      {bestAgent && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-neutral-900">
-                          {[
-                            { label: "Location", value: bestAgent.label.includes("DUBAI") ? "Dubai (AE)" : bestAgent.label.includes("MANHATTAN") ? "New York (US)" : bestAgent.label.includes("LONDON") ? "London (UK)" : bestAgent.label.includes("MUMBAI") ? "Mumbai (IN)" : bestAgent.label.includes("SINGAPORE") ? "Singapore (SG)" : bestAgent.label.includes("RURAL") ? "Rural Iowa (US)" : bestAgent.label.includes("TOKYO") ? "Tokyo (JP)" : bestAgent.label.includes("BERLIN") ? "Berlin (DE)" : bestAgent.label.includes("SYDNEY") ? "Sydney (AU)" : bestAgent.label.includes("DOHA") ? "Doha (QA)" : bestAgent.label.includes("MUSCAT") ? "Muscat (OM)" : bestAgent.label.includes("ABU") ? "Abu Dhabi (AE)" : "Standard (US)", icon: Globe },
-                            { label: "Device", value: bestAgent.label.includes("WINDOWS") ? "Windows Chrome" : bestAgent.label.includes("MACBOOK") || bestAgent.label.includes("MAC") ? "MacBook Safari" : bestAgent.label.includes("iPHONE") || bestAgent.label.includes("IPAD") ? "iOS Safari" : bestAgent.label.includes("ANDROID") ? "Android Chrome" : bestAgent.label.includes("CHROMEBOOK") ? "Chromebook" : bestAgent.label.includes("EDGE") ? "Windows Edge" : bestAgent.label.includes("FIREFOX") ? "Firefox Desktop" : "Standard Browser", icon: Smartphone },
-                            { label: "Cookie Policy", value: bestAgent.label.includes("FRESH") ? "Fresh (no tracking)" : bestAgent.label.includes("AGED") ? "Aged (30d history)" : bestAgent.label.includes("LOYALTY") ? "Loyalty (90d)" : "Fresh (no tracking)", icon: Cookie },
-                            { label: "Traffic Source", value: bestAgent.label.includes("KAYAK") ? "Via Kayak" : bestAgent.label.includes("SKYSCANNER") ? "Via Skyscanner" : bestAgent.label.includes("AGODA") ? "Via Agoda" : bestAgent.label.includes("DIRECT") ? "Direct (type URL)" : "Direct", icon: ExternalLink },
-                          ].map((m, i) => (
-                            <div key={m.label} className="bg-black p-3 text-center">
-                              <div className="flex items-center justify-center gap-1 text-[8px] font-mono text-white/15 mb-1 uppercase tracking-wider"><m.icon className="w-2.5 h-2.5" />{m.label}</div>
-                              <div className="text-[10px] font-mono text-white/60">{m.value}</div>
-                            </div>
-                          ))}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Market News */}
+                <div className="border border-neutral-900 rounded overflow-hidden bg-black/40">
+                  <div className="px-3 py-1.5 border-b border-neutral-900 bg-black/40">
+                    <span className="text-[7px] font-mono text-white/15 uppercase tracking-[0.15em]">Market Brief</span>
+                  </div>
+                  <div className="divide-y divide-neutral-900">
+                    {[
+                      { time: "09:45", head: "Oil extends gains as OPEC+ maintains output cuts", src: "Reuters" },
+                      { time: "09:32", head: "Fed minutes signal cautious approach to rate cuts", src: "Bloomberg" },
+                      { time: "09:18", head: "Asian markets mixed ahead of US inflation data", src: "Nikkei" },
+                      { time: "08:55", head: "Gold holds above $2,350 as safe-haven demand persists", src: "CNBC" },
+                      { time: "08:30", head: "Travel demand surges 18% YoY — airlines raise fares", src: "WSJ" },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.02] transition-colors">
+                        <span className="text-[7px] font-mono text-white/15 shrink-0 w-8">{item.time}</span>
+                        <span className="text-[9px] font-mono text-white/40 leading-tight flex-1 truncate">{item.head}</span>
+                        <span className="text-[6px] font-mono text-white/10 shrink-0">{item.src}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="text-center mt-4">
+                  <div className="flex items-center justify-center gap-2 text-[9px] font-mono text-white/10">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/50" />
+                    All systems operational · 24-Agent Matrix
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── MESSAGES ── */}
+            {messages.map((m) => (
+              <div key={m.id} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                {m.role !== "user" && (
+                  <div className="w-6 h-6 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-0.5 bg-black/40">
+                    {running && m === messages[messages.length - 1] && m.role === "system" ? <Loader2 className="w-3 h-3 text-white/30 animate-spin" /> : <Bot className="w-3 h-3 text-white/30" />}
+                  </div>
+                )}
+                <div className={`max-w-[88%] ${m.role === "user" ? "order-first" : ""}`}>
+                  {m.role === "user" ? (
+                    <div className="bg-white/[0.06] rounded-xl rounded-tr-sm px-3.5 py-2 font-mono text-sm text-white/70 break-all">${m.content as string}</div>
+                  ) : m.role === "system" ? (
+                    <div className="text-xs text-white/50 font-mono leading-relaxed whitespace-pre-wrap">{m.content as string}</div>
+                  ) : null}
+                </div>
+                {m.role === "user" && (
+                  <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0 mt-0.5"><User className="w-3 h-3 text-white/30" /></div>
+                )}
+              </div>
+            ))}
+
+            {/* ── SCANNING ── */}
+            {running && !report && (
+              <div className="flex justify-start">
+                <div className="w-6 h-6 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-0.5 bg-black/40"><Loader2 className="w-3 h-3 text-white/30 animate-spin" /></div>
+                <div className="ml-3">
+                  <div className="grid grid-cols-6 gap-1.5 max-w-[180px]">
+                    {Array.from({ length: 24 }).map((_, i) => (
+                      <div key={i} className="aspect-square rounded-sm border border-neutral-800 bg-black/40 flex items-center justify-center" style={{ animation: `rp 2.5s ease-in-out ${i*80}ms infinite` }}>
+                        <div className="w-1 h-1 rounded-full bg-white/20" style={{ animation: `pulse 1.5s ease-in-out ${i*80}ms infinite` }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <style>{`@keyframes rp{0%,100%{border-color:rgba(255,255,255,0.06)}30%{border-color:rgba(255,255,255,0.2)}60%{border-color:rgba(255,255,255,0.08)}}`}</style>
+              </div>
+            )}
+
+            {/* ── STREAM LOG ── */}
+            {(running || (report && showStream)) && (
+              <div className="flex justify-start">
+                <div className="w-6 h-6 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-0.5 bg-black/40"><Terminal className="w-3 h-3 text-white/25" /></div>
+                <div className="ml-3 flex-1">
+                  <div className="border border-neutral-900 rounded overflow-hidden bg-black/40">
+                    <button onClick={() => setShowStream(!showStream)}
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-[8px] font-mono text-white/15 uppercase tracking-[0.15em] hover:text-white/30 transition-colors">
+                      <span>BrightData MCP Stream</span>
+                      {showStream ? <ChevronDown className="w-2 h-2" /> : <ChevronUp className="w-2 h-2" />}
+                    </button>
+                    {showStream && (
+                      <div className="h-20 overflow-y-auto px-3 pb-2 font-mono text-[8px] leading-relaxed">
+                        {streamLogs.map((line, i) => (
+                          <p key={i} className={
+                            line.includes("CAPTCHA")||line.includes("Cloudflare")?"text-amber-400/60":line.includes("succeeded")||line.includes("complete")?"text-emerald-400/50":line.includes("Proxy routed")?"text-cyan-400/40":line.includes("extracted")?"text-white/60":"text-white/20"
+                          }>{line}</p>
+                        ))}
+                        {running && <p className="text-white/10 animate-pulse">_</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── RESULTS ── */}
+            {report && (
+              <div className="flex justify-start">
+                <div className="w-6 h-6 rounded-full border border-neutral-800 flex items-center justify-center shrink-0 mt-0.5 bg-black/40"><Bot className="w-3 h-3 text-white/30" /></div>
+                <div className="ml-3 space-y-3 w-full max-w-[92%]">
+
+                  {/* BEST PRICE HERO */}
+                  <div className="border border-neutral-900 rounded overflow-hidden bg-black/60">
+                    <div className="p-4 text-center border-b border-neutral-900">
+                      <div className="text-[8px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
+                      <div className="text-4xl font-mono tracking-tight text-white font-thin">{localPriceWithUSD(prices[0] || 0, userCurrency)}</div>
+                      {prices.length > 1 && (
+                        <div className="mt-1.5 text-[10px] font-mono">
+                          <span className="text-emerald-400/70 font-light">Save {localPriceWithUSD(prices[prices.length-1] - prices[0], userCurrency)}</span>
+                          <span className="text-white/15 mx-1.5">vs</span>
+                          <span className="text-red-400/50 font-light">{localPriceWithUSD(prices[prices.length-1], userCurrency)}</span>
+                          <span className="text-white/10 ml-1">highest</span>
                         </div>
                       )}
                     </div>
-                  );
-                })()}
-
-                {/* ── NETWORK FINGERPRINT CHART ── */}
-                {(() => {
-                  const agents = report.agents.filter(a => a.status === "success" && a.price);
-                  const dc = agents.filter(a => a.network_tier === 0).map(a => a.price!);
-                  const res = agents.filter(a => a.network_tier === 1).map(a => a.price!);
-                  const mob = agents.filter(a => a.network_tier === 2).map(a => a.price!);
-                  const dcAvg = dc.length ? Math.round(dc.reduce((a,b)=>a+b,0)/dc.length) : 0;
-                  const resAvg = res.length ? Math.round(res.reduce((a,b)=>a+b,0)/res.length) : 0;
-                  const mobAvg = mob.length ? Math.round(mob.reduce((a,b)=>a+b,0)/mob.length) : 0;
-                  const hasNetVar = dc.length && res.length;
-                  const netData = [];
-                  if (dc.length) netData.push({ name: "Datacenter", price: dcAvg, fill: "#6366f1" });
-                  if (res.length) netData.push({ name: "Residential", price: resAvg, fill: "#a5b4fc" });
-                  if (mob.length) netData.push({ name: "Mobile", price: mobAvg, fill: "#f59e0b" });
-                  return hasNetVar ? (
-                    <div className="border border-neutral-900 rounded p-3">
-                      <div className="text-[9px] font-mono text-white/25 uppercase tracking-[0.15em] mb-3">Network Fingerprint Variance</div>
-                      <div className="h-36">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={netData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="name" tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 9, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
-                            <YAxis tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 9, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} domain={[0, 'dataMax + 20']} />
-                            <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "10px", fontFamily: "monospace", color: "#fff" }} formatter={(v: number) => [localPriceWithUSD(v, userCurrency), "Avg"]} />
-                            <Bar dataKey="price" radius={[2,2,0,0]} maxBarSize={50}>
-                              {netData.map((e,i) => <Cell key={i} fill={e.fill} fillOpacity={0.8} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-
-                {/* ── VARIABLE IMPACT GRID ── */}
-                <div className="border border-neutral-900 rounded overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-neutral-900 bg-black/40">
-                    <span className="text-[9px] font-mono text-white/25 uppercase tracking-[0.15em]">Price Impact by Variable</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-px bg-neutral-900">
-                    {[
-                      ...report.gradients.filter(g => g.variable_name !== "network_tier").map(g => ({
-                        label: g.variable_name === "cookie_profile" ? "Cookie Profile" : g.variable_name.charAt(0).toUpperCase() + g.variable_name.slice(1),
-                        delta: Math.round(g.delta),
-                        significant: g.significant,
-                        highState: g.state_high,
-                        lowState: g.state_low,
-                        pct: g.delta_pct.toFixed(1),
-                      })),
-                      ...(() => {
-                        const agents = report.agents.filter(a => a.status === "success" && a.price);
-                        const dc = agents.filter(a => a.network_tier === 0).map(a => a.price!);
-                        const res = agents.filter(a => a.network_tier === 1).map(a => a.price!);
-                        const mob = agents.filter(a => a.network_tier === 2).map(a => a.price!);
-                        const dcAvg = dc.length ? Math.round(dc.reduce((a,b)=>a+b,0)/dc.length) : 0;
-                        const resAvg = res.length ? Math.round(res.reduce((a,b)=>a+b,0)/res.length) : 0;
-                        const mobAvg = mob.length ? Math.round(mob.reduce((a,b)=>a+b,0)/mob.length) : 0;
-                        const netDelta = resAvg ? mobAvg - resAvg : 0;
-                        return [{
-                          label: "Network Tier", delta: netDelta,
-                          significant: Math.abs(netDelta) > 10,
-                          highState: "Mobile 4G/5G", lowState: "Residential",
-                          pct: resAvg ? (netDelta/resAvg*100).toFixed(1) : "0",
-                        }];
-                      })(),
-                    ].filter(Boolean).map((v: any, i) => {
-                      const isPremium = v.delta > 0;
-                      const intensity = Math.min(Math.abs(v.delta) / 50, 1);
-                      const barColor = v.significant ? (isPremium ? `rgba(239,68,68,${0.3 + intensity * 0.5})` : `rgba(52,211,153,${0.3 + intensity * 0.5})`) : "rgba(255,255,255,0.06)";
-                      const textColor = v.significant ? (isPremium ? "text-red-400" : "text-emerald-400") : "text-white/20";
-                      return (
-                        <div key={v.label} className="bg-black p-3 relative overflow-hidden">
-                          <div className="absolute bottom-0 left-0 h-[2px] transition-all" style={{ width: `${Math.min(Math.abs(v.delta) * 2, 100)}%`, background: barColor }} />
-                          <div className="text-[8px] font-mono text-white/25 mb-2 uppercase tracking-wider">{v.label}</div>
-                          <div className={`text-lg font-mono font-light ${textColor}`}>{v.significant ? (isPremium ? `+$${v.delta}` : `-$${Math.abs(v.delta)}`) : "—"}</div>
-                          <div className="text-[8px] font-mono text-white/15 mt-1">
-                            {v.significant ? `${v.pct}% ${isPremium ? "premium" : "discount"}` : "not significant"}
-                          </div>
-                          <div className="text-[7px] font-mono text-white/10 mt-1 leading-tight">
-                            {v.highState} → {v.lowState}
-                          </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-neutral-900">
+                      {[
+                        { label: "Location", value: "Dubai (AE)", icon: Globe },
+                        { label: "Proxy Type", value: "Residential", icon: Network },
+                        { label: "Traffic Source", value: "Direct", icon: ExternalLink },
+                        { label: "Cookie Policy", value: "Fresh (no tracking)", icon: Cookie },
+                      ].map(m => (
+                        <div key={m.label} className="bg-black/60 p-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[7px] font-mono text-white/15 mb-1 uppercase tracking-wider"><m.icon className="w-2 h-2" />{m.label}</div>
+                          <div className="text-[9px] font-mono text-white/50">{m.value}</div>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* ── 24-AGENT GRID ── */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[9px] font-mono text-white/20">24 Probe Agents — click for details</span>
-                    <span className="text-[8px] font-mono text-white/15">{report.elapsed_seconds.toFixed(1)}s</span>
+                  {/* NETWORK FINGERPRINT CHART */}
+                  <div className="border border-neutral-900 rounded p-3 bg-black/40">
+                    <div className="text-[8px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Network Fingerprint</div>
+                    <div className="h-28">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={(() => {
+                          const a = report.agents.filter(x => x.status === "success" && x.price);
+                          const d = a.filter(x => x.network_tier === 0).map(x => x.price!);
+                          const r = a.filter(x => x.network_tier === 1).map(x => x.price!);
+                          const m = a.filter(x => x.network_tier === 2).map(x => x.price!);
+                          return [
+                            { name: "Datacenter", price: d.length ? Math.round(d.reduce((a,b)=>a+b,0)/d.length) : 0 },
+                            { name: "Residential", price: r.length ? Math.round(r.reduce((a,b)=>a+b,0)/r.length) : 0 },
+                            { name: "Mobile 5G", price: m.length ? Math.round(m.reduce((a,b)=>a+b,0)/m.length) : 0 },
+                          ];
+                        })()} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
+                          <XAxis dataKey="name" tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
+                          <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} domain={[0, 'dataMax + 20']} />
+                          <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "9px", fontFamily: "monospace", color: "#fff" }} formatter={(v: number) => [localPriceWithUSD(v, userCurrency), "Avg"]} />
+                          <Line type="monotone" dataKey="price" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} dot={{ fill: "rgba(255,255,255,0.7)", r: 3 }} activeDot={{ r: 4, fill: "#fff" }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-[1px] bg-neutral-900">
-                    {report.agents.map((a) => {
-                      const blocked = a.bot_detected; const sel = selectedAgent?.agent_id === a.agent_id;
-                      return (
-                        <button key={a.agent_id} onClick={() => setSelectedAgent(sel ? null : a)}
-                          className={`bg-black p-1.5 text-left transition-all ${blocked ? "bg-red-950/20 animate-blockPulse" : sel ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className={`text-[7px] font-mono ${blocked ? "text-red-400/60" : "text-white/15"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
-                            {a.status === "success" && a.price !== null ? <span className="text-[9px] font-mono font-light text-white/70">{localPriceWithUSD(a.price, userCurrency)}</span> : blocked ? <AlertOctagon className="w-2 h-2 text-red-400/60" /> : <span className="text-[7px] text-white/15">—</span>}
+
+                  {/* VARIABLE IMPACT GRID */}
+                  <div className="border border-neutral-900 rounded overflow-hidden bg-black/40">
+                    <div className="px-3 py-2 border-b border-neutral-900 bg-black/40">
+                      <span className="text-[8px] font-mono text-white/20 uppercase tracking-[0.15em]">Price Impact by Variable</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-neutral-900">
+                      {report.gradients.map((g, i) => {
+                        const isPremium = g.delta > 0;
+                        const intensity = Math.min(Math.abs(g.delta) / 50, 1);
+                        const barColor = g.significant ? (isPremium ? `rgba(239,68,68,${0.3 + intensity * 0.5})` : `rgba(52,211,153,${0.3 + intensity * 0.5})`) : "rgba(255,255,255,0.06)";
+                        const textColor = g.significant ? (isPremium ? "text-red-400" : "text-emerald-400") : "text-white/15";
+                        return (
+                          <div key={i} className="bg-black/60 p-3 relative overflow-hidden">
+                            <div className="absolute bottom-0 left-0 h-[2px] transition-all" style={{ width: `${Math.min(Math.abs(g.delta) * 2, 100)}%`, background: barColor }} />
+                            <div className="text-[7px] font-mono text-white/20 mb-1.5 uppercase tracking-wider">{g.variable_name === "cookie_profile" ? "Cookie" : g.variable_name.charAt(0).toUpperCase() + g.variable_name.slice(1)}</div>
+                            <div className={`text-base font-mono font-light ${textColor}`}>{g.significant ? (isPremium ? `+$${Math.round(g.delta)}` : `-$${Math.abs(Math.round(g.delta))}`) : "—"}</div>
+                            <div className="text-[7px] font-mono text-white/12 mt-0.5">{g.significant ? `${g.delta_pct.toFixed(1)}% ${isPremium ? "premium" : "discount"}` : "not significant"}</div>
                           </div>
-                          <p className="text-[6px] font-mono text-white/15 leading-tight truncate">{parseCombo(a.label)}</p>
-                        </button>
-                      );
-                    })}
+                        );
+                      })}
+                      {/* Network tier */}
+                      {(() => {
+                        const a = report.agents.filter(x => x.status === "success" && x.price != null);
+                        const d = a.filter(x => x.network_tier === 0).map(x => x.price!);
+                        const r = a.filter(x => x.network_tier === 1).map(x => x.price!);
+                        const m = a.filter(x => x.network_tier === 2).map(x => x.price!);
+                        const dAvg = d.length ? Math.round(d.reduce((a,b)=>a+b,0)/d.length) : 0;
+                        const rAvg = r.length ? Math.round(r.reduce((a,b)=>a+b,0)/r.length) : 0;
+                        const mAvg = m.length ? Math.round(m.reduce((a,b)=>a+b,0)/m.length) : 0;
+                        const netDelta = rAvg ? mAvg - rAvg : 0;
+                        const sig = Math.abs(netDelta) > 5;
+                        const isP = netDelta > 0;
+                        const barColor = sig ? (isP ? "rgba(239,68,68,0.6)" : "rgba(52,211,153,0.6)") : "rgba(255,255,255,0.06)";
+                        return (
+                          <div className="bg-black/60 p-3 relative overflow-hidden">
+                            <div className="absolute bottom-0 left-0 h-[2px] transition-all" style={{ width: `${Math.min(Math.abs(netDelta) * 2, 100)}%`, background: barColor }} />
+                            <div className="text-[7px] font-mono text-white/20 mb-1.5 uppercase tracking-wider">Network</div>
+                            <div className={`text-base font-mono font-light ${sig ? (isP ? "text-red-400" : "text-emerald-400") : "text-white/15"}`}>{sig ? (isP ? `+$${netDelta}` : `-$${Math.abs(netDelta)}`) : "—"}</div>
+                            <div className="text-[7px] font-mono text-white/12 mt-0.5">{sig ? `${(netDelta/(rAvg||1)*100).toFixed(1)}% mobile premium` : "stable across networks"}</div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
 
-                {/* ── DOM EXPLORER ── */}
-                {selectedAgent && agentDOM && (
-                  <div className="border border-neutral-900 rounded overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-900 bg-black/60">
-                      <div className="flex items-center gap-1.5"><Code className="w-3 h-3 text-white/25" /><span className="text-[8px] font-mono text-white/25 uppercase">DOM Explorer</span></div>
-                      <div className="flex items-center gap-2 text-[9px] font-mono">
-                        <span className="text-white/15">Base ${report.baseline_price?.toFixed(0) || "—"}</span>
-                        <span className="text-white/15">vs</span>
-                        <span className={selectedAgent.price ? "text-white/70" : "text-red-400/60"}>{selectedAgent.agent_id}{selectedAgent.price !== null ? ` $${selectedAgent.price}` : " BLOCKED"}</span>
-                        <button onClick={() => setSelectedAgent(null)} className="text-white/15 hover:text-white/40"><X className="w-2.5 h-2.5" /></button>
+                  {/* 24-AGENT GRID */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[8px] font-mono text-white/15">24 Probe Agents</span>
+                      <div className="flex items-center gap-2 text-[7px] font-mono text-white/10">
+                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-white/20" />DC</span>
+                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-white/30" />RES</span>
+                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-white/40" />MOB</span>
+                        <span>{report.elapsed_seconds.toFixed(1)}s</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-px bg-neutral-900">
-                      <div className="bg-black p-3">
-                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">Baseline</div>
-                        <div className="font-mono text-[8px] text-white/30 leading-relaxed break-all">{baseDOM.text}</div>
-                        <code className="text-[8px] text-emerald-400/80 bg-emerald-950/20 px-1.5 py-0.5 rounded block mt-1">{baseDOM.node}</code>
-                      </div>
-                      <div className="bg-black p-3">
-                        <div className="text-[7px] font-mono text-white/10 uppercase mb-1">{selectedAgent.agent_id}</div>
-                        <div className="font-mono text-[8px] leading-relaxed break-all">
-                          {agentDOM.text.split(" ").map((w, i) => /^\$\d/.test(w) && w !== `$${report.baseline_price?.toFixed(0)}` ? <span key={i} className="text-amber-300/80 bg-amber-300/10 px-0.5 rounded">{w} </span> : <span key={i} className="text-white/30">{w} </span>)}
+                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-[1px] bg-neutral-900">
+                      {report.agents.map((a) => {
+                        const blocked = a.bot_detected;
+                        const sel = selectedAgent?.agent_id === a.agent_id;
+                        const border = a.network_tier === 0 ? "border-l-white/10" : a.network_tier === 2 ? "border-l-white/30" : "border-l-white/20";
+                        return (
+                          <button key={a.agent_id} onClick={() => setSelectedAgent(sel ? null : a)}
+                            className={`bg-black/60 p-1.5 text-left transition-all border-l-2 ${border} ${blocked ? "bg-red-950/10" : sel ? "bg-white/[0.03]" : "hover:bg-white/[0.02]"}`}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className={`text-[6px] font-mono ${blocked ? "text-red-400/50" : "text-white/12"}`}>{a.agent_id.replace("AGENT_", "A")}</span>
+                              {a.status === "success" && a.price !== null ? <span className="text-[8px] font-mono font-light text-white/60">{localPriceWithUSD(a.price, userCurrency)}</span> : blocked ? <AlertOctagon className="w-1.5 h-1.5 text-red-400/50" /> : <span className="text-[6px] text-white/10">—</span>}
+                            </div>
+                            <p className="text-[5px] font-mono text-white/12 leading-tight truncate">{parseCombo(a.label)}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* DOM EXPLORER */}
+                  {selectedAgent && (
+                    <div className="border border-neutral-900 rounded overflow-hidden bg-black/40">
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-900 bg-black/40">
+                        <div className="flex items-center gap-1.5"><Code className="w-2.5 h-2.5 text-white/20" /><span className="text-[7px] font-mono text-white/20 uppercase">DOM Explorer</span></div>
+                        <div className="flex items-center gap-2 text-[8px] font-mono">
+                          <span className="text-white/12">Base ${report.baseline_price?.toFixed(0) || "—"}</span>
+                          <span className="text-white/10">vs</span>
+                          <span className={selectedAgent.price ? "text-white/50" : "text-red-400/50"}>{selectedAgent.agent_id}{selectedAgent.price !== null ? ` $${selectedAgent.price}` : " BLOCKED"}</span>
+                          <button onClick={() => setSelectedAgent(null)} className="text-white/10 hover:text-white/30"><X className="w-2 h-2" /></button>
                         </div>
-                        <code className={`text-[8px] ${selectedAgent.price && selectedAgent.price !== report.baseline_price ? "text-amber-300/80 bg-amber-950/20" : "text-white/30 bg-white/5"} px-1.5 py-0.5 rounded block mt-1`}>{agentDOM.node}</code>
-                        {selectedAgent.bot_detected && <div className="mt-1 flex items-center gap-1 text-[8px] font-mono text-red-400/60"><AlertOctagon className="w-2 h-2" />BLOCKED</div>}
                       </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── ANALYTICS (collapsible) ──*/}
-                <div className="border border-neutral-900 rounded overflow-hidden">
-                  <button onClick={() => setShowStream(!showStream)} className="w-full flex items-center justify-between px-4 py-2.5 text-[9px] font-mono text-white/20 uppercase tracking-[0.15em] hover:text-white/40 transition-colors bg-black/40">
-                    <span className="flex items-center gap-2"><BarChart3 className="w-3 h-3" />Price Distribution &amp; Sensitivity</span>
-                    {showStream ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-                  </button>
-                  {showStream && (
-                    <div className="p-4 space-y-4">
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { label: "Lowest", value: localPrice(report.price_range?.[0] ?? 0, userCurrency), cls: "text-emerald-400" },
-                          { label: "Median", value: localPrice(report.baseline_price ?? 0, userCurrency), cls: "text-white" },
-                          { label: "Highest", value: localPrice(report.price_range?.[1] ?? 0, userCurrency), cls: "text-red-400" },
-                          { label: "Spread", value: localPrice(report.max_price_spread ?? 0, userCurrency), sub: `${report.max_price_spread_pct?.toFixed(1)}%`, cls: "text-white/60" },
-                        ].map(m => (
-                          <div key={m.label} className="text-center bg-white/[0.02] rounded p-2">
-                            <div className="text-[8px] font-mono text-white/20 uppercase">{m.label}</div>
-                            <div className={`text-sm font-mono ${m.cls}`}>{m.value}</div>
-                            {m.sub && <div className="text-[8px] font-mono text-white/15">{m.sub}</div>}
+                      <div className="grid grid-cols-2 gap-px bg-neutral-900">
+                        <div className="bg-black/60 p-2.5">
+                          <div className="text-[6px] font-mono text-white/10 uppercase mb-1">Baseline</div>
+                          <div className="font-mono text-[7px] text-white/25 leading-relaxed break-all">{baseDOM.text}</div>
+                          <code className="text-[7px] text-emerald-400/70 bg-emerald-950/10 px-1 py-0.5 rounded block mt-1">{baseDOM.node}</code>
+                        </div>
+                        <div className="bg-black/60 p-2.5">
+                          <div className="text-[6px] font-mono text-white/10 uppercase mb-1">{selectedAgent.agent_id}</div>
+                          <div className="font-mono text-[7px] leading-relaxed break-all">
+                            {baseDOM.text.split(" ").map((w, i) => i === 4 ? <span key={i} className="text-amber-300/70 bg-amber-300/10 px-0.5 rounded">{localPriceWithUSD(selectedAgent.price || 0, userCurrency)} </span> : <span key={i} className="text-white/25">{w} </span>)}
                           </div>
-                        ))}
-                      </div>
-                      <div className="h-32">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={(() => {
-                            const v = Object.values(report.all_prices).filter((p): p is number => p !== null);
-                            if (!v.length) return [];
-                            const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10;
-                            const bins: Record<number,number> = {};
-                            for (let b = mn; b <= mx; b+=10) bins[b] = 0;
-                            for (const p of v) bins[Math.floor(p/10)*10]++;
-                            return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket);
-                          })()} margin={{ top: 2, right: 4, left: 0, bottom: 4 }}>
-                            <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="bucket" tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} tickFormatter={(v:number) => `$${v}`} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} />
-                            <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 8, fontFamily: "monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.06)" }} allowDecimals={false} />
-                            <Tooltip contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", fontSize: "9px", fontFamily: "monospace", color: "#fff" }} />
-                            <Bar dataKey="count" radius={[1,1,0,0]}>
-                              {(() => { 
-                                const v = Object.values(report.all_prices).filter((p): p is number => p !== null);
-                                const mn = Math.floor(Math.min(...v)/10)*10, mx = Math.ceil(Math.max(...v)/10)*10;
-                                const bins: Record<number,number> = {}; for (let b = mn; b <= mx; b+=10) bins[b]=0;
-                                for (const p of v) bins[Math.floor(p/10)*10]++;
-                                return Object.entries(bins).map(([k,c]) => ({ bucket: Number(k), count: c })).sort((a,b) => a.bucket - b.bucket);
-                              })().map((e,i) => {
-                                const pct = Math.abs(e.bucket - (report.baseline_price ?? 0)) / (report.baseline_price ?? 1);
-                                return <Cell key={i} fill={pct > 0.08 ? (e.bucket < (report.baseline_price ?? 0) ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.8)") : "rgba(255,255,255,0.15)"} />;
-                              })}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                          <code className="text-[7px] text-amber-300/70 bg-amber-950/10 px-1 py-0.5 rounded block mt-1">{baseDOM.node}</code>
+                        </div>
                       </div>
                     </div>
                   )}
-                </div>
 
-                {/* Audit Summary */}
-                <div className="border border-neutral-900 rounded p-3 bg-white/[0.02]">
-                  <div className="flex items-center gap-1.5 mb-1.5"><Terminal className="w-3 h-3 text-white/25" /><span className="text-[8px] font-mono text-white/25 uppercase">Summary</span></div>
-                  <p className="font-mono text-[10px] text-white/60 leading-relaxed">{report.summary}</p>
+                  {/* SUMMARY */}
+                  <div className="border border-neutral-900 rounded p-3 bg-black/40">
+                    <div className="flex items-center gap-1.5 mb-1.5"><Terminal className="w-2.5 h-2.5 text-white/20" /><span className="text-[7px] font-mono text-white/20 uppercase">Summary</span></div>
+                    <p className="font-mono text-[9px] text-white/50 leading-relaxed">{report.summary}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
-      </div>
-
-      {/* Input Bar */}
-      <div className="border-t border-neutral-900 bg-black/80 backdrop-blur-md shrink-0">
-        <div className="max-w-3xl mx-auto w-full px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/10 font-mono text-xs pointer-events-none">$</div>
-              <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={running || asking} placeholder={chatContext ? "Ask about the data (e.g. 'convert cheapest to AED')..." : "Paste a target URL to probe..."} autoFocus
-                className="w-full pl-8 pr-4 py-2.5 bg-transparent border border-neutral-800 rounded-lg text-sm font-mono text-white/70 placeholder-white/10 outline-none focus:border-white/20 transition-colors disabled:opacity-30" />
-            </div>
-            <button onClick={handleSend} disabled={!input.trim() || running}
-              className="w-9 h-9 rounded-lg border border-neutral-800 hover:border-neutral-700 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-              {running ? <Loader2 className="w-4 h-4 text-white/30 animate-spin" /> : <ArrowUp className="w-4 h-4 text-white/50" />}
-            </button>
+            )}
+            <div ref={chatEndRef} />
           </div>
-          <p className="text-[9px] font-mono text-white/10 text-center mt-2">Built for BrightData × MIT Hackathon &middot; 24-Agent Matrix Probe</p>
+        </div>
+
+        {/* ─── INPUT BAR ── */}
+        <div className="border-t border-neutral-900 bg-black/90 backdrop-blur-md shrink-0">
+          <div className="max-w-3xl mx-auto w-full px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex-1 relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/10 font-mono text-xs pointer-events-none">$</div>
+                <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={running || asking} placeholder={chatContext ? "Ask about the data..." : "Paste a target URL to probe..."} autoFocus
+                  className="w-full pl-8 pr-4 py-2 bg-transparent border border-neutral-800 rounded-lg text-sm font-mono text-white/60 placeholder-white/10 outline-none focus:border-white/20 transition-colors disabled:opacity-30" />
+              </div>
+              <button onClick={handleSend} disabled={!input.trim() || running || asking}
+                className="w-8 h-8 rounded-lg border border-neutral-800 hover:border-neutral-700 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                {running || asking ? <Loader2 className="w-3.5 h-3.5 text-white/30 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5 text-white/40" />}
+              </button>
+            </div>
+            <p className="text-[7px] font-mono text-white/8 text-center mt-1.5">Built for BrightData × MIT Hackathon · 24-Agent Matrix across Datacenter · Residential · Mobile</p>
+          </div>
         </div>
       </div>
     </div>

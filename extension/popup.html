@@ -8,15 +8,31 @@
     /* ─── Reset & Base ──────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bg: #08090c;
+      --surface: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.06);
+      --border-hover: rgba(255,255,255,0.1);
+      --accent: #00ff41;
+      --accent-dim: rgba(0,255,65,0.12);
+      --accent-glow: rgba(0,255,65,0.18);
+      --text: #c8ccd4;
+      --text-dim: rgba(255,255,255,0.35);
+      --text-faint: rgba(255,255,255,0.15);
+      --danger: rgba(239,68,68,0.6);
+      --success: rgba(0,255,65,0.7);
+      --font: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    }
+
     body {
-      width: 320px;
-      min-height: 260px;
-      background: #050505;
-      color: #c8ccd4;
-      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-      font-size: 12px;
+      width: 340px;
+      min-height: 300px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 11px;
       line-height: 1.5;
-      padding: 18px;
+      padding: 16px;
       -webkit-font-smoothing: antialiased;
     }
 
@@ -24,123 +40,195 @@
     .header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 18px;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
     }
 
     .logo {
       display: flex;
       align-items: center;
-      gap: 2px;
-      font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
-    }
-
-    .logo-bracket {
-      color: rgba(0, 217, 146, 0.15);
-      font-weight: 300;
-      font-size: 20px;
+      gap: 1px;
+      font-size: 18px;
       line-height: 1;
     }
 
-    .logo-letter {
-      color: #00d992;
-      font-weight: 300;
-      font-size: 20px;
-      line-height: 1;
-      text-shadow: 0 0 20px rgba(200, 200, 200, 0.1);
-    }
+    .logo-bracket { color: rgba(0,255,65,0.2); font-weight: 300; }
+    .logo-letter { color: var(--accent); font-weight: 400; text-shadow: 0 0 16px rgba(0,255,65,0.3); }
+    .logo-rest { color: rgba(0,255,65,0.12); font-size: 10px; margin-left: 3px; letter-spacing: 0.05em; }
 
-    .logo-rest {
-      color: rgba(0, 217, 146, 0.15);
-      font-weight: 300;
-      font-size: 12px;
-      margin-left: 4px;
-      letter-spacing: 0.05em;
-    }
-
-    /* ─── Current Page Bar ──────────────────────────────────────────────── */
-    .current-page {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin-bottom: 14px;
-      font-size: 10px;
-    }
-
-    .current-label {
+    .subtitle {
       font-size: 8px;
+      color: var(--text-faint);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: rgba(255, 255, 255, 0.2);
-      margin-bottom: 4px;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+      padding-left: 1px;
     }
 
-    .current-url {
-      color: rgba(255, 255, 255, 0.4);
-      font-size: 10px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    /* ─── Status Bar ────────────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-size: 9px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: all 0.3s ease;
     }
 
-    .current-url.empty {
-      color: rgba(255, 255, 255, 0.12);
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
     }
 
-    /* ─── Probe Button ──────────────────────────────────────────────────── */
+    .status-dot.ready { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+    .status-dot.inactive { background: rgba(255,255,255,0.12); }
+
+    .status-text { flex: 1; min-width: 0; }
+    .status-text .domain { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-text .hint { color: var(--text-faint); font-size: 8px; }
+
+    /* ─── Primary Button ────────────────────────────────────────────────── */
     .btn-probe {
       width: 100%;
-      padding: 10px 0;
-      background: rgba(0, 217, 146, 0.08);
-      border: 1px solid rgba(0, 217, 146, 0.18);
-      border-radius: 8px;
-      color: #00d992;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 12px;
+      padding: 12px 0;
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,255,65,0.2);
+      border-radius: 10px;
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       letter-spacing: 0.02em;
-      transition: all 0.2s ease;
-      margin-bottom: 14px;
+      transition: all 0.25s ease;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-probe::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,255,65,0.15), transparent 50%);
+      opacity: 0;
+      transition: opacity 0.25s;
+      pointer-events: none;
     }
 
     .btn-probe:hover {
-      background: rgba(0, 217, 146, 0.14);
-      border-color: rgba(0, 217, 146, 0.35);
-      box-shadow: 0 0 20px rgba(0, 217, 146, 0.08);
+      background: rgba(0,255,65,0.16);
+      border-color: rgba(0,255,65,0.4);
+      box-shadow: 0 0 28px rgba(0,255,65,0.12);
+      transform: translateY(-1px);
     }
 
+    .btn-probe:hover::after { opacity: 1; }
+
     .btn-probe:active {
-      background: rgba(0, 217, 146, 0.2);
-      transform: scale(0.98);
+      background: rgba(0,255,65,0.22);
+      transform: scale(0.98) translateY(0);
+      transition: all 0.1s ease;
     }
 
     .btn-probe:disabled {
       opacity: 0.25;
       cursor: not-allowed;
       pointer-events: none;
+      box-shadow: none;
+      transform: none;
     }
 
-    .btn-probe .spinner {
+    .btn-probe .btn-spinner {
       display: none;
       width: 12px;
       height: 12px;
-      border: 2px solid rgba(0, 217, 146, 0.25);
-      border-top-color: #00d992;
+      border: 2px solid rgba(0,255,65,0.2);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
-      margin-right: 6px;
+      margin-right: 8px;
       vertical-align: middle;
     }
 
-    .btn-probe.loading .spinner { display: inline-block; }
-    .btn-probe.loading .btn-text { opacity: 0.5; }
+    .btn-probe.loading .btn-spinner { display: inline-block; }
+    .btn-probe.loading .btn-label { opacity: 0.5; }
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ─── Recent Probes Section ─────────────────────────────────────────── */
+    /* ─── Quick Actions Row ─────────────────────────────────────────────── */
+    .quick-actions {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .btn-quick {
+      flex: 1;
+      padding: 7px 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: 9px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .btn-quick:hover {
+      border-color: var(--border-hover);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+    }
+
+    .btn-quick:active { background: rgba(255,255,255,0.06); transform: scale(0.97); }
+
+    .btn-quick .q-icon {
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+    }
+
+    /* ─── Toast ─────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,255,65,0.25);
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: 9px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ─── Section Header ────────────────────────────────────────────────── */
     .section-header {
       display: flex;
       align-items: center;
@@ -149,44 +237,39 @@
     }
 
     .section-title {
-      font-size: 9px;
+      font-size: 8px;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: rgba(255, 255, 255, 0.15);
+      color: var(--text-faint);
     }
 
     .section-clear {
       font-size: 8px;
-      color: rgba(255, 255, 255, 0.1);
+      color: var(--text-faint);
       background: none;
       border: none;
       cursor: pointer;
-      font-family: inherit;
+      font-family: var(--font);
       transition: color 0.2s;
+      padding: 2px 6px;
+      border-radius: 4px;
     }
 
     .section-clear:hover {
-      color: rgba(239, 68, 68, 0.5);
+      color: var(--danger);
+      background: rgba(239,68,68,0.08);
     }
 
+    /* ─── Recent List ───────────────────────────────────────────────────── */
     .recent-list {
       list-style: none;
-      max-height: 160px;
+      max-height: 170px;
       overflow-y: auto;
     }
 
-    .recent-list::-webkit-scrollbar {
-      width: 3px;
-    }
-
-    .recent-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .recent-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.06);
-      border-radius: 3px;
-    }
+    .recent-list::-webkit-scrollbar { width: 3px; }
+    .recent-list::-webkit-scrollbar-track { background: transparent; }
+    .recent-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
 
     .recent-item {
       display: flex;
@@ -195,92 +278,165 @@
       padding: 7px 8px;
       border-radius: 6px;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, border-color 0.15s;
       border: 1px solid transparent;
+      animation: fadeSlideIn 0.3s ease both;
     }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .recent-item:nth-child(1) { animation-delay: 0.02s; }
+    .recent-item:nth-child(2) { animation-delay: 0.04s; }
+    .recent-item:nth-child(3) { animation-delay: 0.06s; }
+    .recent-item:nth-child(4) { animation-delay: 0.08s; }
+    .recent-item:nth-child(5) { animation-delay: 0.10s; }
 
     .recent-item:hover {
-      background: rgba(255, 255, 255, 0.03);
-      border-color: rgba(255, 255, 255, 0.05);
+      background: rgba(255,255,255,0.04);
+      border-color: var(--border-hover);
     }
 
-    .recent-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: rgba(0, 217, 146, 0.3);
+    .recent-favicon {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
       flex-shrink: 0;
+      image-rendering: auto;
     }
 
-    .recent-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .recent-domain {
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.5);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .recent-time {
-      font-size: 8px;
-      color: rgba(255, 255, 255, 0.12);
-    }
+    .recent-info { flex: 1; min-width: 0; }
+    .recent-domain { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .recent-url { font-size: 8px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+    .recent-time { font-size: 7px; color: rgba(255,255,255,0.08); flex-shrink: 0; text-align: right; }
 
     .recent-none {
       text-align: center;
       font-size: 9px;
-      color: rgba(255, 255, 255, 0.08);
-      padding: 16px 0;
+      color: var(--text-faint);
+      padding: 20px 0;
     }
 
     /* ─── Footer ────────────────────────────────────────────────────────── */
     .footer {
-      margin-top: 12px;
-      text-align: center;
-      font-size: 8px;
-      color: rgba(255, 255, 255, 0.06);
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-left {
+      font-size: 7px;
+      color: rgba(255,255,255,0.06);
       letter-spacing: 0.05em;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-settings {
+      width: 22px;
+      height: 22px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      padding: 0;
+    }
+
+    .btn-settings:hover {
+      border-color: var(--border-hover);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .btn-settings svg { width: 11px; height: 11px; }
+
+    .btn-settings svg path { transition: stroke 0.2s; }
+    .btn-settings:hover svg path { stroke: var(--text-dim); }
+
+    .version {
+      font-size: 7px;
+      color: rgba(255,255,255,0.08);
     }
   </style>
 </head>
 <body>
   <!-- Header -->
   <div class="header">
-    <div class="logo">
-      <span class="logo-bracket">[</span>
-      <span class="logo-letter">J</span>
-      <span class="logo-bracket">]</span>
-      <span class="logo-rest">acobi</span>
+    <div class="logo-group">
+      <div class="logo">
+        <span class="logo-bracket">[</span>
+        <span class="logo-letter">J</span>
+        <span class="logo-bracket">]</span>
+        <span class="logo-rest">acobi</span>
+      </div>
     </div>
   </div>
+  <div class="subtitle">Pricing Topology Probe</div>
 
-  <!-- Current Page -->
-  <div class="current-page">
-    <div class="current-label">Current Page</div>
-    <div class="current-url empty" id="current-url">loading&hellip;</div>
+  <!-- Status Bar -->
+  <div class="status-bar" id="status-bar">
+    <span class="status-dot inactive" id="status-dot"></span>
+    <div class="status-text">
+      <div class="domain" id="status-domain">Loading...</div>
+      <div class="hint" id="status-hint"></div>
+    </div>
   </div>
 
   <!-- Probe Button -->
   <button class="btn-probe" id="btn-probe">
-    <span class="spinner"></span>
-    <span class="btn-text">Probe this price</span>
+    <span class="btn-spinner"></span>
+    <span class="btn-label">Probe this page</span>
   </button>
+
+  <!-- Quick Actions -->
+  <div class="quick-actions">
+    <button class="btn-quick" id="btn-probe-link" title="Probe a link from this page">
+      <svg class="q-icon" viewBox="0 0 16 16" fill="none"><path d="M7 3H3v10h10V9" stroke="#c8ccd4" stroke-opacity=".35" stroke-width="1.2" stroke-linecap="round"/><path d="M13 3L7 9" stroke="#c8ccd4" stroke-opacity=".35" stroke-width="1.2" stroke-linecap="round"/><path d="M10 3h3v3" stroke="#c8ccd4" stroke-opacity=".35" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Probe link
+    </button>
+    <button class="btn-quick" id="btn-copy-url" title="Copy current page URL">
+      <svg class="q-icon" viewBox="0 0 16 16" fill="none"><rect x="4" y="4" width="9" height="10" rx="1" stroke="#c8ccd4" stroke-opacity=".35" stroke-width="1.2"/><path d="M10 2H3v10" stroke="#c8ccd4" stroke-opacity=".35" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Copy URL
+    </button>
+  </div>
 
   <!-- Recent Probes -->
   <div class="section-header">
     <span class="section-title">Recent Probes</span>
-    <button class="section-clear" id="btn-clear">clear</button>
+    <button class="section-clear" id="btn-clear">clear all</button>
   </div>
   <ul class="recent-list" id="recent-list">
     <li class="recent-none">No probes yet</li>
   </ul>
 
   <!-- Footer -->
-  <div class="footer">24 agents &middot; 3 tiers &middot; 5 variables</div>
+  <div class="footer">
+    <span class="footer-left">24 agents &middot; 3 tiers &middot; 5 variables</span>
+    <div class="footer-right">
+      <span class="version" id="version-text">v0.2.0</span>
+      <button class="btn-settings" id="btn-settings" title="Settings">
+        <svg viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="2.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.2"/>
+          <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="rgba(255,255,255,0.15)" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
 
   <script src="popup.js"></script>
 </body>

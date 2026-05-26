@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Orbitron, Instrument_Sans } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers";
 import Link from "next/link";
 import NavAuth from "../components/nav-auth";
 
@@ -52,8 +51,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <Providers>
-          <nav className="fixed top-0 left-0 right-0 h-12 z-50 flex items-center px-5 border-b border-white/[0.08] bg-[#07080c]/90 backdrop-blur-md">
+        <nav className="fixed top-0 left-0 right-0 h-12 z-50 flex items-center px-5 border-b border-white/[0.08] bg-[#07080c]/90 backdrop-blur-md">
             <Link href="/" className="flex items-center gap-2 mr-8">
               <div className="w-5 h-5 rounded border border-accent-emerald/30 flex items-center justify-center">
                 <svg
@@ -96,8 +94,7 @@ export default function RootLayout({
               <NavAuth />
             </div>
           </nav>
-          <div className="pt-12">{children}</div>
-        </Providers>
+        <div className="pt-12">{children}</div>
       </body>
     </html>
   );

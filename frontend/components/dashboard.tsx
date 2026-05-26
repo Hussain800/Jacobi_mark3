@@ -6,7 +6,8 @@ import {
   AlertTriangle, Network, ChevronDown, ChevronRight, BarChart3,
   DollarSign, Activity, Shield, Download,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "../lib/supabase/client";
 import AuthButton from "./auth-button";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -578,7 +579,21 @@ function ResultCard({ report }: { report: TopologyReport }) {
 /* ─── Main Chat Component ──────────────────────────────────────────── */
 
 export default function JacobiTerminal() {
-  const { data: session } = useSession();
+  const [user, setUser] = useState<User | null>(null);
+  const [supabase] = useState(() => createClient());
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (active) setUser(data.user ?? null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setUser(sess?.user ?? null);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
@@ -800,7 +815,7 @@ export default function JacobiTerminal() {
           <span className="text-[10px] text-white/50 font-mono hidden sm:inline">/ adversarial pricing probe</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-[10px] text-white/40 font-mono hidden sm:inline">{session?.user?.email?.split("@")[0] || "guest"}</span>
+          <span className="text-[10px] text-white/40 font-mono hidden sm:inline">{user?.email?.split("@")[0] || "guest"}</span>
           <AuthButton />
           <label className="flex items-center gap-2 cursor-pointer group">
             <div className={`w-7 h-3.5 rounded-full border transition-colors relative ${useCache ? "bg-white/20 border-white/20" : "bg-transparent border-white/10"}`}>

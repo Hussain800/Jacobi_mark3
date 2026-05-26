@@ -1,6 +1,6 @@
 import asyncio, sys, re, statistics, math, time, uuid
 sys.path.insert(0, ".")
-from main import BrightDataMCPClient, extract_price, check_bot_detection, HONEYPOT_SIGNALS
+from main import BrightDataMCPClient, check_bot_detection, HONEYPOT_SIGNALS
 
 async def fast_probe(url: str) -> dict:
     """Single-request probe: fetch once, extract all prices, distribute across 24 virtual agents."""

@@ -18,17 +18,20 @@ from datetime import datetime
 from typing import Optional, Dict, List, Tuple
 
 import httpx
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
-BRIGHTDATA_API_KEY = "254d841d-f14d-4f4b-a394-3da0b03af036"
+load_dotenv()
+
+BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
 API_TOKEN = BRIGHTDATA_API_KEY
 
-GROQ_API_KEY = "gsk_yA7b3f92K91mX048c7dEaB9182390fcdbDk7WCrrFLKkf4CkKf3B7FtQ7"
-GEMINI_API_KEY = "AIzaSyC4lVwbX48DJqXO6RwDrvVNgG3HreliMBQ"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "gsk_yA7b3f92K91mX048c7dEaB9182390fcdbDk7WCrrFLKkf4CkKf3B7FtQ7")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyC4lVwbX48DJqXO6RwDrvVNgG3HreliMBQ")
 
 import groq
 from google import genai as google_genai
@@ -839,13 +842,18 @@ Gradient Sensitivities:
     return {"analysis": response.choices[0].message.content}
 
 
-class AuditInterfaceInput(BaseModel):
-    raw_html: str
+class GeminiValidateInput(BaseModel):
     target_url: str
+    prices: List[float]
+
+
+class ChatAssistantInput(BaseModel):
+    message: str
+    probe_data: Optional[dict] = None
 
 
 @app.post("/api/gemini-validate")
-async def gemini_validate(input: "GeminiValidateInput"):
+async def gemini_validate(input: GeminiValidateInput):
     client = get_gemini_client()
     prices_str = ", ".join(str(p) for p in input.prices[:30])
     prompt = (
@@ -869,16 +877,6 @@ async def gemini_validate(input: "GeminiValidateInput"):
     except Exception:
         pass
     return {"validated": input.prices, "raw": prices_str}
-
-
-class GeminiValidateInput(BaseModel):
-    target_url: str
-    prices: List[float]
-
-
-class ChatAssistantInput(BaseModel):
-    message: str
-    probe_data: Optional[dict] = None
 
 
 @app.post("/api/chat-assistant")
@@ -988,3 +986,9 @@ async def spa_fallback(request: Request, exc):
     if FRONTEND_INDEX and os.path.isfile(FRONTEND_INDEX):
         return FileResponse(FRONTEND_INDEX)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

@@ -12,6 +12,12 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
+/* ─── Backend URL ───────────────────────────────────────────────────── */
+
+const API_BASE = (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("api"))
+  || process.env.NEXT_PUBLIC_API_URL
+  || "http://localhost:8000";
+
 /* ─── Currency localization ──────────────────────────────────────────── */
 
 const CCY_RATES: Record<string, number> = {
@@ -142,6 +148,7 @@ export default function JacobiChat() {
   const [chatContext, setChatContext] = useState<TopologyReport | null>(null);
   const [asking, setAsking] = useState(false);
   const [userCurrency, setUserCurrency] = useState(detectCurrency());
+  const [isMock, setIsMock] = useState(false);
   const [booted, setBooted] = useState(false);
   const [bootText, setBootText] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -191,7 +198,7 @@ export default function JacobiChat() {
     addMsg("system", "Deploying 24 probe agents across Datacenter, Residential, and Mobile pools...");
 
     try {
-      const res = await fetch("http://localhost:8000/api/probe", {
+      const res = await fetch(`${API_BASE}/api/probe`, {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ target_url: targetUrl, target_name: targetUrl }),
       });
@@ -201,7 +208,7 @@ export default function JacobiChat() {
           for (let i = 0; i < 60; i++) {
             await new Promise(r => setTimeout(r, 1000));
             try {
-              const r2 = await fetch(`http://localhost:8000/api/result/${body.session_id}`);
+              const r2 = await fetch(`${API_BASE}/api/result/${body.session_id}`);
               if (!r2.ok) continue;
               const data = await r2.json();
               if (data.status === "completed" || data.status === "failed") {
@@ -229,7 +236,7 @@ export default function JacobiChat() {
         if (streamRef.current) clearInterval(streamRef.current);
         const g = generateMockReport(targetUrl);
         setStreamLogs(prev => [...prev, `[${new Date().toISOString().slice(11,23).replace("Z","")}] Pipeline complete — ${g.successful_agents}/${g.total_agents} agents`]);
-        setReport(g); setChatContext(g); setRunning(false); addMsg("result", "Analysis complete");
+        setReport(g); setChatContext(g); setRunning(false); setIsMock(true); addMsg("result", "Analysis complete");
         setTimeout(() => inputRef.current?.focus(), 100);
       }, 2800);
     }
@@ -249,7 +256,7 @@ export default function JacobiChat() {
       setAsking(true);
       addMsg("user", val);
       try {
-        const r = await fetch("http://localhost:8000/api/chat-assistant", {
+        const r = await fetch(`${API_BASE}/api/chat-assistant`, {
           method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify({ message: val, probe_data: chatContext }),
         });
@@ -312,7 +319,7 @@ export default function JacobiChat() {
             className="bg-transparent border border-neutral-800 rounded px-1.5 py-0.5 text-white/25 hover:text-white/50 cursor-pointer outline-none text-[9px]">
             {Object.keys(CCY_RATES).slice(0, 15).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-amber-400 animate-pulse" : report ? "bg-emerald-400" : "bg-white/10"}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-amber-400 animate-pulse" : report ? "bg-emerald-400" : "bg-white/10"}`} title={running ? "Scanning" : report ? "Data loaded" : "Idle"} />
         </div>
       </header>
 
@@ -444,7 +451,8 @@ export default function JacobiChat() {
                 <div className="ml-3 space-y-3 w-full max-w-[92%]">
 
                   {/* BEST PRICE HERO */}
-                  <div className="border border-neutral-900 rounded overflow-hidden bg-black/60">
+                  <div className="border border-neutral-900 rounded overflow-hidden bg-black/60 relative">
+                    {isMock && <div className="absolute top-2 right-2 text-[6px] font-mono text-amber-400/40 bg-amber-400/5 border border-amber-400/10 rounded px-1.5 py-0.5">MOCK</div>}
                     <div className="p-4 text-center border-b border-neutral-900">
                       <div className="text-[8px] font-mono text-white/20 uppercase tracking-[0.15em] mb-2">Cheapest Rate Found</div>
                       <div className="text-4xl font-mono tracking-tight text-white font-thin">{localPriceWithUSD(prices[0] || 0, userCurrency)}</div>
@@ -554,7 +562,7 @@ export default function JacobiChat() {
                         <span>{report.elapsed_seconds.toFixed(1)}s</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-[1px] bg-neutral-900">
+                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-[1px] bg-neutral-900">
                       {report.agents.map((a) => {
                         const blocked = a.bot_detected;
                         const sel = selectedAgent?.agent_id === a.agent_id;
@@ -628,7 +636,13 @@ export default function JacobiChat() {
                 {running || asking ? <Loader2 className="w-3.5 h-3.5 text-white/30 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5 text-white/40" />}
               </button>
             </div>
-            <p className="text-[7px] font-mono text-white/8 text-center mt-1.5">Built for BrightData × MIT Hackathon · 24-Agent Matrix across Datacenter · Residential · Mobile</p>
+            <div className="flex items-center justify-center gap-3 text-[7px] font-mono text-white/8 text-center mt-1.5">
+              <span>Built for BrightData × MIT Hackathon</span>
+              <span className="text-white/4">·</span>
+              <span>24-Agent Matrix</span>
+              <span className="text-white/4">·</span>
+              <span>DC · RES · MOB</span>
+            </div>
           </div>
         </div>
       </div>

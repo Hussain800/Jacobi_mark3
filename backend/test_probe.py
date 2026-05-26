@@ -1,10 +1,10 @@
 import asyncio, traceback, sys
 sys.path.insert(0, ".")
-from main import run_full_probe
+from main import run_fast_probe
 
 async def t():
     try:
-        r = await run_full_probe(
+        r = await run_fast_probe(
             "https://www.flydubai.com/en/plan/flights/select-flights?from=DXB&to=KTM&departureDate=2026-06-15&adults=1",
             "DXB-KTM"
         )

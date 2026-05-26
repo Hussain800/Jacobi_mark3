@@ -13,11 +13,11 @@ import re
 import statistics
 import time
 import uuid
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -382,9 +382,9 @@ class BrightDataMCPClient:
 
     async def start(self):
         import httpx
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(timeout=65.0)
 
-    async def probe_url(self, url: str, identity: dict, timeout_s: float = 30.0) -> dict:
+    async def probe_url(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
         if not self._client:
             raise RuntimeError("Client not initialized")
         start_ts = time.time()
@@ -396,8 +396,6 @@ class BrightDataMCPClient:
                 "zone": "mcp_unlocker",
                 "url": url,
                 "format": "raw",
-                "render": True,
-                "proxy_type": proxy_type,
                 "country": country,
             }
             response = await asyncio.wait_for(
@@ -441,10 +439,41 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         price_range=None, max_price_spread=None, max_price_spread_pct=None, gradients=[],
         discrimination_index=0.0, topology_class="unknown", summary="",
         max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None,
-        discrimination_score=0.0)
+        discrimination_score=0.0, _created_at=time.time())
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
     return session_id, session
+
+
+MAX_SESSION_AGE_SECONDS = 1800
+MAX_SESSION_ENTRIES = 100
+CLEANUP_INTERVAL_SECONDS = 300
+
+
+async def cleanup_expired_sessions():
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        try:
+            now = time.time()
+            expired = [
+                sid for sid, s in SESSION_STORE.items()
+                if now - s.get("_created_at", now) > MAX_SESSION_AGE_SECONDS
+                and s.get("status") != "running"
+            ]
+            for sid in expired:
+                SESSION_STORE.pop(sid, None)
+
+            overflow = len(SESSION_STORE) - MAX_SESSION_ENTRIES
+            if overflow > 0:
+                sorted_ids = sorted(
+                    SESSION_STORE.keys(),
+                    key=lambda sid: SESSION_STORE[sid].get("_created_at", now),
+                )
+                for sid in sorted_ids[:overflow]:
+                    if SESSION_STORE.get(sid, {}).get("status") != "running":
+                        SESSION_STORE.pop(sid, None)
+        except Exception:
+            pass  # swallow to keep the background loop alive
 
 
 def compute_gradients(session: dict) -> List[dict]:
@@ -467,21 +496,39 @@ def compute_gradients(session: dict) -> List[dict]:
         vl = statistics.variance(low) if nl > 1 else 0.0
         ps = math.sqrt(vh / nh + vl / nl) if (vh + vl) > 0 else 0.0
         t = delta / ps if ps > 0 else 0.0
+        # Use effect size + delta percentage for significance with small samples
+        # Cohen's d > 0.5 OR delta_pct > 5% = significant
+        effect_size = abs(delta) / (math.sqrt((vh + vl) / 2) + 0.01) if (vh + vl) > 0 else 0.0
+        significant = abs(t) > 1.5 or abs(dpct) > 5.0 or effect_size > 0.5
         labels_high = {"location": "High Income Area", "device": "Premium Device", "cookie_profile": "Aged Profile", "referrer": "Aggregator"}
         labels_low = {"location": "Low Income Area", "device": "Budget Device", "cookie_profile": "Fresh Profile", "referrer": "Direct"}
         results.append(dict(variable_name=var_name, state_high=labels_high.get(var_name, "High"),
             state_low=labels_low.get(var_name, "Low"), mean_price_high=round(mh, 2), mean_price_low=round(ml, 2),
             delta=round(delta, 2), delta_pct=round(dpct, 2), pooled_std=round(ps, 4),
-            t_statistic=round(t, 4), significant=abs(t) > 2.0, n_high=nh, n_low=nl))
+            t_statistic=round(t, 4), significant=significant, n_high=nh, n_low=nl))
+    for a in agents:
+        if a.get("price") is None: continue
+        p = a["price"]
+        if abs(p - baseline) / baseline > 0.08 and baseline > 0:
+            v = a.get("delta_variable")
+            if v and not any(r["variable_name"] == v + "_outlier" for r in results):
+                results.append(dict(
+                    variable_name=v + "_outlier", state_high=str(a.get("delta_direction", "?")),
+                    state_low="baseline", mean_price_high=round(p, 2),
+                    mean_price_low=round(baseline, 2), delta=round(p - baseline, 2),
+                    delta_pct=round((p - baseline) / baseline * 100, 2),
+                    pooled_std=0.0, t_statistic=0.0, significant=True,
+                    n_high=1, n_low=sum(1 for x in agents if x.get("price") == baseline)))
     return results
 
 
 def classify_topology(gradients: List[dict], di: float, baseline: float) -> str:
     sig = sum(1 for g in gradients if g["significant"])
     di_pct = (di / baseline * 100) if baseline else 0
-    if sig == 0: return "uniform"
-    if sig <= 2 and di_pct < 10: return "selective"
-    if sig <= 3 and di_pct < 25: return "progressive"
+    max_dpct = max((abs(g.get("delta_pct", 0)) for g in gradients), default=0)
+    if sig == 0 or max_dpct < 3: return "uniform"
+    if sig <= 2 and max_dpct < 12: return "selective"
+    if sig <= 3 and max_dpct < 25: return "progressive"
     return "aggressive"
 
 
@@ -505,7 +552,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
         network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
     try:
-        r = await bd.probe_url(url, cfg, 30.0)
+        r = await bd.probe_url(url, cfg, 60.0)
         if not r["success"]:
             s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
@@ -645,7 +692,48 @@ DEMO_RESULT: dict = {
 }
 
 
+# ─── In-Memory Rate Limiter ───────────────────────────────────────────────
+# Limits POST /api/probe to _RATE_MAX requests per _RATE_WINDOW seconds per IP.
+# Tracks timestamps per IP in a deque; evicts stale entries on each check.
+# No external deps — runs in-process with uvicorn (single-worker async).
+
+_RATE_MAX: int = 5
+_RATE_WINDOW: float = 60.0
+
+_rate_store: defaultdict[str, deque[float]] = defaultdict(deque)
+_rate_lock = asyncio.Lock()
+
+
+async def check_rate_limit(request: Request) -> None:
+    """FastAPI dependency: enforce per-IP rate limit on /api/probe."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    async with _rate_lock:
+        timestamps = _rate_store[ip]
+        cutoff = now - _RATE_WINDOW
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.popleft()
+
+        if len(timestamps) >= _RATE_MAX:
+            retry_after = int(timestamps[0] + _RATE_WINDOW - now) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        timestamps.append(now)
+
+
 app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(cleanup_expired_sessions())
+
+
 # CORS: allow Vercel frontend + local dev
 VERCEL_FRONTEND = os.environ.get("VERCEL_FRONTEND_URL", "https://jacobi.vercel.app")
 app.add_middleware(
@@ -667,7 +755,7 @@ async def health():
 
 
 @app.post("/api/probe")
-async def launch_probe(input: TargetProbeInput):
+async def launch_probe(input: TargetProbeInput, _: None = Depends(check_rate_limit)):
     """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}

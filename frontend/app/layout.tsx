@@ -51,7 +51,7 @@ export default function RootLayout({
           href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080c'/><path d='M8 16 L16 8 L24 16 L16 24 Z' fill='none' stroke='%2334d399' stroke-width='1.5' opacity='0.8'/><circle cx='16' cy='16' r='3' fill='%2334d399' opacity='0.6'/></svg>"
         />
       </head>
-      <body className="antialiased">
+      <body className="antialiased bg-[#07080c]">
         <Providers>
           <nav className="fixed top-0 left-0 right-0 h-12 z-50 flex items-center px-5 border-b border-white/[0.08] bg-[#07080c]/90 backdrop-blur-md">
             <Link href="/" className="flex items-center gap-2 mr-8">

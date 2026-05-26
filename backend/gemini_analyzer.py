@@ -241,7 +241,7 @@ def _analyze_with_opencode(probe_data: dict) -> Optional[GeminiVerdict]:
 def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
     """
     Analyze probe results using the best available AI provider.
-    Priority: OpenCode Zen (DeepSeek) → Gemini → heuristic fallback.
+    Priority: OpenCode Zen (DeepSeek) → AI/ML API → Gemini → heuristic fallback.
     """
     if not probe_data:
         return None
@@ -259,7 +259,42 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         _analysis_cache[ck] = verdict
         return verdict
 
-    # 2. Try Gemini (fallback provider)
+    # 2. Try AI/ML API (partner provider, OpenAI-compatible)
+    aiml_key = os.getenv("AIMLAPI_KEY")
+    if aiml_key:
+        try:
+            import httpx
+            aiml_model = os.getenv("AIMLAPI_MODEL", "gpt-4o")
+            context = _build_probe_context(probed)
+            payload = {
+                "model": aiml_model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.2,
+                "max_tokens": 2048,
+            }
+            resp = httpx.post(
+                "https://api.aimlapi.com/v1/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {aiml_key}", "Content-Type": "application/json"},
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                content = resp.json()["choices"][0]["message"]["content"]
+                verdict = GeminiVerdict.model_validate_json(content)
+                verdict.analysis_timestamp = probed.get("timestamp", "")
+                verdict.model_used = f"aimlapi/{aiml_model}"
+                _analysis_cache[ck] = verdict
+                return verdict
+            else:
+                print(f"[AIMLAPI] API returned {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[AIMLAPI] API call failed: {e}")
+
+    # 3. Try Gemini (fallback provider)
     if Client is not None:
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:

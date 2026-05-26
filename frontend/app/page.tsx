@@ -348,20 +348,6 @@ export default function LandingPage() {
 
   return (
     <div className="hud-crt-screen min-h-screen bg-[#08090c] text-white overflow-x-hidden font-mono selection:bg-[#00d992]/20 selection:text-white">
-      <style dangerouslySetInnerHTML={{__html: `
-        :root { --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1); --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
-        .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.7s var(--ease-out-quart), transform 0.7s var(--ease-out-quart); }
-        .reveal.in { opacity: 1; transform: translateY(0); }
-        .hover-lift { transition: transform 0.3s var(--ease-out-quart), box-shadow 0.3s var(--ease-out-quart); }
-        .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,217,146,0.08); }
-        .btn-pulse { transition: transform 0.15s var(--ease-out-quart); }
-        .btn-pulse:active { transform: scale(0.96); }
-      `}} />
       {/* ═══════════════ HERO WORKSTATION ═══════════════ */}
       <section className="relative min-h-[95vh] md:min-h-screen flex items-center px-4 sm:px-6 lg:px-8 pt-16 pb-12 overflow-hidden border-b border-white/[0.04]">
         

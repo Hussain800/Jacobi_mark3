@@ -17,7 +17,7 @@
 
 [![MIT](https://img.shields.io/badge/license-MIT-emerald?style=flat-square&labelColor=000)](LICENSE)
 [![BrightData](https://img.shields.io/badge/powered%20by-BrightData-00ff41?style=flat-square&labelColor=000)](https://brightdata.com)
-[![MIT Hackathon](https://img.shields.io/badge/built%20for-MIT%20Hackathon-ff6b6b?style=flat-square&labelColor=000)](https://brightdata.com)
+
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=000&logo=python&logoColor=white)](https://python.org)
 [![Next.js](https://img.shields.io/badge/next.js-14-000?style=flat-square&labelColor=000&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&labelColor=000&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -362,13 +362,13 @@ After computing statistical gradients across all 24 agents, JACOBI classifies th
 
 <div align="center">
 
-**Built with ⚡ for the BrightData × MIT Hackathon**
+**Built with ⚡ for BrightData**
 
 ```
 "One URL is all it takes to see how much you're being charged for who you are."
 ```
 
-[Report a Bug](https://github.com/HyperionBurn/Jacobi/issues) · [Request Feature](https://github.com/HyperionBurn/Jacobi/issues) · [BrightData](https://brightdata.com) · [MIT](LICENSE)
+[Report a Bug](https://github.com/HyperionBurn/Jacobi/issues) · [Request Feature](https://github.com/HyperionBurn/Jacobi/issues) · [BrightData](https://brightdata.com) · [MIT License](LICENSE)
 
 ---
 

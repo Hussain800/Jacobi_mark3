@@ -7,9 +7,9 @@
 ## How it works
 
 1. Submit a URL (hotel, flight, e-commerce product page)
-2. JACOBI fetches pricing data via BrightData MCP with JS rendering
+2. JACOBI launches 24 Bright Data Unlocker requests in three staggered waves
 3. Extracts prices using polymorphic BeautifulSoup parsing + Gemini AI fallback
-4. Distributes prices across 24 virtual agents with varying location, device, cookie, referrer, and network fingerprints
+4. Each agent sends a distinct country, user-agent, referrer, cookie, and client-hint fingerprint
 5. Computes statistical gradients to detect discrimination
 6. Returns a topology classification: `uniform` / `selective` / `progressive` / `aggressive`
 
@@ -64,7 +64,12 @@ Server starts at `http://localhost:3000`
 
 ## Config
 
-Copy `backend/.env.example` to `backend/.env` and set your API keys:
-- `BRIGHTDATA_API_KEY` — BrightData MCP proxy
-- `GROQ_API_KEY` — Groq LLM (EU AI Act auditing)
-- `GEMINI_API_KEY` — Google Gemini (price validation, chat)
+Copy `backend/.env.example` to `backend/.env`, or create `.env.local` at the repo root, and set your API keys:
+- `BRIGHTDATA_API_KEY` - Bright Data Unlocker API
+- `BRIGHTDATA_UNLOCKER_ZONE` - Bright Data Unlocker zone name, default `mcp_unlocker`
+- `BRIGHTDATA_CUSTOM_HEADERS_ENABLED` - set `true` only after enabling Custom Headers & Cookies on the Bright Data zone
+- `OPENCODE_API_KEY` - optional OpenCode Zen analysis provider
+- `GROQ_API_KEY` - optional Groq LLM
+- `GEMINI_API_KEY` - optional Google Gemini fallback
+
+For the 24-agent fingerprint claim, the Bright Data zone must allow custom headers/cookies; otherwise Bright Data may ignore the per-agent user-agent, referrer, cookie, and client-hint overrides.

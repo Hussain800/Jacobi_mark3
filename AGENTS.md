@@ -19,5 +19,5 @@ npm run build               # Export static build to out/
 ```
 
 ### Environment
-- Backend API keys in `backend/.env` (copy from `.env.example`)
+- Backend API keys in repo root `.env.local` or `backend/.env` (copy from `backend/.env.example`)
 - Frontend API URL configurable via `NEXT_PUBLIC_API_URL` env var or `?api=` query param

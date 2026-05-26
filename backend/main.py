@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from dotenv import load_dotenv
 from gemini_analyzer import analyze_report, GeminiReport
+from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
 
@@ -237,7 +238,8 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         control_stability=0.0, baseline_price=None, mean_price=None, all_prices={},
         price_range=None, max_price_spread=None, max_price_spread_pct=None, gradients=[],
         discrimination_index=0.0, topology_class="unknown", summary="",
-        max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None)
+        max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None,
+        discrimination_score=0.0)
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
     return session_id, session
@@ -279,6 +281,19 @@ def classify_topology(gradients: List[dict], di: float, baseline: float) -> str:
     if sig <= 2 and di_pct < 10: return "selective"
     if sig <= 3 and di_pct < 25: return "progressive"
     return "aggressive"
+
+
+def compute_severity_score(session: dict) -> float:
+    """Compute a 0-100 pricing discrimination severity score."""
+    spread_pct = session.get("max_price_spread_pct", 0) or 0
+    sig_count = sum(1 for g in session.get("gradients", []) if g.get("significant"))
+    di = session.get("discrimination_index", 0) or 0
+    baseline = session.get("baseline_price", 0) or 1
+    # Score: 0-40 from spread, 0-30 from sig factors, 0-30 from DI/baseline ratio
+    spread_score = min(spread_pct * 2, 40)
+    sig_score = min(sig_count * 10, 30)
+    di_score = min((di / baseline) * 100, 30)
+    return round(min(spread_score + sig_score + di_score, 100), 1)
 
 
 async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> dict:
@@ -355,6 +370,7 @@ async def run_full_probe(url: str, name: str) -> dict:
         session["summary"] = (f"TOPOLOGY: {session['topology_class'].upper()}. "
             f"Baseline: ${bp:.2f}. Spread: ${session['max_price_spread']:.2f}. "
             f"DI: ${di:.2f}. Significant: {len(sig_vars)} vars. {sig_details}.")
+        session["discrimination_score"] = compute_severity_score(session)
         max_a = max((a for a in session["agents"] if a.get("price")), key=lambda x: x["price"], default=None)
         min_a = min((a for a in session["agents"] if a.get("price")), key=lambda x: x["price"], default=None)
         session["max_discrimination_scenario"] = f"Max: {max_a['label']} @ ${max_a['price']:.2f}" if max_a else "N/A"
@@ -392,6 +408,7 @@ DEMO_RESULT: dict = {
         {"variable_name":"referrer","state_high":"Aggregator","state_low":"Direct","mean_price_high":360.0,"mean_price_low":347.0,"delta":13.0,"delta_pct":3.7,"pooled_std":3.8,"t_statistic":3.42,"significant":True,"n_high":2,"n_low":2},
     ],
     "discrimination_index": 94.5, "topology_class": "progressive",
+    "discrimination_score": 91.8,
     "summary": "TOPOLOGY: PROGRESSIVE. Baseline: $347.00. Spread: $60.00. DI: $94.50. Significant: 3 vars. location: +$47.00; device: +$34.50; referrer: +$13.00.",
     "max_discrimination_scenario": "Max: AGENT_18  LOCATION_HIGH  DUBAI_$110K @ $380.00",
     "min_discrimination_scenario": "Min: AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K @ $320.00",
@@ -435,6 +452,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(export_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None
@@ -503,8 +522,9 @@ async def get_result(session_id: str):
         price_range=session["price_range"], max_price_spread=session["max_price_spread"],
         max_price_spread_pct=session["max_price_spread_pct"], gradients=session["gradients"],
         discrimination_index=session["discrimination_index"], topology_class=session["topology_class"],
-        summary=session["summary"], max_discrimination_scenario=session["max_discrimination_scenario"],
+        summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
         min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
+        discrimination_score=session.get("discrimination_score", 0),
         error=session.get("error"),
     )
 
@@ -512,6 +532,31 @@ async def get_result(session_id: str):
 @app.get("/api/demo")
 async def get_demo_data():
     return DEMO_RESULT
+
+
+@app.get("/api/leaderboard")
+async def get_leaderboard(limit: int = 10):
+    """Return top N probes by savings (max_price_spread)."""
+    try:
+        from supabase_client import get_probe_history
+        probes = await get_probe_history(limit=20)
+        # Sort by max_price_spread descending, take top N
+        sorted_probes = sorted(
+            [p for p in probes if p.get("max_price_spread")],
+            key=lambda p: p["max_price_spread"],
+            reverse=True
+        )[:limit]
+        return [
+            {
+                "name": p.get("target_name", p.get("target_url", "Unknown"))[:30],
+                "savings": p["max_price_spread"],
+                "url": p.get("target_url", ""),
+            }
+            for p in sorted_probes
+        ]
+    except Exception as e:
+        # Return empty leaderboard on any error (backend might not have Supabase configured)
+        return []
 
 
 @app.post("/api/analyze")

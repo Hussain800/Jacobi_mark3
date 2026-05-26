@@ -7,3 +7,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@keyframes pulse-agent {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.agent-pulse { animation: pulse-agent 1.5s ease-in-out infinite; }

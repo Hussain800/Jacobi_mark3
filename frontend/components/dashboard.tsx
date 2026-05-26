@@ -251,6 +251,73 @@ function ExportButtons({ report }: { report: TopologyReport }) {
   );
 }
 
+/* ─── Agent Probe Grid (6×4) ─────────────────────────────────────────── */
+
+function AgentGrid({
+  agents,
+  totalAgents,
+  successfulAgents,
+  failedAgents,
+  detectedAgents,
+}: {
+  agents: { agent_id: string; status: string; price: number | null }[];
+  totalAgents: number;
+  successfulAgents: number;
+  failedAgents: number;
+  detectedAgents: number;
+}) {
+  const responded = successfulAgents + failedAgents + detectedAgents;
+
+  const cells = Array.from({ length: 24 }, (_, i) => {
+    const agentId = `AGENT_${String(i).padStart(2, "0")}`;
+    const agent = agents.find((a) => a.agent_id === agentId);
+    const status = agent ? agent.status : "pending";
+
+    const colorMap: Record<string, string> = {
+      pending: "bg-white/[0.04]",
+      in_flight: "bg-white/40 agent-pulse",
+      success: "bg-emerald-400/80",
+      failed: "bg-red-400/50",
+      detected: "bg-orange-400/60",
+    };
+
+    return { id: agentId, index: i, status, color: colorMap[status] || "bg-white/[0.04]" };
+  });
+
+  return (
+    <div className="border border-white/[0.06] rounded-lg p-3 bg-white/[0.01]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">Probe Network</span>
+        <span className="text-[10px] font-mono text-white/40">
+          {responded}/{totalAgents} responded
+        </span>
+      </div>
+      <div className="grid grid-cols-6 gap-1">
+        {cells.map((cell) => (
+          <div
+            key={cell.id}
+            className={`aspect-square rounded-sm ${cell.color} transition-all duration-500`}
+            title={`${cell.id}: ${cell.status}`}
+          />
+        ))}
+      </div>
+      <div className="flex gap-3 mt-2 text-[9px] font-mono">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-400/80" /> {successfulAgents} success
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-red-400/50" /> {failedAgents} failed
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-orange-400/60" /> {detectedAgents} blocked
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Result Card ────────────────────────────────────────────────────── */
+
 function ResultCard({ report }: { report: TopologyReport }) {
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
@@ -351,6 +418,25 @@ function ResultCard({ report }: { report: TopologyReport }) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Share Your Savings */}
+      {report.gradients.some((g) => g.significant) && (
+        <div className="px-4 py-2 border-b border-white/[0.06] flex items-center gap-2">
+          <button onClick={() => {
+            const savingsVal = report.gradients.filter((g) => g.significant).reduce((s, g) => s + g.delta, 0).toFixed(0)
+            const text = `I used @Jacobi to find $${savingsVal} in hidden pricing discrimination 🕵️`
+            navigator.clipboard.writeText(text + " Try it → jacobi.app")
+          }} className="px-3 py-1.5 text-[10px] font-mono border border-white/10 rounded hover:border-white/30 text-white/40 hover:text-white/70 transition-all">
+            📋 Share savings
+          </button>
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("I used @Jacobi to find hidden pricing discrimination 🕵️")}`} target="_blank" className="px-3 py-1.5 text-[10px] font-mono border border-white/10 rounded hover:border-white/30 text-white/40 hover:text-white/70 transition-all">
+            𝕏 Share
+          </a>
+          <a href={`https://linkedin.com/sharing/share-offscreen/?url=${encodeURIComponent("https://jacobi.app")}`} target="_blank" className="px-3 py-1.5 text-[10px] font-mono border border-white/10 rounded hover:border-white/30 text-white/40 hover:text-white/70 transition-all">
+            in Share
+          </a>
         </div>
       )}
 
@@ -466,6 +552,60 @@ function ResultCard({ report }: { report: TopologyReport }) {
   );
 }
 
+/* ─── Savings Leaderboard ────────────────────────────────────────────── */
+
+function Leaderboard() {
+  const [entries, setEntries] = useState<{ name: string; savings: number; url: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [collapsed, setCollapsed] = useState(true);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/leaderboard`)
+      .then((r) => r.json())
+      .then((data) => setEntries(data.slice(0, 10)))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
+  }, [apiBase]);
+
+  if (loading) {
+    return (
+      <div className="text-[10px] font-mono text-white/20 text-center py-4">
+        Loading leaderboard...
+      </div>
+    );
+  }
+
+  if (!entries.length) return null;
+
+  return (
+    <div className="border border-white/[0.06] rounded-lg overflow-hidden">
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full px-4 py-2 border-b border-white/[0.06] text-[10px] font-mono text-white/30 uppercase tracking-wider flex items-center justify-between hover:text-white/50 hover:bg-white/[0.02] transition-colors"
+      >
+        <span>🏆 Savings Leaderboard</span>
+        {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      </button>
+      {!collapsed && (
+        <div>
+          {entries.map((e, i) => (
+            <div
+              key={i}
+              className="px-4 py-1.5 border-b border-white/[0.03] flex items-center justify-between text-[11px]"
+            >
+              <span className="text-white/40">
+                {i + 1}. {e.name}
+              </span>
+              <span className="text-emerald-400 font-mono">-${e.savings.toFixed(0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Chat Component ──────────────────────────────────────────── */
 
 export default function JacobiTerminal() {
@@ -512,11 +652,38 @@ export default function JacobiTerminal() {
 
     if (useCache) {
       await new Promise(r => setTimeout(r, 500));
-      updateLastAssistant({ content: "▸ Wave 1/3 — 8 agents deployed (location, device profiles)" });
+      updateLastAssistant({
+        content: "▸ Wave 1/3 — 8 agents deployed (location, device profiles)",
+        report: {
+          total_agents: 24,
+          successful_agents: 8,
+          failed_agents: 0,
+          detected_agents: 0,
+          agents: DEMO.agents.slice(0, 8),
+        } as any,
+      });
       await new Promise(r => setTimeout(r, 600));
-      updateLastAssistant({ content: "▸ Wave 2/3 — 16 agents active (cookie, referrer profiles)" });
+      updateLastAssistant({
+        content: "▸ Wave 2/3 — 16 agents active (cookie, referrer profiles)",
+        report: {
+          total_agents: 24,
+          successful_agents: 16,
+          failed_agents: 0,
+          detected_agents: 0,
+          agents: DEMO.agents.slice(0, 16),
+        } as any,
+      });
       await new Promise(r => setTimeout(r, 600));
-      updateLastAssistant({ content: "▸ Wave 3/3 — all 24 agents reporting\n▸ Computing topology gradients..." });
+      updateLastAssistant({
+        content: "▸ Wave 3/3 — all 24 agents reporting\n▸ Computing topology gradients...",
+        report: {
+          total_agents: 24,
+          successful_agents: 22,
+          failed_agents: 1,
+          detected_agents: 1,
+          agents: DEMO.agents,
+        } as any,
+      });
       await new Promise(r => setTimeout(r, 500));
       // Try to fetch Gemini analysis + verdict from local backend
       try {
@@ -583,6 +750,7 @@ export default function JacobiTerminal() {
           } else {
             updateLastAssistant({
               content: `▸ Scanning... (${data.successful_agents}/${data.total_agents} agents responded)`,
+              report: data,
             });
           }
         } catch (e: any) {
@@ -699,9 +867,29 @@ export default function JacobiTerminal() {
                 <div className="max-w-[92%] space-y-2">
                   {/* Scanning status */}
                   {msg.status === "scanning" && (
-                    <div className="flex items-start gap-3">
-                      <Loader2 className="w-3.5 h-3.5 mt-1 text-white/40 animate-spin shrink-0" />
-                      <p className="text-sm text-white/50 font-mono whitespace-pre-line">{msg.content}</p>
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <Loader2 className="w-3.5 h-3.5 mt-1 text-white/40 animate-spin shrink-0" />
+                        <p className="text-sm text-white/50 font-mono whitespace-pre-line">{msg.content}</p>
+                      </div>
+                      {msg.report && (
+                        <AgentGrid
+                          agents={msg.report.agents || []}
+                          totalAgents={msg.report.total_agents || 24}
+                          successfulAgents={msg.report.successful_agents || 0}
+                          failedAgents={msg.report.failed_agents || 0}
+                          detectedAgents={msg.report.detected_agents || 0}
+                        />
+                      )}
+                      {!msg.report && (
+                        <AgentGrid
+                          agents={[]}
+                          totalAgents={24}
+                          successfulAgents={0}
+                          failedAgents={0}
+                          detectedAgents={0}
+                        />
+                      )}
                     </div>
                   )}
 
@@ -745,6 +933,13 @@ export default function JacobiTerminal() {
                   {s.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Leaderboard — always visible when not scanning */}
+          {!running && (
+            <div className="pt-3">
+              <Leaderboard />
             </div>
           )}
 

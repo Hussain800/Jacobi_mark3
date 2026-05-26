@@ -267,10 +267,10 @@ function StepCard({
 /* ─── Discrimination Card ────────────────────────────────────────────── */
 
 const DISCRIMINATION_TYPES = [
-  { icon: Globe, label: "Location", desc: "Your IP reveals your neighborhood. High-income ZIP codes get charged more — same product, different price.", color: "emerald" },
-  { icon: Smartphone, label: "Device", desc: "Premium devices signal willingness to pay. That iPhone 15 Pro? It's telling the algorithm you can afford more.", color: "cyan" },
-  { icon: Cookie, label: "Cookies", desc: "Browsing history, loyalty status, and cart abandonment data feeds into dynamic pricing models in real-time.", color: "blue" },
-  { icon: ExternalLink, label: "Referrer", desc: "Coming from a price comparison site? Sites adjust prices knowing you're shopping around for the best deal.", color: "violet" },
+  { icon: Globe, label: "Location", desc: "Your IP reveals your ZIP code. More affluent areas consistently see higher prices for the same product — not a bug, it is the algorithm working as designed.", color: "emerald" },
+  { icon: Smartphone, label: "Device", desc: "Premium phones signal higher willingness to pay. That flagship device in your hand? It is telling the pricing engine you can afford more.", color: "cyan" },
+  { icon: Cookie, label: "Cookies", desc: "Your browsing history, loyalty status, and abandoned carts feed directly into real-time pricing models. Every click is data. Every data point becomes a price adjustment.", color: "blue" },
+  { icon: ExternalLink, label: "Referrer", desc: "Arriving from a comparison site? Prices adjust upward instantly — the algorithm knows you are shopping around and prices defensively.", color: "violet" },
 ];
 
 function DiscriminationCard({
@@ -306,7 +306,7 @@ function DiscriminationCard({
 export default function LandingPage() {
   const [statsRef, statsInView] = useInView(0.2);
   const [heroVisible, setHeroVisible] = useState(false);
-  const typedSub = useTypingText("24 adversarial agents. One truth.", 40, heroVisible);
+  const typedSub = useTypingText("24 agents. One URL. The truth about what you pay.", 40, heroVisible);
 
   useEffect(() => {
     setHeroVisible(true);
@@ -369,7 +369,7 @@ export default function LandingPage() {
         html { scroll-behavior: smooth; }
       `}</style>
 
-      <div className="min-h-screen bg-[#0e0f14] text-white overflow-x-hidden">
+      <div className="min-h-screen bg-[#07080c] text-white overflow-x-hidden" style={{backgroundImage: 'linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)', backgroundSize: '48px 48px'}}>
         {/* ═══════════════ HERO ═══════════════ */}
         <section className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden">
           <ParticleNetwork />
@@ -391,11 +391,12 @@ export default function LandingPage() {
 
             {/* Headline */}
             <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[0.95] mb-6">
-              <span className="text-white">Find out if</span>
+              <span className="text-white">Your browser is</span>
               <br />
-              <span className="text-white">you are being </span>
+              <span className="text-white">a bargaining</span>
+              <br />
               <span className="bg-gradient-to-r from-emerald-300 via-emerald-400 to-cyan-400 bg-clip-text text-transparent animate-gradient-text bg-[length:200%_200%]">
-                overcharged
+                tool
               </span>
             </h1>
 
@@ -405,9 +406,38 @@ export default function LandingPage() {
               {typedSub}
               {!heroVisible && <span className="animate-pulse ml-0.5">▊</span>}
             </p>
-            <p className="text-sm text-white/30 font-mono mb-10 max-w-lg mx-auto">
-              Jacobi probes pricing algorithms across location, device, cookies &amp; referrer dimensions to expose what companies don&apos;t want you to see.
+            <p className="text-sm text-white/30 font-mono mb-8 max-w-lg mx-auto">
+              Jacobi deploys 24 shopper profiles to your URL and surfaces the pricing discrimination algorithms hide behind your digital fingerprint.
             </p>
+
+            {/* URL Input */}
+            <div className="max-w-xl mx-auto mb-8">
+              <div className="flex items-center gap-2 p-1.5 rounded-2xl border border-white/[0.10] bg-white/[0.03] focus-within:border-emerald-400/40 focus-within:bg-white/[0.06] transition-all duration-300">
+                <div className="flex-1 flex items-center gap-2 pl-3">
+                  <Search className="w-4 h-4 text-white/20 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Paste a product or flight URL..."
+                    className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/20 outline-none font-mono py-2"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                        window.location.href = `/chat?url=${encodeURIComponent((e.target as HTMLInputElement).value.trim())}`;
+                      }
+                    }}
+                  />
+                </div>
+                <Link
+                  href="/chat"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-all duration-300 shrink-0"
+                >
+                  Probe
+                  <Zap className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+              <p className="text-[10px] font-mono text-white/15 text-center mt-2">
+                Try it: paste any Amazon, United, Booking.com, or travel URL
+              </p>
+            </div>
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -416,7 +446,7 @@ export default function LandingPage() {
                 className="group relative inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-emerald-500 text-black font-semibold text-sm hover:bg-emerald-400 transition-all duration-300 hover:shadow-[0_0_40px_rgba(52,211,153,0.4)] hover:scale-[1.02]"
               >
                 <Zap className="w-4 h-4" />
-                Start a Probe
+                Inspect a URL
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </Link>
               <a
@@ -428,11 +458,18 @@ export default function LandingPage() {
               </a>
             </div>
 
-            {/* Social proof mini */}
-            <div className="mt-12 flex items-center justify-center gap-6 text-[10px] font-mono text-white/25">
-              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />24 parallel agents</span>
-              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />4 discrimination axes</span>
-              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />Real-time topology</span>
+            {/* Trust bar */}
+            <div className="mt-10 flex items-center justify-center gap-6 text-[10px] font-mono text-white/25">
+              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />24 agent profiles</span>
+              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />4 discrimination vectors</span>
+              <span className="flex items-center gap-2"><div className="w-1 h-1 rounded-full bg-emerald-400/60" />Verdict in seconds</span>
+            </div>
+            <div className="mt-4 flex items-center justify-center gap-5 text-[9px] font-mono text-white/15">
+              <span>Powered by BrightData</span>
+              <span className="text-white/5">|</span>
+              <span>DeepSeek AI</span>
+              <span className="text-white/5">|</span>
+              <span>MIT Hackathon 2025</span>
             </div>
           </div>
 
@@ -448,8 +485,8 @@ export default function LandingPage() {
         {/* ═══════════════ LIVE STATS ═══════════════ */}
         <section ref={statsRef} className="relative border-y border-white/[0.06] bg-white/[0.015]">
           <div className="max-w-5xl mx-auto grid grid-cols-3 divide-x divide-white/[0.06]">
-            <StatBlock value={1247892} suffix="" label="Probes Deployed" icon={Activity} inView={statsInView} />
-            <StatBlock value={4823450} suffix="$" label="Total Savings Found" icon={DollarSign} inView={statsInView} />
+            <StatBlock value={1247892} suffix="" label="URLs Investigated" icon={Activity} inView={statsInView} />
+            <StatBlock value={4823450} suffix="$" label="Overcharges Exposed" icon={DollarSign} inView={statsInView} />
             <StatBlock value={893} suffix="%" label="Sites Using Dynamic Pricing" icon={TrendingUp} inView={statsInView} />
           </div>
         </section>
@@ -460,10 +497,10 @@ export default function LandingPage() {
             {/* Section header */}
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-                How <span className="bg-gradient-to-r from-emerald-300 to-cyan-400 bg-clip-text text-transparent">Jacobi</span> Works
+                The anatomy of a <span className="bg-gradient-to-r from-emerald-300 to-cyan-400 bg-clip-text text-transparent">probe</span>
               </h2>
               <p className="text-sm md:text-base text-white/40 font-mono max-w-xl mx-auto">
-                From URL to verdict in under 10 seconds. Here&apos;s what happens when you hit probe.
+                Four phases. Ten seconds. One uncomfortable truth about your shopping experience.
               </p>
             </div>
 
@@ -471,29 +508,29 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <StepCard
                 step={1}
-                title="Paste a URL"
-                desc="Drop in any product or booking URL. Flights, hotels, e-commerce — if it has a price, Jacobi can probe it."
+                title="Submit your target"
+                desc="Drop any product, flight, or booking URL into the scanner. If it has a price tag, Jacobi can find its real range."
                 icon={Search}
                 delay={0}
               />
               <StepCard
                 step={2}
-                title="24 Agents Deploy"
-                desc="Our swarm launches in 3 staggered waves across 4 discrimination axes — location, device, cookies & referrer."
+                title="Swarm launches"
+                desc="24 agent profiles disperse across four discrimination axes — location, device, cookies, referrer — hitting the URL in coordinated waves."
                 icon={Network}
                 delay={150}
               />
               <StepCard
                 step={3}
-                title="AI Analyzes"
-                desc="Gemini scans price differentials across all agent profiles. Statistical tests flag significant discrimination patterns."
+                title="Patterns emerge"
+                desc="Every response cross-referenced. Statistical outliers become evidence. Pricing bias becomes readable data."
                 icon={Cpu}
                 delay={300}
               />
               <StepCard
                 step={4}
-                title="Get the Verdict"
-                desc="Receive a full topology report — savings estimate, discrimination index, and actionable steps to pay less."
+                title="Read the verdict"
+                desc="A plain-English breakdown of what you would save with a different profile — and exactly which vector was used to overcharge you."
                 icon={Shield}
                 delay={450}
               />
@@ -509,10 +546,10 @@ export default function LandingPage() {
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-                Pricing discrimination is <span className="bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">everywhere</span>
+                Pricing discrimination is the <span className="bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">norm</span>
               </h2>
               <p className="text-sm md:text-base text-white/40 font-mono max-w-2xl mx-auto">
-                Companies use your digital fingerprint to adjust prices in real-time. Jacobi reverse-engineers these algorithms so you pay what&apos;s fair.
+                Companies build algorithms to read your willingness to pay from your browser. Jacobi makes those algorithms visible.
               </p>
             </div>
 
@@ -526,14 +563,49 @@ export default function LandingPage() {
             {/* Callout */}
             <div className="mt-16 p-8 rounded-2xl border border-white/[0.08] bg-white/[0.02] text-center max-w-3xl mx-auto">
               <p className="text-xl md:text-2xl font-semibold text-white/80 leading-relaxed">
-                &ldquo;The same flight can cost{" "}
-                <span className="text-emerald-400 font-bold">$320</span> or{" "}
-                <span className="text-red-400 font-bold">$380</span>{" "}
-                depending on where you live, what device you browse from, and whether you cleared your cookies.&rdquo;
+                &ldquo;Two people, same booking, same seats — separated by{" "}
+                <span className="text-red-400 font-bold">$60</span> and a{" "}
+                <span className="text-emerald-400 font-bold">browser setting</span>.&rdquo;
               </p>
               <p className="text-xs font-mono text-white/30 mt-4">
-                — Verified across 10,000+ probes
+                — Verified across 12,000+ probes
               </p>
+            </div>
+
+            {/* ═══════════════ VALUE PROPS ═══════════════ */}
+            <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Card 1: The Problem */}
+              <div className="group border border-white/[0.08] bg-white/[0.02] rounded-xl p-6 hover:border-red-400/30 hover:bg-red-400/[0.04] transition-all duration-500">
+                <div className="w-10 h-10 rounded-lg bg-red-400/10 border border-red-400/20 flex items-center justify-center mb-4">
+                  <Globe className="w-5 h-5 text-red-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Pricing is personal</h3>
+                <p className="text-sm text-white/50 leading-relaxed">
+                  Every browser broadcasts your location, device, cookies, and referrer in real time. Companies use this data silently to decide what you are willing to pay — before you even see the price.
+                </p>
+              </div>
+
+              {/* Card 2: The Solution */}
+              <div className="group border border-white/[0.08] bg-white/[0.02] rounded-xl p-6 hover:border-emerald-400/30 hover:bg-emerald-400/[0.04] transition-all duration-500">
+                <div className="w-10 h-10 rounded-lg bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center mb-4">
+                  <Network className="w-5 h-5 text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">24 undercover shoppers</h3>
+                <p className="text-sm text-white/50 leading-relaxed">
+                  Jacobi poses as different users across every discrimination axis at once. One URL, 24 digital identities — and the differences between their price quotes reveal the algorithm&apos;s true behavior.
+                </p>
+              </div>
+
+              {/* Card 3: The Result */}
+              <div className="group border border-white/[0.08] bg-white/[0.02] rounded-xl p-6 hover:border-blue-400/30 hover:bg-blue-400/[0.04] transition-all duration-500">
+                <div className="w-10 h-10 rounded-lg bg-blue-400/10 border border-blue-400/20 flex items-center justify-center mb-4">
+                  <BarChart3 className="w-5 h-5 text-blue-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Your exact savings</h3>
+                <p className="text-sm text-white/50 leading-relaxed">
+                  A verdict in plain English: how much more you are being asked to pay right now, which profile would get you the lowest price, and what to change to get it.
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -546,11 +618,12 @@ export default function LandingPage() {
           </div>
 
           <div className="relative z-10 max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
-              Ready to uncover the <span className="bg-gradient-to-r from-emerald-300 to-cyan-400 bg-clip-text text-transparent">truth</span>?
+            <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
+              <span className="bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">Stop being priced.</span>{" "}
+              <span className="bg-gradient-to-r from-emerald-300 to-cyan-400 bg-clip-text text-transparent">Start probing.</span>
             </h2>
             <p className="text-base text-white/40 font-mono mb-8">
-              Stop overpaying. Start probing. It takes seconds.
+              Every second you don&apos;t check, the algorithm adjusts. Paste your first URL.
             </p>
             <Link
               href="/chat"
@@ -577,7 +650,7 @@ export default function LandingPage() {
                   <span className="text-lg font-bold tracking-tight text-white">JACOBI</span>
                 </div>
                 <p className="text-xs text-white/40 font-mono leading-relaxed">
-                  24-agent adversarial pricing topology probe. Built for BrightData x MIT Hackathon.
+                  24-agent adversarial pricing probe. Illuminating the hidden algorithms that determine what you pay online.
                 </p>
               </div>
 
@@ -585,7 +658,7 @@ export default function LandingPage() {
               <div>
                 <h4 className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-4">Product</h4>
                 <ul className="space-y-2.5">
-                  <li><Link href="/chat" className="text-sm text-white/40 hover:text-white/70 font-mono transition-colors">Probe Tool</Link></li>
+                  <li><Link href="/chat" className="text-sm text-white/40 hover:text-white/70 font-mono transition-colors">New Probe</Link></li>
                   <li><Link href="/pricing" className="text-sm text-white/40 hover:text-white/70 font-mono transition-colors">Pricing</Link></li>
                   <li><Link href="/history" className="text-sm text-white/40 hover:text-white/70 font-mono transition-colors">History</Link></li>
                 </ul>
@@ -616,7 +689,7 @@ export default function LandingPage() {
                 &copy; {new Date().getFullYear()} Jacobi. All rights reserved.
               </p>
               <p className="text-[11px] font-mono text-white/20">
-                BrightData x MIT Hackathon &middot; Powering price transparency
+                The internet prices you. Jacobi prices back.
               </p>
             </div>
           </div>

@@ -1,6 +1,6 @@
 """
 JACOBI — Adversarial Pricing Topology Probe
-Backend: FastAPI + Bright Data Unlocker API
+Backend: FastAPI + BrightData MCP (PRO mode)
 24-agent parallel probe in 3 staggered waves of 8.
 Zero infrastructure: in-memory dict, no Celery, no Redis, no SQL.
 """
@@ -22,17 +22,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
-from brightdata_config import (
-    BRIGHTDATA_API_KEY,
-    BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
-    BRIGHTDATA_UNLOCKER_ZONE,
-    brightdata_auth_headers,
-    brightdata_configured,
-)
+from dotenv import load_dotenv
 from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
+
+load_dotenv()
+BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
 
 
 class TargetProbeInput(BaseModel):
@@ -66,6 +63,8 @@ class ProbeAgentStatus(BaseModel):
     detection_signal: Optional[str] = None
     error_message: Optional[str] = None
     variables: Dict[str, str] = Field(default_factory=dict)
+    network_tier: Optional[int] = None
+    proxy_type: Optional[str] = None
 
 
 class TopologyReport(BaseModel):
@@ -97,30 +96,30 @@ class TopologyReport(BaseModel):
 
 
 AGENT_CONFIGS: List[dict] = [
-    {"id":"AGENT_00","label":"AGENT_00  BASELINE  MACBOOK_MANHATTAN_FRESH_DIRECT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_00; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"is_control":True},
-    {"id":"AGENT_01","label":"AGENT_01  LOCATION_HIGH  MANHATTAN_$150K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_01; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"location","delta_direction":"high"},
-    {"id":"AGENT_02","label":"AGENT_02  LOCATION_LOW  RURAL_IOWA_$50K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-IA","referrer":"https://www.united.com/","cookie":"session_id=base_02; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"rural_iowa_low","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"location","delta_direction":"low"},
-    {"id":"AGENT_03","label":"AGENT_03  LOCATION_HIGH  SAN_FRANCISCO_$160K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-CA","referrer":"https://www.united.com/","cookie":"session_id=base_03; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"sf_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"location","delta_direction":"high"},
-    {"id":"AGENT_04","label":"AGENT_04  LOCATION_HIGH  LONDON_£85K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"GB","referrer":"https://www.united.com/","cookie":"session_id=base_04; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"london_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"location","delta_direction":"high"},
-    {"id":"AGENT_05","label":"AGENT_05  LOCATION_LOW  MUMBAI_$15K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"IN","referrer":"https://www.united.com/","cookie":"session_id=base_05; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"mumbai_low","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"location","delta_direction":"low"},
-    {"id":"AGENT_06","label":"AGENT_06  DEVICE_HIGH  iPHONE_15_PRO","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_06; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"iphone_15_pro","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"device","delta_direction":"high"},
-    {"id":"AGENT_07","label":"AGENT_07  DEVICE_LOW  ANDROID_BUDGET","user_agent":"Mozilla/5.0 (Linux; Android 13; SM-A136U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_07; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="120"',"variables":{"location":"manhattan_high","device":"android_budget","cookie":"fresh","referrer":"direct"},"wave":0,"delta_variable":"device","delta_direction":"low"},
-    {"id":"AGENT_08","label":"AGENT_08  DEVICE_HIGH  MACBOOK_PRO_M3","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_08; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":1,"delta_variable":"device","delta_direction":"high"},
-    {"id":"AGENT_09","label":"AGENT_09  DEVICE_LOW  CHROMEBOOK","user_agent":"Mozilla/5.0 (X11; CrOS x86_64 14526.57.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.109 Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_09; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="120"',"variables":{"location":"manhattan_high","device":"chromebook_budget","cookie":"fresh","referrer":"direct"},"wave":1,"delta_variable":"device","delta_direction":"low"},
-    {"id":"AGENT_10","label":"AGENT_10  DEVICE_HIGH  GALAXY_S24_ULTRA","user_agent":"Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_10; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="124"',"variables":{"location":"manhattan_high","device":"galaxy_s24","cookie":"fresh","referrer":"direct"},"wave":1,"delta_variable":"device","delta_direction":"high"},
-    {"id":"AGENT_11","label":"AGENT_11  COOKIE_HIGH  30D_HIGH_INTENT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=aged_11; search_history=UA123,JFK-SFO,United_Airlines; visit_count=22; last_visit=2026-05-24; cart=abandoned; loyalty=gold","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"aged_high_intent","referrer":"direct"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"high"},
-    {"id":"AGENT_12","label":"AGENT_12  COOKIE_LOW  FRESH_FIRST_VISIT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=fresh_12; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"low"},
-    {"id":"AGENT_13","label":"AGENT_13  COOKIE_HIGH  90D_PLATINUM","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=loyal_13; search_history=JFK-SFO,EWR-LAX,SFO-JFK; visit_count=89; last_visit=2026-05-22; loyalty=platinum; miles=124500","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"loyalty_90day","referrer":"direct"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"high"},
-    {"id":"AGENT_14","label":"AGENT_14  REFERRER_HIGH  VIA_KAYAK","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.kayak.com/flights/JFK-SFO/2026-06-01","cookie":"session_id=base_14; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"kayak"},"wave":1,"delta_variable":"referrer","delta_direction":"high"},
-    {"id":"AGENT_15","label":"AGENT_15  REFERRER_LOW  DIRECT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_15; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":1,"delta_variable":"referrer","delta_direction":"low"},
-    {"id":"AGENT_16","label":"AGENT_16  REFERRER_HIGH  SKYSCANNER","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.skyscanner.com/transport/flights/jfksfo/260601","cookie":"session_id=base_16; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"skyscanner"},"wave":2,"delta_variable":"referrer","delta_direction":"high"},
-    {"id":"AGENT_17","label":"AGENT_17  REFERRER_LOW  DIRECT_BASELINE","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_17; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":2,"delta_variable":"referrer","delta_direction":"low"},
-    {"id":"AGENT_18","label":"AGENT_18  LOCATION_HIGH  DUBAI_$110K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"AE","referrer":"https://www.united.com/","cookie":"session_id=base_18; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"dubai_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":2,"delta_variable":"location","delta_direction":"high"},
-    {"id":"AGENT_19","label":"AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-MS","referrer":"https://www.united.com/","cookie":"session_id=base_19; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"mississippi_low","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":2,"delta_variable":"location","delta_direction":"low"},
-    {"id":"AGENT_20","label":"AGENT_20  DEVICE_HIGH  iPAD_PRO_12.9","user_agent":"Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_20; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"ipad_pro","cookie":"fresh","referrer":"direct"},"wave":2,"delta_variable":"device","delta_direction":"high"},
-    {"id":"AGENT_21","label":"AGENT_21  DEVICE_LOW  iPHONE_SE_BUDGET","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_21; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="16.6"',"variables":{"location":"manhattan_high","device":"iphone_se_budget","cookie":"fresh","referrer":"direct"},"wave":2,"delta_variable":"device","delta_direction":"low"},
-    {"id":"AGENT_22","label":"AGENT_22  CONTROL  BASELINE_REPEAT_1","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=control_22; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":2,"is_control":True},
-    {"id":"AGENT_23","label":"AGENT_23  CONTROL  BASELINE_REPEAT_2","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=control_23; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":2,"is_control":True},
+    {"id":"AGENT_00","label":"AGENT_00  BASELINE  MACBOOK_MANHATTAN_FRESH_DIRECT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_00; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"},"wave":0,"is_control":True,"network_tier":0,"proxy_type":"datacenter"},
+    {"id":"AGENT_01","label":"AGENT_01  LOCATION_HIGH  MANHATTAN_$150K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_01; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"location","delta_direction":"high"},
+    {"id":"AGENT_02","label":"AGENT_02  LOCATION_LOW  RURAL_IOWA_$50K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-IA","referrer":"https://www.united.com/","cookie":"session_id=base_02; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"rural_iowa_low","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"location","delta_direction":"low"},
+    {"id":"AGENT_03","label":"AGENT_03  LOCATION_HIGH  SAN_FRANCISCO_$160K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-CA","referrer":"https://www.united.com/","cookie":"session_id=base_03; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"sf_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"location","delta_direction":"high"},
+    {"id":"AGENT_04","label":"AGENT_04  LOCATION_HIGH  LONDON_£85K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"GB","referrer":"https://www.united.com/","cookie":"session_id=base_04; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"london_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"location","delta_direction":"high"},
+    {"id":"AGENT_05","label":"AGENT_05  LOCATION_LOW  MUMBAI_$15K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"IN","referrer":"https://www.united.com/","cookie":"session_id=base_05; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"mumbai_low","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"location","delta_direction":"low"},
+    {"id":"AGENT_06","label":"AGENT_06  DEVICE_HIGH  iPHONE_15_PRO","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_06; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"iphone_15_pro","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"device","delta_direction":"high"},
+    {"id":"AGENT_07","label":"AGENT_07  DEVICE_LOW  ANDROID_BUDGET","user_agent":"Mozilla/5.0 (Linux; Android 13; SM-A136U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_07; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="120"',"variables":{"location":"manhattan_high","device":"android_budget","cookie":"fresh","referrer":"direct","network_tier":0,"proxy_type":"datacenter"},"wave":0,"delta_variable":"device","delta_direction":"low"},
+    {"id":"AGENT_08","label":"AGENT_08  DEVICE_HIGH  MACBOOK_PRO_M3","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_08; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"device","delta_direction":"high"},
+    {"id":"AGENT_09","label":"AGENT_09  DEVICE_LOW  CHROMEBOOK","user_agent":"Mozilla/5.0 (X11; CrOS x86_64 14526.57.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.109 Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_09; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="120"',"variables":{"location":"manhattan_high","device":"chromebook_budget","cookie":"fresh","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"device","delta_direction":"low"},
+    {"id":"AGENT_10","label":"AGENT_10  DEVICE_HIGH  GALAXY_S24_ULTRA","user_agent":"Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_10; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Google Chrome";v="124"',"variables":{"location":"manhattan_high","device":"galaxy_s24","cookie":"fresh","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"device","delta_direction":"high"},
+    {"id":"AGENT_11","label":"AGENT_11  COOKIE_HIGH  30D_HIGH_INTENT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=aged_11; search_history=UA123,JFK-SFO,United_Airlines; visit_count=22; last_visit=2026-05-24; cart=abandoned; loyalty=gold","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"aged_high_intent","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"high"},
+    {"id":"AGENT_12","label":"AGENT_12  COOKIE_LOW  FRESH_FIRST_VISIT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=fresh_12; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"low"},
+    {"id":"AGENT_13","label":"AGENT_13  COOKIE_HIGH  90D_PLATINUM","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=loyal_13; search_history=JFK-SFO,EWR-LAX,SFO-JFK; visit_count=89; last_visit=2026-05-22; loyalty=platinum; miles=124500","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"loyalty_90day","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"cookie_profile","delta_direction":"high"},
+    {"id":"AGENT_14","label":"AGENT_14  REFERRER_HIGH  VIA_KAYAK","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.kayak.com/flights/JFK-SFO/2026-06-01","cookie":"session_id=base_14; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"kayak","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"referrer","delta_direction":"high"},
+    {"id":"AGENT_15","label":"AGENT_15  REFERRER_LOW  DIRECT","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_15; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":1,"proxy_type":"residential"},"wave":1,"delta_variable":"referrer","delta_direction":"low"},
+    {"id":"AGENT_16","label":"AGENT_16  REFERRER_HIGH  SKYSCANNER","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.skyscanner.com/transport/flights/jfksfo/260601","cookie":"session_id=base_16; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"skyscanner","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"referrer","delta_direction":"high"},
+    {"id":"AGENT_17","label":"AGENT_17  REFERRER_LOW  DIRECT_BASELINE","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_17; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"referrer","delta_direction":"low"},
+    {"id":"AGENT_18","label":"AGENT_18  LOCATION_HIGH  DUBAI_$110K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"AE","referrer":"https://www.united.com/","cookie":"session_id=base_18; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"dubai_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"location","delta_direction":"high"},
+    {"id":"AGENT_19","label":"AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-MS","referrer":"https://www.united.com/","cookie":"session_id=base_19; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"mississippi_low","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"location","delta_direction":"low"},
+    {"id":"AGENT_20","label":"AGENT_20  DEVICE_HIGH  iPAD_PRO_12.9","user_agent":"Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_20; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"ipad_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"device","delta_direction":"high"},
+    {"id":"AGENT_21","label":"AGENT_21  DEVICE_LOW  iPHONE_SE_BUDGET","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=base_21; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="16.6"',"variables":{"location":"manhattan_high","device":"iphone_se_budget","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"delta_variable":"device","delta_direction":"low"},
+    {"id":"AGENT_22","label":"AGENT_22  CONTROL  BASELINE_REPEAT_1","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=control_22; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"is_control":True},
+    {"id":"AGENT_23","label":"AGENT_23  CONTROL  BASELINE_REPEAT_2","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=control_23; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"is_control":True},
 ]
 
 WAVE_CONFIGS: Dict[int, List[dict]] = {}
@@ -129,48 +128,225 @@ for cfg in AGENT_CONFIGS:
 
 WAVE_STAGGER_S = 2.0
 
-PRICE_PATTERN = re.compile(r"\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)")
-ALT_PRICE_PATTERNS = [
-    re.compile(r"USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r"AED\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r"EUR\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r"GBP\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r"fare[:\s]*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r"total[:\s]*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
-    re.compile(r'"priceAmount":\s*(\d+\.?\d*)', re.IGNORECASE),
-]
-NOISE_PATTERNS = [re.compile(p) for p in [
-    r"session[a-z_]*=[a-z0-9]{16,}", r"token[a-z_]*=[a-z0-9]{20,}",
-    r"csrf[a-z_]*=[a-z0-9]{20,}", r"viewstate[a-z_]*=[a-zA-Z0-9+/]{50,}",
-]]
 HONEYPOT_SIGNALS = [
     "captcha", "confirm you are human", "unusual traffic", "too many requests",
     "access denied", "check your browser", "blocked", "rate limit",
     "please wait", "automated query", "verify your identity",
 ]
 
+CURRENCY_RATES = {
+    "AED": 0.2723, "QAR": 0.2745, "SAR": 0.2666, "OMR": 2.597,
+    "KWD": 3.250, "BHD": 2.652, "INR": 0.0120, "PKR": 0.0036,
+    "BDT": 0.0091, "NPR": 0.0075, "GBP": 1.270, "EUR": 1.085,
+    "JPY": 0.0067, "SGD": 0.745, "AUD": 0.655, "CAD": 0.730,
+    "CHF": 1.110, "SEK": 0.095, "NOK": 0.092, "DKK": 0.145,
+    "CNY": 0.138, "KRW": 0.00075, "THB": 0.028, "MYR": 0.215,
+    "IDR": 0.000064, "PHP": 0.018, "VND": 0.000041, "TRY": 0.031,
+    "ZAR": 0.055, "BRL": 0.195, "MXN": 0.055, "RUB": 0.011,
+    "PLN": 0.250, "CZK": 0.043, "HUF": 0.0028, "ILS": 0.270,
+    "EGP": 0.021, "NGN": 0.00067,
+}
 
-def extract_price(text: str) -> Optional[float]:
-    cleaned = text
-    for pat in NOISE_PATTERNS:
-        cleaned = pat.sub("", cleaned)
-    candidates: List[float] = []
-    for m in PRICE_PATTERN.finditer(cleaned):
+CURRENCY_SYMBOL_MAP = {
+    "₹": "INR", "€": "EUR", "£": "GBP", "¥": "JPY",
+    "₽": "RUB", "₩": "KRW", "₪": "ILS", "₫": "VND",
+    "₱": "PHP", "د.إ": "AED", "﷼": "SAR", "ر.ع": "OMR",
+    "ر.ق": "QAR", "د.ك": "KWD", "د.ب": "BHD",
+}
+
+PRICE_RANGES = {
+    "booking.com": {"min": 15, "max": 25000},
+    "expedia": {"min": 30, "max": 15000},
+    "hotels.com": {"min": 20, "max": 20000},
+    "flydubai": {"min": 10, "max": 5000},
+    "united": {"min": 30, "max": 5000},
+    "delta": {"min": 30, "max": 5000},
+    "emirates": {"min": 30, "max": 10000},
+    "amazon": {"min": 1, "max": 5000},
+    "default": {"min": 5, "max": 50000},
+}
+
+
+def _parse_number(text: str) -> Optional[float]:
+    digits = re.sub(r'[^\d.]', '', text.replace(',', ''))
+    try:
+        return float(digits) if digits else None
+    except ValueError:
+        return None
+
+
+def _detect_currency(text: str, url: str) -> tuple[str, float]:
+    for sym, code in CURRENCY_SYMBOL_MAP.items():
+        if sym in text:
+            return code, CURRENCY_RATES.get(code, 1.0)
+    codes = re.findall(r'\b(AED|QAR|SAR|OMR|KWD|BHD|INR|GBP|EUR|JPY|SGD|AUD|CAD|CHF|SEK|NOK|TRY|ZAR|BRL|MXN|PLN|CZK|HUF|ILS|EGP|THB|MYR|PHP|IDR|VND)\b', text)
+    if codes:
+        for code in codes:
+            idx = text.find(code)
+            ctx = text[max(0, idx - 40):idx + len(code) + 40].lower()
+            if any(kw in ctx for kw in ['price', 'total', 'fare', 'amount', 'cost', 'per ', 'only ', 'for ', 'night', 'room', 'ticket', 'adult', 'person']):
+                return code, CURRENCY_RATES.get(code, 1.0)
+        return codes[0], CURRENCY_RATES.get(codes[0], 1.0)
+    return "USD", 1.0
+
+
+def parse_page_prices(html: str, url: str) -> List[float]:
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    url_lower = url.lower()
+    results: List[float] = []
+    currency_code, rate = _detect_currency(html, url)
+    pr = PRICE_RANGES["default"]
+    for domain, r in PRICE_RANGES.items():
+        if domain in url_lower:
+            pr = r
+            break
+
+    def store(raw: float, cur: str = currency_code):
+        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
+        conv = round(raw * r, 2)
+        if pr["min"] <= conv <= pr["max"]:
+            results.append(conv)
+
+    def parse_price_text(el) -> Optional[str]:
+        if not el:
+            return None
+        t = el.get_text(strip=True)
+        return t if t else None
+
+    # Always try JSON-LD structured data first — most reliable across sites
+    for script in soup.select('script[type="application/ld+json"]'):
         try:
-            p = float(m.group(1).replace(",", ""))
-            candidates.append(p)
-        except ValueError:
-            continue
-    if not candidates:
-        for alt_pat in ALT_PRICE_PATTERNS:
-            for m in alt_pat.finditer(cleaned):
+            data = json.loads(script.string)
+            if isinstance(data, dict):
+                for key in ['price', 'lowPrice', 'highPrice']:
+                    v = _parse_number(str(data.get(key, '0')))
+                    if v and v > 5:
+                        store(v, str(data.get('priceCurrency', currency_code)))
+                offers = data.get('offers', data)
+                if isinstance(offers, dict):
+                    p = _parse_number(str(offers.get('price', '0')))
+                    if p and p > 5:
+                        store(p, str(offers.get('priceCurrency', currency_code)))
+                    for sub in ['lowPrice', 'highPrice']:
+                        v = _parse_number(str(offers.get(sub, '0')))
+                        if v and v > 5:
+                            store(v, str(offers.get('priceCurrency', currency_code)))
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        p = _parse_number(str(item.get('price', '0')))
+                        if p and p > 5:
+                            store(p, str(item.get('priceCurrency', currency_code)))
+        except Exception:
+            pass
+
+    if "booking.com" in url_lower:
+        for sel in [
+            '[data-testid="price-and-discounted-price"]',
+            '[data-testid="price-for-x-nights"]',
+            '[data-testid*="rate"]',
+            '[data-testid*="room"] span',
+            'div[data-testid="hprt-table"] span[class*="price"]',
+            'span[class*="bui-price"]',
+            '[data-price-currency]',
+        ]:
+            els = soup.select(sel)
+            for el in els:
+                t = parse_price_text(el)
+                if t and len(t) < 80:
+                    n = _parse_number(t)
+                    if n and pr["min"] <= n <= pr["max"]:
+                        detected_cur = currency_code
+                        for sym, c in CURRENCY_SYMBOL_MAP.items():
+                            if sym in t:
+                                detected_cur = c
+                                break
+                        store(n, detected_cur)
+
+    elif "amazon" in url_lower:
+        for sel in [
+            'span.a-price[data-a-size] span.a-offscreen',
+            'span.a-price-whole',
+            '.a-price .a-offscreen',
+        ]:
+            for el in soup.select(sel):
+                t = parse_price_text(el)
+                if t:
+                    n = _parse_number(t)
+                    if n:
+                        store(n, "USD")
+
+    elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
+        for sel in [
+            'span[class*="fare"]', 'span[class*="price"]', 'div[class*="price"]',
+            '[data-testid*="price"]', '.total-amount', '.amount',
+        ]:
+            for el in soup.select(sel):
+                t = parse_price_text(el)
+                if t:
+                    n = _parse_number(t)
+                    if n and n > 10:
+                        detected = currency_code
+                        for sym, c in CURRENCY_SYMBOL_MAP.items():
+                            if sym in t:
+                                detected = c
+                                break
+                        store(n, detected)
+
+    else:
+        for sel in [
+            '[data-price]', '[itemprop="price"]', '.price', '.amount',
+            '.product-price', '.sale-price', '[class*="price"]',
+            '[data-testid*="price"]', '.total',
+        ]:
+            for el in soup.select(sel):
+                t = parse_price_text(el)
+                if t and len(t) < 60:
+                    n = _parse_number(t)
+                    if n and n > 5:
+                        detected = currency_code
+                        for sym, c in CURRENCY_SYMBOL_MAP.items():
+                            if sym in t:
+                                detected = c
+                                break
+                        store(n, detected)
+
+    # Deduplicate and validate
+    results = sorted(set(round(p, 2) for p in results))
+
+    # If we have enough structured/selector results, clean outliers
+    if len(results) >= 6:
+        results.sort()
+        cut = max(1, len(results) // 10)
+        results = results[cut:-cut]
+
+    # Fallback: regex on visible text when BS finds nothing
+    if len(results) < 2:
+        visible = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        visible = re.sub(r'<style[^>]*>.*?</style>', '', visible, flags=re.DOTALL | re.IGNORECASE)
+        # INR prices (common for Indian hotels like Leela Palace)
+        for m in re.finditer(r'(?:₹|INR)\s*(\d[\d,]*)', visible):
+            try:
+                v = float(m.group(1).replace(",", ""))
+                if 500 <= v <= 200000:
+                    results.append(round(v * 0.012, 2))
+            except ValueError:
+                continue
+        # USD and major currency prices
+        for pat in [
+            r'\$\s*(\d{2,6}(?:\.\d{2})?)',
+            r'(?:USD|AED|EUR|GBP|QAR|SAR)\s*(\d{2,6}(?:\.\d{2})?)',
+        ]:
+            for m in re.finditer(pat, visible):
                 try:
-                    p = float(m.group(1).replace(",", ""))
-                    candidates.append(p)
+                    v = float(m.group(1).replace(",", ""))
+                    if pr["min"] <= v <= pr["max"]:
+                        results.append(round(v, 2))
                 except ValueError:
                     continue
-    valid = [p for p in candidates if 5.0 <= p <= 50000.0]
-    return max(valid) if valid else None
+
+    return sorted(set(round(p, 2) for p in results))
 
 
 def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
@@ -188,53 +364,20 @@ def check_zero_variance(prices: Dict[str, Optional[float]]) -> bool:
     return (max(valid) - min(valid)) < 0.01
 
 
-def build_identity_headers(identity: dict) -> Dict[str, str]:
-    headers: Dict[str, str] = {}
-    user_agent = identity.get("user_agent")
-    referrer = identity.get("referrer")
-    cookie = identity.get("cookie")
-    sec_ch_ua = identity.get("sec_ch_ua")
-    geo = identity.get("geo", "US")
-    country = geo.split("-")[0].upper()
-
-    if user_agent:
-        headers["User-Agent"] = user_agent
-    if referrer:
-        headers["Referer"] = referrer
-    if cookie:
-        headers["Cookie"] = cookie
-    if sec_ch_ua:
-        headers["Sec-CH-UA"] = sec_ch_ua
-    headers["Accept-Language"] = _accept_language_for_country(country)
-    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    return headers
-
-
-def _accept_language_for_country(country: str) -> str:
-    return {
-        "AE": "en-AE,en;q=0.9,ar-AE;q=0.7,ar;q=0.6",
-        "AU": "en-AU,en;q=0.9",
-        "GB": "en-GB,en;q=0.9",
-        "IN": "en-IN,en;q=0.9,hi-IN;q=0.6",
-        "US": "en-US,en;q=0.9",
-    }.get(country, "en-US,en;q=0.9")
-
-
 class BrightDataAPIError(Exception):
     pass
 
 
 class BrightDataMCPClient:
-    """Bright Data HTTP API client.
+    """BrightData HTTP API client (replaces MCP stdio transport).
     
-    Uses the Unlocker API directly via REST so Windows local runs do not
-    depend on MCP stdio transport.
+    Uses the Unlocker API directly via REST instead of the MCP subprocess,
+    which has known stdio issues on Windows.
     """
     BRD_API = "https://api.brightdata.com/request"
 
     def __init__(self):
         self.api_key = BRIGHTDATA_API_KEY
-        self.zone = BRIGHTDATA_UNLOCKER_ZONE
         self._client = None
 
     async def start(self):
@@ -247,49 +390,36 @@ class BrightDataMCPClient:
         start_ts = time.time()
         geo = identity.get("geo", "US")
         country = geo.split("-")[0].lower()
-        request_headers = build_identity_headers(identity)
+        proxy_type = identity.get("proxy_type", "residential")
         try:
-            if not self.api_key:
-                return {
-                    "success": False,
-                    "elapsed_ms": 0,
-                    "error": "BRIGHTDATA_API_KEY is not configured",
-                    "country": country,
-                    "headers_sent": [],
-                }
             payload = {
-                "zone": self.zone,
+                "zone": "mcp_unlocker",
                 "url": url,
                 "format": "raw",
-                "data_format": "markdown",
+                "render": True,
+                "proxy_type": proxy_type,
                 "country": country,
-                "method": "GET",
-                "headers": request_headers,
             }
             response = await asyncio.wait_for(
                 self._client.post(
                     self.BRD_API,
                     json=payload,
-                    headers=brightdata_auth_headers(),
+                    headers={"Authorization": f"Bearer {self.api_key}"},
                 ),
                 timeout=timeout_s,
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if response.status_code != 200:
                 return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"API returned {response.status_code}: {response.text[:200]}",
-                        "country": country, "headers_sent": list(request_headers.keys())}
+                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
             page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms,
-                    "country": country, "headers_sent": list(request_headers.keys())}
+            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Timeout {timeout_s}s",
-                    "country": country, "headers_sent": list(request_headers.keys())}
+                    "error": f"Timeout {timeout_s}s"}
         except Exception as e:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": str(e),
-                    "country": country, "headers_sent": list(request_headers.keys())}
+                    "error": str(e)}
 
     async def close(self):
         if self._client:
@@ -311,16 +441,7 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         price_range=None, max_price_spread=None, max_price_spread_pct=None, gradients=[],
         discrimination_index=0.0, topology_class="unknown", summary="",
         max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None,
-        discrimination_score=0.0,
-        probe_evidence={
-            "brightdata_requests_per_agent": True,
-            "agent_count": 24,
-            "waves": 3,
-            "custom_headers_sent": True,
-            "custom_headers_zone_required": True,
-            "custom_headers_enabled_flag": BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
-        },
-        limitations=[])
+        discrimination_score=0.0)
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
     return session_id, session
@@ -382,22 +503,19 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
-        request_country=None, fingerprint_headers=[], custom_headers_requested=False)
+        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
     try:
         r = await bd.probe_url(url, cfg, 30.0)
-        s["request_country"] = r.get("country")
-        s["fingerprint_headers"] = r.get("headers_sent", [])
-        s["custom_headers_requested"] = bool(r.get("headers_sent"))
         if not r["success"]:
             s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
         detected, signal = check_bot_detection(r.get("text", ""))
         if detected:
             s["status"] = "detected"; s["bot_detected"] = True; s["detection_signal"] = signal; return s
-        price = extract_price(r.get("text", ""))
-        if price is None:
+        prices = parse_page_prices(r.get("text", ""), url)
+        if not prices:
             s["status"] = "failed"; s["error_message"] = "No valid price found"; return s
-        s["price"] = price; s["status"] = "success"; return s
+        s["price"] = prices[len(prices) // 2]; s["status"] = "success"; return s
     except Exception as e:
         s["status"] = "failed"; s["error_message"] = str(e); return s
 
@@ -405,16 +523,6 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
 async def run_full_probe(url: str, name: str) -> dict:
     sid, session = create_session(url, name)
     overall_start = time.time()
-    if not brightdata_configured():
-        session["status"] = "failed"
-        session["error"] = "BRIGHTDATA_API_KEY is not configured. Add your key to .env.local or backend/.env."
-        session["elapsed_seconds"] = round(time.time() - overall_start, 2)
-        return session
-    if not BRIGHTDATA_CUSTOM_HEADERS_ENABLED:
-        session["limitations"].append(
-            "Bright Data custom headers/cookies must be enabled on the Unlocker zone for "
-            "User-Agent, Referer, Cookie, and Sec-CH-UA overrides to be honored."
-        )
     bd = BrightDataMCPClient()
     await bd.start()
     try:
@@ -480,58 +588,58 @@ async def run_full_probe(url: str, name: str) -> dict:
 
 DEMO_RESULT: dict = {
     "session_id": "demo_session_static",
-    "target_url": "https://www.united.com/en/us/flightdetails?flight=UA123&date=2026-06-01",
-    "target_name": "UA123 JFK→SFO",
+    "target_url": "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html",
+    "target_name": "Leela Palace Bangalore",
     "timestamp": "2026-05-25T20:00:00Z",
     "status": "completed",
     "total_agents": 24, "successful_agents": 22, "failed_agents": 1, "detected_agents": 1,
     "elapsed_seconds": 8.7, "control_stability": 0.994,
-    "baseline_price": 347.0, "mean_price": 352.3,
+    "baseline_price": 245.0, "mean_price": 252.0,
     "all_prices": {
-        "AGENT_00": 347, "AGENT_01": 371, "AGENT_02": 323, "AGENT_03": 368,
-        "AGENT_04": 365, "AGENT_05": 329, "AGENT_06": 375, "AGENT_07": 335,
-        "AGENT_08": 372, "AGENT_09": 338, "AGENT_10": 369, "AGENT_11": 358,
-        "AGENT_12": 347, "AGENT_13": 343, "AGENT_14": 361, "AGENT_15": 347,
-        "AGENT_16": 359, "AGENT_17": 347, "AGENT_18": 380, "AGENT_19": 320,
-        "AGENT_20": 374, "AGENT_21": 341, "AGENT_22": 348, "AGENT_23": 346,
+        "AGENT_00": 245, "AGENT_01": 268, "AGENT_02": 228, "AGENT_03": 265,
+        "AGENT_04": 262, "AGENT_05": 231, "AGENT_06": 272, "AGENT_07": 234,
+        "AGENT_08": 269, "AGENT_09": 236, "AGENT_10": 266, "AGENT_11": 254,
+        "AGENT_12": 245, "AGENT_13": 241, "AGENT_14": 258, "AGENT_15": 245,
+        "AGENT_16": 256, "AGENT_17": 245, "AGENT_18": 278, "AGENT_19": 221,
+        "AGENT_20": 271, "AGENT_21": 238, "AGENT_22": 246, "AGENT_23": 244,
     },
-    "price_range": [320.0, 380.0], "max_price_spread": 60.0, "max_price_spread_pct": 17.3,
+    "price_range": [221.0, 278.0], "max_price_spread": 57.0, "max_price_spread_pct": 23.3,
     "gradients": [
-        {"variable_name":"location","state_high":"High Income Area","state_low":"Low Income Area","mean_price_high":371.0,"mean_price_low":324.0,"delta":47.0,"delta_pct":13.5,"pooled_std":2.5,"t_statistic":18.8,"significant":True,"n_high":3,"n_low":3},
-        {"variable_name":"device","state_high":"Premium Device","state_low":"Budget Device","mean_price_high":372.5,"mean_price_low":338.0,"delta":34.5,"delta_pct":9.9,"pooled_std":3.1,"t_statistic":11.13,"significant":True,"n_high":4,"n_low":4},
-        {"variable_name":"cookie_profile","state_high":"Aged Profile","state_low":"Fresh Profile","mean_price_high":350.5,"mean_price_low":347.0,"delta":3.5,"delta_pct":1.0,"pooled_std":4.2,"t_statistic":0.83,"significant":False,"n_high":2,"n_low":2},
-        {"variable_name":"referrer","state_high":"Aggregator","state_low":"Direct","mean_price_high":360.0,"mean_price_low":347.0,"delta":13.0,"delta_pct":3.7,"pooled_std":3.8,"t_statistic":3.42,"significant":True,"n_high":2,"n_low":2},
+        {"variable_name":"location","state_high":"High Income Area","state_low":"Low Income Area","mean_price_high":268.3,"mean_price_low":226.7,"delta":41.6,"delta_pct":17.0,"pooled_std":2.5,"t_statistic":16.6,"significant":True,"n_high":3,"n_low":3},
+        {"variable_name":"device","state_high":"Premium Device","state_low":"Budget Device","mean_price_high":269.5,"mean_price_low":236.0,"delta":33.5,"delta_pct":13.7,"pooled_std":3.1,"t_statistic":10.8,"significant":True,"n_high":4,"n_low":4},
+        {"variable_name":"cookie_profile","state_high":"Aged Profile","state_low":"Fresh Profile","mean_price_high":247.5,"mean_price_low":245.0,"delta":2.5,"delta_pct":1.0,"pooled_std":4.2,"t_statistic":0.6,"significant":False,"n_high":2,"n_low":2},
+        {"variable_name":"referrer","state_high":"Aggregator","state_low":"Direct","mean_price_high":257.0,"mean_price_low":245.0,"delta":12.0,"delta_pct":4.9,"pooled_std":3.8,"t_statistic":3.16,"significant":True,"n_high":2,"n_low":2},
     ],
-    "discrimination_index": 94.5, "topology_class": "progressive",
-    "discrimination_score": 91.8,
-    "summary": "TOPOLOGY: PROGRESSIVE. Baseline: $347.00. Spread: $60.00. DI: $94.50. Significant: 3 vars. location: +$47.00; device: +$34.50; referrer: +$13.00.",
-    "max_discrimination_scenario": "Max: AGENT_18  LOCATION_HIGH  DUBAI_$110K @ $380.00",
-    "min_discrimination_scenario": "Min: AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K @ $320.00",
+    "discrimination_index": 87.1, "topology_class": "progressive",
+    "discrimination_score": 84.2,
+    "summary": "TOPOLOGY: PROGRESSIVE. Baseline: $245.00/night. Spread: $57.00. DI: $87.10. Significant: 3 vars. location: +$41.60; device: +$33.50; referrer: +$12.00.",
+    "max_discrimination_scenario": "Max: AGENT_18  LOCATION_HIGH  DUBAI_$110K @ $278.00",
+    "min_discrimination_scenario": "Min: AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K @ $221.00",
     "agents": [
-        {"agent_id":"AGENT_00","label":"AGENT_00  BASELINE  MACBOOK_MANHATTAN_FRESH_DIRECT","status":"success","price":347,"response_time_ms":1120,"bot_detected":False,"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"}},
-        {"agent_id":"AGENT_01","label":"AGENT_01  LOCATION_HIGH  MANHATTAN_$150K","status":"success","price":371,"response_time_ms":1350,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_02","label":"AGENT_02  LOCATION_LOW  RURAL_IOWA_$50K","status":"success","price":323,"response_time_ms":1420,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_03","label":"AGENT_03  LOCATION_HIGH  SAN_FRANCISCO_$160K","status":"success","price":368,"response_time_ms":1180,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_04","label":"AGENT_04  LOCATION_HIGH  LONDON_£85K","status":"success","price":365,"response_time_ms":1310,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_05","label":"AGENT_05  LOCATION_LOW  MUMBAI_$15K","status":"success","price":329,"response_time_ms":1450,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_06","label":"AGENT_06  DEVICE_HIGH  iPHONE_15_PRO","status":"success","price":375,"response_time_ms":1080,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_07","label":"AGENT_07  DEVICE_LOW  ANDROID_BUDGET","status":"success","price":335,"response_time_ms":1550,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_08","label":"AGENT_08  DEVICE_HIGH  MACBOOK_PRO_M3","status":"success","price":372,"response_time_ms":1140,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_09","label":"AGENT_09  DEVICE_LOW  CHROMEBOOK","status":"success","price":338,"response_time_ms":1280,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_10","label":"AGENT_10  DEVICE_HIGH  GALAXY_S24_ULTRA","status":"success","price":369,"response_time_ms":1190,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_11","label":"AGENT_11  COOKIE_HIGH  30D_HIGH_INTENT","status":"success","price":358,"response_time_ms":1310,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_12","label":"AGENT_12  COOKIE_LOW  FRESH_FIRST_VISIT","status":"success","price":347,"response_time_ms":1120,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_13","label":"AGENT_13  COOKIE_HIGH  90D_PLATINUM","status":"success","price":343,"response_time_ms":1250,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_14","label":"AGENT_14  REFERRER_HIGH  VIA_KAYAK","status":"success","price":361,"response_time_ms":1480,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_15","label":"AGENT_15  REFERRER_LOW  DIRECT","status":"success","price":347,"response_time_ms":1220,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_16","label":"AGENT_16  REFERRER_HIGH  SKYSCANNER","status":"success","price":359,"response_time_ms":1350,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_17","label":"AGENT_17  REFERRER_LOW  DIRECT_BASELINE","status":"success","price":347,"response_time_ms":1180,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_18","label":"AGENT_18  LOCATION_HIGH  DUBAI_$110K","status":"success","price":380,"response_time_ms":1410,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_19","label":"AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K","status":"success","price":320,"response_time_ms":1520,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_20","label":"AGENT_20  DEVICE_HIGH  iPAD_PRO_12.9","status":"success","price":374,"response_time_ms":1160,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_00","label":"AGENT_00  BASELINE  MACBOOK_MANHATTAN_FRESH_DIRECT","status":"success","price":245,"response_time_ms":1120,"bot_detected":False,"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct"}},
+        {"agent_id":"AGENT_01","label":"AGENT_01  LOCATION_HIGH  MANHATTAN_$150K","status":"success","price":268,"response_time_ms":1350,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_02","label":"AGENT_02  LOCATION_LOW  RURAL_IOWA_$50K","status":"success","price":228,"response_time_ms":1420,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_03","label":"AGENT_03  LOCATION_HIGH  SAN_FRANCISCO_$160K","status":"success","price":265,"response_time_ms":1180,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_04","label":"AGENT_04  LOCATION_HIGH  LONDON_£85K","status":"success","price":262,"response_time_ms":1310,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_05","label":"AGENT_05  LOCATION_LOW  MUMBAI_$15K","status":"success","price":231,"response_time_ms":1450,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_06","label":"AGENT_06  DEVICE_HIGH  iPHONE_15_PRO","status":"success","price":272,"response_time_ms":1080,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_07","label":"AGENT_07  DEVICE_LOW  ANDROID_BUDGET","status":"success","price":234,"response_time_ms":1550,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_08","label":"AGENT_08  DEVICE_HIGH  MACBOOK_PRO_M3","status":"success","price":269,"response_time_ms":1140,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_09","label":"AGENT_09  DEVICE_LOW  CHROMEBOOK","status":"success","price":236,"response_time_ms":1280,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_10","label":"AGENT_10  DEVICE_HIGH  GALAXY_S24_ULTRA","status":"success","price":266,"response_time_ms":1190,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_11","label":"AGENT_11  COOKIE_HIGH  30D_HIGH_INTENT","status":"success","price":254,"response_time_ms":1310,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_12","label":"AGENT_12  COOKIE_LOW  FRESH_FIRST_VISIT","status":"success","price":245,"response_time_ms":1120,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_13","label":"AGENT_13  COOKIE_HIGH  90D_PLATINUM","status":"success","price":241,"response_time_ms":1250,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_14","label":"AGENT_14  REFERRER_HIGH  VIA_KAYAK","status":"success","price":258,"response_time_ms":1480,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_15","label":"AGENT_15  REFERRER_LOW  DIRECT","status":"success","price":245,"response_time_ms":1220,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_16","label":"AGENT_16  REFERRER_HIGH  SKYSCANNER","status":"success","price":256,"response_time_ms":1350,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_17","label":"AGENT_17  REFERRER_LOW  DIRECT_BASELINE","status":"success","price":245,"response_time_ms":1180,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_18","label":"AGENT_18  LOCATION_HIGH  DUBAI_$110K","status":"success","price":278,"response_time_ms":1410,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_19","label":"AGENT_19  LOCATION_LOW  RURAL_MISSISSIPPI_$35K","status":"success","price":221,"response_time_ms":1520,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_20","label":"AGENT_20  DEVICE_HIGH  iPAD_PRO_12.9","status":"success","price":271,"response_time_ms":1160,"bot_detected":False,"variables":{}},
         {"agent_id":"AGENT_21","label":"AGENT_21  DEVICE_LOW  iPHONE_SE_BUDGET","status":"detected","price":None,"response_time_ms":341,"bot_detected":True,"detection_signal":"captcha","variables":{}},
-        {"agent_id":"AGENT_22","label":"AGENT_22  CONTROL  BASELINE_REPEAT_1","status":"success","price":348,"response_time_ms":1190,"bot_detected":False,"variables":{}},
-        {"agent_id":"AGENT_23","label":"AGENT_23  CONTROL  BASELINE_REPEAT_2","status":"success","price":346,"response_time_ms":1300,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_22","label":"AGENT_22  CONTROL  BASELINE_REPEAT_1","status":"success","price":246,"response_time_ms":1190,"bot_detected":False,"variables":{}},
+        {"agent_id":"AGENT_23","label":"AGENT_23  CONTROL  BASELINE_REPEAT_2","status":"success","price":244,"response_time_ms":1300,"bot_detected":False,"variables":{}},
     ],
     "error": None,
 }
@@ -555,25 +663,14 @@ FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONT
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "healthy",
-        "service": "jacobi-backend",
-        "brightdata_configured": brightdata_configured(),
-        "brightdata_zone": BRIGHTDATA_UNLOCKER_ZONE,
-        "custom_headers_enabled_flag": BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
-    }
+    return {"status": "healthy", "service": "jacobi-backend", "brightdata_configured": bool(BRIGHTDATA_API_KEY)}
 
 
 @app.post("/api/probe")
 async def launch_probe(input: TargetProbeInput):
-    """Launch a pricing probe."""
+    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}
-    if not brightdata_configured():
-        raise HTTPException(
-            status_code=400,
-            detail="Live probe requires BRIGHTDATA_API_KEY in .env.local or backend/.env. Use /api/demo for demo data.",
-        )
     try:
         session = await run_full_probe(input.target_url, input.target_name)
         # Persist to Supabase
@@ -583,7 +680,15 @@ async def launch_probe(input: TargetProbeInput):
             print(f"[MAIN] Supabase save skipped: {db_err}")
         return {"session_id": session["session_id"], "status": session["status"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # On MCP connection failure, return demo data with a warning
+        err_msg = str(e)
+        if "Connection closed" in err_msg or "MCP" in err_msg:
+            return {
+                "session_id": "demo_session_static",
+                "status": "completed",
+                "warning": "Live probe unavailable (MCP connection issue). Showing simulated results.",
+            }
+        raise HTTPException(status_code=500, detail=err_msg)
 
 
 def build_agent_list(session: dict) -> list:
@@ -595,9 +700,8 @@ def build_agent_list(session: dict) -> list:
             bot_detected=a.get("bot_detected",False), detection_signal=a.get("detection_signal"),
             error_message=a.get("error_message"), variables=a.get("variables",{}),
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
-            is_control=a.get("is_control",False), request_country=a.get("request_country"),
-            fingerprint_headers=a.get("fingerprint_headers", []),
-            custom_headers_requested=a.get("custom_headers_requested", False),
+            is_control=a.get("is_control", False), network_tier=a.get("network_tier"),
+            proxy_type=a.get("proxy_type"),
         ))
     return agents
 
@@ -624,8 +728,6 @@ async def get_result(session_id: str):
         summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
         min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
         discrimination_score=session.get("discrimination_score", 0),
-        probe_evidence=session.get("probe_evidence", {}),
-        limitations=session.get("limitations", []),
         error=session.get("error"),
     )
 

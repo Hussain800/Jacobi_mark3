@@ -1,5 +1,7 @@
-import JacobiTerminal from "../../components/dashboard";
+import Terminal from "../../components/dashboard";
+
+export const dynamic = "force-dynamic";
 
 export default function ChatPage() {
-  return <JacobiTerminal />;
+  return <Terminal />;
 }

@@ -4,34 +4,34 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        display: ['var(--font-orbitron)', 'Orbitron', 'sans-serif'],
-        body: ['var(--font-satoshi)', 'Satoshi', '-apple-system', 'sans-serif'],
-        mono: ['var(--font-jetbrains)', '"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        serif: ['"Instrument Serif"', 'Georgia', 'serif'],
+        sans: ['Inter', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
         surface: {
-          0: "#101010",
-          1: "#1a1a1a",
-          2: "#262626",
-          3: "#3d3a39",
-          DEFAULT: "#101010",
-          card: "rgba(255,255,255,0.015)",
-          elevated: "rgba(255,255,255,0.03)",
+          0: "#050505",
+          1: "#0d0d0d",
+          2: "#1a1a1a",
+          3: "#2a2a2a",
+          DEFAULT: "#050505",
+          card: "rgba(255,255,255,0.02)",
+          elevated: "rgba(255,255,255,0.04)",
+        },
+        neon: {
+          DEFAULT: "#c8c8c8",
+          light: "#e8e8e8",
+          mid: "#a0a0a0",
+          dim: "#686868",
+          dark: "#3a3a3a",
+          glow: "rgba(200, 200, 200, 0.10)",
+          text: "#c8c8c8",
+          muted: "rgba(200, 200, 200, 0.4)",
         },
         accent: {
-          emerald: "#00d992",
-          amber: "#f59e0b",
-          blue: "#60a5fa",
-          rose: "#fb7185",
+          amber: "#d4a040",
+          rose: "#cc5566",
         },
-        emerald: {
-          glow: 'rgba(0, 217, 146, 0.15)',
-          text: '#00d992',
-        },
-        cyan: {
-          glow: 'rgba(34, 211, 238, 0.12)',
-          text: '#22d3ee',
-        }
       },
       fontSize: {
         "2xs": ["0.625rem", { lineHeight: "1rem" }], // 10px

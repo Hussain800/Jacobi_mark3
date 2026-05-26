@@ -4,6 +4,31 @@
 
 body {
   margin: 0;
+  background: #0e0f14;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Subtle background grid pattern */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#__next, [data-nextjs-root] {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes pulse-agent {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.agent-pulse { animation: pulse-agent 1.5s ease-in-out infinite; }

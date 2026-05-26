@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=360">
+  <title>JACOBI</title>
+  <style>
+    /* ─── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      min-height: 260px;
+      background: #050505;
+      color: #c8ccd4;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 18px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Header ────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+    }
+
+    .logo-bracket {
+      color: rgba(0, 217, 146, 0.15);
+      font-weight: 300;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .logo-letter {
+      color: #00d992;
+      font-weight: 300;
+      font-size: 20px;
+      line-height: 1;
+      text-shadow: 0 0 20px rgba(200, 200, 200, 0.1);
+    }
+
+    .logo-rest {
+      color: rgba(0, 217, 146, 0.15);
+      font-weight: 300;
+      font-size: 12px;
+      margin-left: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── Current Page Bar ──────────────────────────────────────────────── */
+    .current-page {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      font-size: 10px;
+    }
+
+    .current-label {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255, 255, 255, 0.2);
+      margin-bottom: 4px;
+    }
+
+    .current-url {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    .current-url.empty {
+      color: rgba(255, 255, 255, 0.12);
+    }
+
+    /* ─── Probe Button ──────────────────────────────────────────────────── */
+    .btn-probe {
+      width: 100%;
+      padding: 10px 0;
+      background: rgba(0, 217, 146, 0.08);
+      border: 1px solid rgba(0, 217, 146, 0.18);
+      border-radius: 8px;
+      color: #00d992;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: all 0.2s ease;
+      margin-bottom: 14px;
+    }
+
+    .btn-probe:hover {
+      background: rgba(0, 217, 146, 0.14);
+      border-color: rgba(0, 217, 146, 0.35);
+      box-shadow: 0 0 20px rgba(0, 217, 146, 0.08);
+    }
+
+    .btn-probe:active {
+      background: rgba(0, 217, 146, 0.2);
+      transform: scale(0.98);
+    }
+
+    .btn-probe:disabled {
+      opacity: 0.25;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .btn-probe .spinner {
+      display: none;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(0, 217, 146, 0.25);
+      border-top-color: #00d992;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .btn-probe.loading .spinner { display: inline-block; }
+    .btn-probe.loading .btn-text { opacity: 0.5; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Recent Probes Section ─────────────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255, 255, 255, 0.15);
+    }
+
+    .section-clear {
+      font-size: 8px;
+      color: rgba(255, 255, 255, 0.1);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .section-clear:hover {
+      color: rgba(239, 68, 68, 0.5);
+    }
+
+    .recent-list {
+      list-style: none;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .recent-list::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    .recent-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .recent-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 3px;
+    }
+
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border: 1px solid transparent;
+    }
+
+    .recent-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .recent-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(0, 217, 146, 0.3);
+      flex-shrink: 0;
+    }
+
+    .recent-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .recent-domain {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .recent-time {
+      font-size: 8px;
+      color: rgba(255, 255, 255, 0.12);
+    }
+
+    .recent-none {
+      text-align: center;
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.08);
+      padding: 16px 0;
+    }
+
+    /* ─── Footer ────────────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 8px;
+      color: rgba(255, 255, 255, 0.06);
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <span class="logo-bracket">[</span>
+      <span class="logo-letter">J</span>
+      <span class="logo-bracket">]</span>
+      <span class="logo-rest">acobi</span>
+    </div>
+  </div>
+
+  <!-- Current Page -->
+  <div class="current-page">
+    <div class="current-label">Current Page</div>
+    <div class="current-url empty" id="current-url">loading&hellip;</div>
+  </div>
+
+  <!-- Probe Button -->
+  <button class="btn-probe" id="btn-probe">
+    <span class="spinner"></span>
+    <span class="btn-text">Probe this price</span>
+  </button>
+
+  <!-- Recent Probes -->
+  <div class="section-header">
+    <span class="section-title">Recent Probes</span>
+    <button class="section-clear" id="btn-clear">clear</button>
+  </div>
+  <ul class="recent-list" id="recent-list">
+    <li class="recent-none">No probes yet</li>
+  </ul>
+
+  <!-- Footer -->
+  <div class="footer">24 agents &middot; 3 tiers &middot; 5 variables</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

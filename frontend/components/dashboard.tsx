@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Send, Loader2, Globe, Smartphone, Cookie, ExternalLink,
   AlertTriangle, Network, ChevronDown, ChevronRight,
-  Shield, Download, Signal, Zap, X, Radio, Info,
+  Shield, Download, Signal, Zap, X, Radio, Info, Share2,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
@@ -37,7 +37,7 @@ interface Agent {
   variables: Record<string, string>; network_tier?: number; proxy_type?: string;
 }
 
-interface TopologyReport {
+export interface TopologyReport {
   session_id: string; target_url: string; target_name: string;
   timestamp: string; status: string;
   total_agents: number; successful_agents: number;
@@ -57,6 +57,7 @@ interface TopologyReport {
 interface Message {
   id: string; role: "user" | "assistant"; content: string;
   report?: TopologyReport; status?: "scanning" | "complete" | "error"; error?: string;
+  startedAt?: number;
 }
 
 /* ─── Demo Data ──────────────────────────────────────────────────────── */
@@ -261,42 +262,89 @@ function AgentDetailModal({ agent, onClose }: { agent: Agent; onClose: () => voi
           )}
         </div>
       </div>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes cellReveal{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}`}</style>
     </div>
   );
 }
 
 /* ─── Agent Grid ─────────────────────────────────────────────────────── */
 
-function AgentGrid({ report }: { report: TopologyReport }) {
+const AGENT_LABELS = [
+  "BASE","LOC\u2191","LOC\u2193","LOC\u2191","LOC\u2191","LOC\u2193",
+  "DEV\u2191","DEV\u2193","DEV\u2191","DEV\u2193","DEV\u2191","COOK\u2191",
+  "COOK\u2193","COOK\u2191","REF\u2191","REF\u2193","REF\u2191","REF\u2193",
+  "LOC\u2191","LOC\u2193","DEV\u2191","DEV\u2193","CTRL","CTRL",
+];
+
+function AgentCell({ idx, report, scanStarted, onSelect }: { idx: number; report: TopologyReport; scanStarted: number; onSelect: (a: Agent) => void }) {
+  const id = `AGENT_${String(idx).padStart(2,"0")}`;
+  const agent = report.agents.find(a => a.agent_id === id);
+  const tier = agent?.network_tier ?? (idx < 8 ? 0 : idx < 16 ? 1 : 2);
+  const wave = idx < 8 ? 0 : idx < 16 ? 1 : 2;
+
+  // three-tier status: real agent data > animated estimate > pending
+  let status = "pending";
+  if (agent) {
+    status = agent.status;
+  } else if (scanStarted > 0) {
+    const ms = Date.now() - scanStarted;
+    const waveDelay = wave * 2000 + (idx % 8) * 400;
+    status = ms > waveDelay ? "in_flight" : "pending";
+  }
+
+  const tierColors: Record<number, string> = { 0: "bg-neon/50", 1: "bg-neon/35", 2: "bg-neon/20" };
+  const statusStyles: Record<string, string> = {
+    pending: "bg-white/[0.03] border-white/[0.03]",
+    in_flight: `border border-neon/20 ${tierColors[tier]} animate-pulse`,
+    success: `border border-neon/10 ${tierColors[tier]}`,
+    failed: "bg-rose-400/20 border border-rose-400/20",
+    detected: "bg-rose-400/40 border border-rose-400/40",
+  };
+  const label = AGENT_LABELS[idx];
+  const hasPrice = agent?.price != null;
+  const clickable = agent && (agent.status === "success" || agent.status === "detected" || agent.status === "failed");
+
+  return (
+    <button
+      key={id}
+      onClick={() => clickable && onSelect(agent!)}
+      className={`relative rounded-xl aspect-square flex flex-col items-center justify-center overflow-hidden transition-all duration-500 ${statusStyles[status]} ${clickable ? "hover:ring-1 hover:ring-neon/40 hover:scale-110 cursor-pointer" : "cursor-default"}`}
+      style={{ animation: scanStarted > 0 ? `cellReveal 0.4s ease-out ${wave * 0.15 + (idx % 8) * 0.06}s both` : "none" }}
+      title={`${id}: ${status}${hasPrice ? ` $${agent.price}` : ""}`}
+    >
+      <span className={`font-mono font-light leading-none ${hasPrice ? "text-[7px] text-white/70" : status === "in_flight" ? "text-[6px] text-neon/60" : "text-[6px] text-white/12"}`}>
+        {hasPrice ? `$${agent!.price}` : label}
+      </span>
+      {hasPrice && <span className="text-[5px] font-mono text-white/20 mt-[1px]">{id.replace("AGENT_","")}</span>}
+    </button>
+  );
+}
+
+function AgentGrid({ report, scanStarted }: { report: TopologyReport; scanStarted?: number }) {
   const [selected, setSelected] = useState<Agent | null>(null);
-  const cells = Array.from({length:24}, (_,i) => {
-    const id = `AGENT_${String(i).padStart(2,"0")}`;
-    const agent = report.agents.find(a => a.agent_id === id);
-    const status = agent ? agent.status : "pending";
-    const tier = agent?.network_tier ?? (i<8?0:i<16?1:2);
-    const colors: Record<string,string> = {pending:"bg-white/[0.03]",in_flight:"bg-neon/30",success:tier===0?"bg-neon/50":tier===1?"bg-neon/35":"bg-neon/20",failed:"bg-rose-400/30",detected:"bg-rose-400/50"};
-    return {id,status,color:colors[status]||"bg-white/[0.03]",agent};
-  });
+  const started = scanStarted || 0;
   return (
     <>
       <div className={cx("p-4")}>
         <div className="flex items-center justify-between mb-3">
-          <span className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase tracking-[0.1em] font-light"><Radio className="w-3 h-3 text-neon/60"/>Agent Swarm</span>
-          <span className="text-[10px] font-mono text-neon/70">{report.successful_agents}/{report.total_agents} live</span>
+          <span className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase tracking-[0.1em] font-light">
+            <Radio className="w-3 h-3 text-neon/60"/>Agent Swarm
+          </span>
+          <span className="flex items-center gap-2 text-[10px] font-mono">
+            <span className="text-neon/70">{report.successful_agents}/{report.total_agents}</span>
+            {started > 0 && <span className="text-white/20">{(Date.now() - started) / 1000 < 120 ? `${Math.floor((Date.now() - started) / 10) / 100}s` : ""}</span>}
+          </span>
         </div>
         <div className="grid grid-cols-6 gap-1.5">
-          {cells.map(cell => (
-            <button key={cell.id} onClick={() => cell.agent && setSelected(cell.agent)}
-              className={`aspect-square rounded-xl ${cell.color} transition-all duration-300 hover:ring-1 hover:ring-neon/30 hover:scale-110`}
-              title={`${cell.id}: ${cell.status}${cell.agent?.price != null ? ` $${cell.agent.price}` : ""}`} />
+          {Array.from({length: 24}, (_, i) => (
+            <AgentCell key={i} idx={i} report={report} scanStarted={started} onSelect={setSelected} />
           ))}
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-[8px] font-mono">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neon/50"/>{report.successful_agents} success</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400/30"/>{report.failed_agents} failed</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400/50"/>{report.detected_agents} blocked</span>
-          <span className="text-white/10 ml-auto">{report.elapsed_seconds.toFixed(1)}s</span>
+          <span className="text-white/10 ml-auto">{report.total_agents - report.successful_agents - report.failed_agents - report.detected_agents} pending</span>
           <span className="text-white/[0.04] ml-auto flex items-center gap-1"><Info className="w-2 h-2"/>click</span>
         </div>
         <div className="flex items-center gap-3 mt-2 text-[7px] font-mono text-white/10">
@@ -334,9 +382,21 @@ function Leaderboard() {
 
 /* ─── Result Card ──────────────────────────────────────────────────────── */
 
-function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
+export function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+
+  const copyShareLink = () => {
+    const sid = report.session_id;
+    if (!sid) return;
+    const url = `${window.location.origin}/share/${sid}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 2000);
+    }).catch(() => {});
+  };
+  const [showComparison, setShowComparison] = useState(false);
   const histData = buildHistogram(report.all_prices);
   const cls = clsColor(report.topology_class);
   const analysis = (report as any)._analysis;
@@ -361,6 +421,10 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
         <div className="flex items-center gap-1">
           <button onClick={()=>exportJSON(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="JSON"><Download className="w-3 h-3"/></button>
           <button onClick={()=>exportCSV(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70 text-[8px] font-mono" title="CSV">CSV</button>
+          <div className="relative">
+            <button onClick={copyShareLink} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Copy share link"><Share2 className="w-3 h-3"/></button>
+            {copyToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Link copied!</span>}
+          </div>
           {onClose && <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-white/50 ml-1 text-[10px]">X</button>}
         </div>
       </div>
@@ -410,6 +474,73 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
               </div>
             );
           })}
+        </div>
+
+        {/* Comparison Table */}
+        <div>
+          <button onClick={() => setShowComparison(!showComparison)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+            <span>Variable Comparison</span>
+            {showComparison ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {showComparison && report.gradients.length > 0 && (
+            <div className="overflow-x-auto -mx-1 mt-2">
+              <table className="w-full text-[9px] font-mono border-collapse">
+                <thead>
+                  <tr className="text-white/25 font-light">
+                    <th className="text-left py-2 px-2 whitespace-nowrap">Variable</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">High State</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Low State</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">Delta</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">&Delta;%</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Sig</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.gradients.map(g => (
+                    <tr key={g.variable_name} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white/30">{VAR_ICONS[g.variable_name] || null}</span>
+                          <span className="text-white/50 font-light capitalize">{g.variable_name.replace(/_/g, " ")}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_high}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-neon/80">${g.mean_price_high.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_high})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_low}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-white/50">${g.mean_price_low.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_low})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? (g.delta > 0 ? "text-rose-400/70" : "text-neon/70") : "text-white/15"}>
+                          {fmtDelta(g.delta)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? "text-white/40" : "text-white/12"}>
+                          {g.delta_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        {g.significant ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-neon/10 text-neon/80 text-[8px] font-bold" title="Statistically significant (p &lt; 0.05)">&#10003;</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/[0.03] text-white/15 text-[8px]" title="Not statistically significant">&mdash;</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <AgentGrid report={report} />
@@ -503,7 +634,7 @@ export default function Terminal() {
   const runProbe = useCallback(async (targetUrl: string, targetName: string) => {
     setRunning(true);
     const mid = Date.now().toString();
-    addMsg({id:mid,role:"assistant",content:"Deploying 24 probe agents across 3 staggered waves...",status:"scanning"});
+    addMsg({id:mid,role:"assistant",content:"Deploying 24 probe agents across 3 staggered waves...",status:"scanning",startedAt: Date.now()});
     if (useCache) {
       await new Promise(r=>setTimeout(r,500));
       updateLast({content:"Wave 1/3 - 8 agents deployed",report:{total_agents:24,successful_agents:8,failed_agents:0,detected_agents:0,agents:DEMO.agents.slice(0,8)}as any});
@@ -526,6 +657,11 @@ export default function Terminal() {
       pollRef.current = setInterval(async () => {
         try {
           const r2 = await fetch(`${apiBase}/api/result/${b1.session_id}`);
+          if (r2.status === 404) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            updateLast({status:"error",error:"Probe session expired",content:"Probe session expired"}); setRunning(false);
+            return;
+          }
           if (!r2.ok) throw new Error(`Poll error: ${r2.status}`);
           const data: TopologyReport = await r2.json();
           if (data.status==="completed"||data.status==="failed") {
@@ -640,7 +776,7 @@ export default function Terminal() {
                         <div className="w-7 h-7 rounded-xl bg-neon/5 border border-neon/15 flex items-center justify-center shrink-0"><Loader2 className="w-3.5 h-3.5 text-neon/70 animate-spin"/></div>
                         <p className="text-xs text-white/40 font-mono font-light pt-1">{msg.content}</p>
                       </div>
-                      {msg.report ? <AgentGrid report={msg.report}/> : <AgentGrid report={{agents:[],total_agents:24,successful_agents:0,failed_agents:0,detected_agents:0,elapsed_seconds:0}as any}/>}
+                      {msg.report ? <AgentGrid report={msg.report} scanStarted={msg.startedAt}/> : <AgentGrid report={{agents:[],total_agents:24,successful_agents:0,failed_agents:0,detected_agents:0,elapsed_seconds:0}as any} scanStarted={msg.startedAt}/>}
                     </div>
                   )}
                   {msg.status==="error" && (

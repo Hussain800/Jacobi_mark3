@@ -10,6 +10,8 @@ export default function NavAuth() {
   const [showEmailSignIn, setShowEmailSignIn] = useState(false);
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authPending, setAuthPending] = useState(false);
   const [supabase] = useState(() => createClient());
 
   useEffect(() => {
@@ -31,20 +33,34 @@ export default function NavAuth() {
 
   async function signInWithGoogle() {
     const redirectTo = `${window.location.origin}/auth/callback`;
-    await supabase.auth.signInWithOAuth({
+    setAuthError(null);
+    setAuthPending(true);
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },
     });
+    if (error) {
+      setAuthError(error.message);
+      setAuthPending(false);
+    }
   }
 
   async function signInWithEmail() {
     if (!email.trim()) return;
     const redirectTo = `${window.location.origin}/auth/callback`;
+    setAuthError(null);
+    setAuthPending(true);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: redirectTo },
     });
-    if (!error) setEmailSent(true);
+    if (error) {
+      setAuthError(error.message);
+      setAuthPending(false);
+      return;
+    }
+    setEmailSent(true);
+    setAuthPending(false);
   }
 
   async function handleSignOut() {
@@ -85,16 +101,21 @@ export default function NavAuth() {
       {!showEmailSignIn ? (
         <>
           <button
-            onClick={() => setShowEmailSignIn(true)}
+            onClick={() => {
+              setAuthError(null);
+              setShowEmailSignIn(true);
+            }}
+            disabled={authPending}
             className="text-[10px] font-mono text-white/30 hover:text-white/60 border border-white/10 px-2 py-1 rounded transition-all"
           >
             email
           </button>
           <button
             onClick={signInWithGoogle}
+            disabled={authPending}
             className="text-[10px] font-mono text-white/40 hover:text-white/70 transition-colors"
           >
-            Google →
+            {authPending ? "Signing in..." : "Google →"}
           </button>
         </>
       ) : emailSent ? (
@@ -118,31 +139,42 @@ export default function NavAuth() {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setAuthError(null);
+              setEmail(e.target.value);
+            }}
             placeholder="you@example.com"
             onKeyDown={(e) => {
               if (e.key === "Enter") signInWithEmail();
             }}
             className="w-36 sm:w-48 bg-white/[0.06] border border-white/[0.12] rounded px-2 py-1 text-[10px] font-mono text-white/80 placeholder:text-white/20 outline-none focus:border-white/30"
             autoFocus
+            disabled={authPending}
           />
           <button
             onClick={signInWithEmail}
-            disabled={!email.trim()}
+            disabled={!email.trim() || authPending}
             className="text-[10px] font-mono text-white/50 hover:text-white/80 border border-white/10 px-2 py-1 rounded disabled:opacity-20 transition-all"
           >
-            send
+            {authPending ? "sending..." : "send"}
           </button>
           <button
             onClick={() => {
               setShowEmailSignIn(false);
               setEmail("");
+              setAuthError(null);
             }}
+            disabled={authPending}
             className="text-[10px] font-mono text-white/20 hover:text-white/40 transition-colors"
           >
             ✕
           </button>
         </div>
+      )}
+      {authError && (
+        <span className="text-[10px] font-mono text-rose-400/80">
+          {authError}
+        </span>
       )}
     </div>
   );

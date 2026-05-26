@@ -8,7 +8,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -17,7 +17,29 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
 )
 
+from auth_user import get_optional_user
+from profile_store import get_tier
+
 router = APIRouter(prefix="/api/export")
+
+
+async def _require_pro(user=Depends(get_optional_user)):
+    """Gate dependency: exports are Pro-only."""
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "auth_required", "message": "Sign in to export reports."},
+        )
+    tier = await get_tier(user["id"])
+    if tier != "pro":
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "pro_required",
+                "message": "Exports are a Pro feature. Upgrade at /pricing to download PDF/CSV/JSON reports.",
+            },
+        )
+    return user
 
 
 def _sanitize_report(report: dict) -> dict:
@@ -62,8 +84,8 @@ def _get_report(report_id: str) -> dict:
 
 
 @router.get("/{report_id}/json")
-async def export_json(report_id: str):
-    """Export as JSON file."""
+async def export_json(report_id: str, _: dict = Depends(_require_pro)):
+    """Export as JSON file. Pro-only."""
     report = _get_report(report_id)
     data = _sanitize_report(report)
     json_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -77,8 +99,8 @@ async def export_json(report_id: str):
 
 
 @router.get("/{report_id}/csv")
-async def export_csv(report_id: str):
-    """Export agent prices as CSV."""
+async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
+    """Export agent prices as CSV. Pro-only."""
     report = _get_report(report_id)
     data = _sanitize_report(report)
 
@@ -111,7 +133,7 @@ async def export_csv(report_id: str):
 
 
 @router.get("/{report_id}/pdf")
-async def export_pdf(report_id: str):
+async def export_pdf(report_id: str, _: dict = Depends(_require_pro)):
     """Export as PDF report."""
     report = _get_report(report_id)
     data = _sanitize_report(report)

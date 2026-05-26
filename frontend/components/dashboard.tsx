@@ -6,7 +6,7 @@ import {
   Shield, Globe, Smartphone, Cookie, ExternalLink, Loader2,
   AlertTriangle, BarChart3, Network, X,
   Zap, Disc, Code, AlertOctagon, Bot, User,
-  ChevronDown, ChevronUp, ArrowUp,
+  ChevronDown, ChevronUp, ArrowUp, Building2, Plane, ShoppingBag,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -314,7 +314,7 @@ export default function JacobiChat() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto w-full px-4 py-4 space-y-3">
 
-            {/* ── LANDING HERO ── */}
+            {/* ── LANDING ── */}
             {!report && !running && !messages.length && (
               <div className="pt-4 pb-2">
                 <div className="text-center mb-5">
@@ -322,58 +322,45 @@ export default function JacobiChat() {
                     <Network className="w-5 h-5 text-white/40" />
                   </div>
                   <h1 className="text-xl font-thin tracking-tight text-white/50 mb-1">JACOBI</h1>
-                  <p className="text-[10px] font-mono text-white/12">Paste a URL or ask about pricing data</p>
-                </div>
+                  <p className="text-[10px] font-mono text-white/12 mb-5">Paste a URL or pick a sample</p>
 
-                {/* Market Rates */}
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden mb-3">
-                  <div className="px-4 py-2 border-b border-white/[0.04]">
-                    <span className="text-[9px] font-mono text-white/20 tracking-wider">FX Rates</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-px bg-white/[0.04]">
+                  {/* Categories */}
+                  <div className="space-y-2.5 max-w-lg mx-auto">
                     {[
-                      { pair: "USD/AED", bid: "3.6729", chg: "+0.01", dir: "up" },
-                      { pair: "USD/INR", bid: "83.05", chg: "-0.12", dir: "down" },
-                      { pair: "USD/GBP", bid: "0.7921", chg: "+0.08", dir: "up" },
-                      { pair: "USD/EUR", bid: "0.9218", chg: "-0.05", dir: "down" },
-                      { pair: "USD/JPY", bid: "149.28", chg: "+0.22", dir: "up" },
-                      { pair: "USD/SGD", bid: "1.3504", chg: "-0.03", dir: "down" },
-                      { pair: "USD/CHF", bid: "0.8812", chg: "+0.15", dir: "up" },
-                      { pair: "USD/TRY", bid: "30.54", chg: "+0.45", dir: "up" },
-                    ].map(p => (
-                      <div key={p.pair} className="bg-black/40 px-3 py-2.5">
-                        <div className="text-[8px] font-mono text-white/20">{p.pair}</div>
-                        <div className="text-sm font-mono font-light text-white/60 mt-0.5 tracking-tight">{p.bid}</div>
-                        <div className={`text-[7px] font-mono mt-0.5 ${p.dir === "up" ? "text-emerald-400/60" : "text-red-400/60"}`}>{p.chg}%</div>
+                      { label: "Hotels", icon: Building2, items: [
+                        { name: "Leela Palace Bangalore", url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html?checkin=2026-06-15&checkout=2026-06-16" },
+                        { name: "Tokyo Hotels", url: "https://www.booking.com/searchresults.html?ss=Tokyo&checkin=2026-06-15&checkout=2026-06-20" },
+                        { name: "Knickerbocker NYC", url: "https://www.booking.com/hotel/us/the-knickerbocker.html?checkin=2026-07-10&checkout=2026-07-14" },
+                      ]},
+                      { label: "Flights", icon: Plane, items: [
+                        { name: "DXB → KTM", url: "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB" },
+                        { name: "LHR → DXB", url: "https://www.google.com/travel/flights?q=Flights+to+DXB+from+LHR" },
+                      ]},
+                      { label: "E-Commerce", icon: ShoppingBag, items: [
+                        { name: "Wireless Headphones", url: "https://www.amazon.com/s?k=wireless+headphones" },
+                        { name: "Amazon UK — Headphones", url: "https://www.amazon.co.uk/s?k=wireless+headphones" },
+                      ]},
+                    ].map(cat => (
+                      <div key={cat.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden">
+                        <div className="px-4 py-2 border-b border-white/[0.04] flex items-center gap-2">
+                          <cat.icon className="w-3 h-3 text-white/20" />
+                          <span className="text-[9px] font-mono text-white/25 tracking-wider">{cat.label}</span>
+                        </div>
+                        <div className="p-1.5 space-y-0.5">
+                          {cat.items.map(item => (
+                            <button key={item.name} onClick={() => { setInput(item.url); inputRef.current?.focus(); }}
+                              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/[0.04] transition-colors group text-left">
+                              <span className="text-[8px] font-mono text-white/12 group-hover:text-white/30 transition-colors w-4">&gt;</span>
+                              <span className="text-[11px] font-mono text-white/30 group-hover:text-white/60 transition-colors">{item.name}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Briefs */}
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/[0.04] flex items-center justify-between">
-                    <span className="text-[9px] font-mono text-white/20 tracking-wider">Briefs</span>
-                    <span className="text-[7px] font-mono text-white/10">5 items</span>
-                  </div>
-                  <div className="divide-y divide-white/[0.04]">
-                    {[
-                      { time: "09:45", head: "Oil extends gains as OPEC+ maintains output cuts", src: "Reuters" },
-                      { time: "09:32", head: "Fed minutes signal cautious approach to rate cuts", src: "Bloomberg" },
-                      { time: "09:18", head: "Asian markets mixed ahead of US inflation data", src: "Nikkei" },
-                      { time: "08:55", head: "Gold holds above $2,350 as safe-haven demand persists", src: "CNBC" },
-                      { time: "08:30", head: "Travel demand surges 18% YoY — airlines raise fares", src: "WSJ" },
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.02] transition-colors cursor-default">
-                        <span className="text-[8px] font-mono text-white/15 w-8 shrink-0">{item.time}</span>
-                        <span className="text-[10px] font-mono text-white/35 leading-tight truncate flex-1">{item.head}</span>
-                        <span className="text-[6px] font-mono text-white/10 shrink-0 uppercase tracking-wider">{item.src}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center gap-2 mt-4 text-[8px] font-mono text-white/10">
+                <div className="flex items-center justify-center gap-2 text-[8px] font-mono text-white/10">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60" />
                   24-Agent Matrix · BrightData MCP · Gemini
                 </div>

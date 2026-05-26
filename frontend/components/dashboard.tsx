@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Send, Loader2, Globe, Smartphone, Cookie, ExternalLink,
   AlertTriangle, Network, ChevronDown, ChevronRight,
-  Shield, Download, Signal, Zap, X, Radio, Info, Share2,
+  Shield, Download, Signal, Zap, X, Radio, Info, Share2, Star,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
@@ -127,6 +128,22 @@ function clsColor(c: string) {
     case "uniform": return "text-neon"; case "selective": return "text-amber-400";
     case "progressive": return "text-orange-400"; case "aggressive": return "text-rose-400";
     default: return "text-white/30";
+  }
+}
+
+function clsBg(c: string) {
+  switch(c) {
+    case "uniform": return "bg-neon/10"; case "selective": return "bg-blue-400/10";
+    case "progressive": return "bg-orange-400/10"; case "aggressive": return "bg-rose-400/10";
+    default: return "bg-white/[0.03]";
+  }
+}
+
+function clsDot(c: string) {
+  switch(c) {
+    case "uniform": return "bg-neon"; case "selective": return "bg-blue-400";
+    case "progressive": return "bg-orange-400"; case "aggressive": return "bg-rose-400";
+    default: return "bg-white/20";
   }
 }
 
@@ -382,10 +399,28 @@ function Leaderboard() {
 
 /* ─── Result Card ──────────────────────────────────────────────────────── */
 
-export function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
+export function ResultCard({ report, onClose, isLatest = true }: { report: TopologyReport; onClose?: () => void; isLatest?: boolean }) {
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+  const [bookmarked, setBookmarked] = useState(() => {
+    try {
+      const bm = JSON.parse(localStorage.getItem("jacobi-bookmarks") || "[]");
+      return bm.includes(report.session_id);
+    } catch { return false; }
+  });
+
+  const toggleBookmark = () => {
+    const sid = report.session_id;
+    if (!sid) return;
+    try {
+      const bm = JSON.parse(localStorage.getItem("jacobi-bookmarks") || "[]");
+      const idx = bm.indexOf(sid);
+      if (idx >= 0) { bm.splice(idx, 1); setBookmarked(false); }
+      else { bm.push(sid); setBookmarked(true); }
+      localStorage.setItem("jacobi-bookmarks", JSON.stringify(bm));
+    } catch {}
+  };
 
   const copyShareLink = () => {
     const sid = report.session_id;
@@ -414,13 +449,17 @@ export function ResultCard({ report, onClose }: { report: TopologyReport; onClos
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <Shield className={`w-4 h-4 ${cls}`}/>
-          <span className={`text-sm font-mono font-medium ${cls}`}>{report.topology_class.toUpperCase()}</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-wider ${cls} ${clsBg(report.topology_class)} border-current/10`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${clsDot(report.topology_class)} shrink-0`} />
+            {report.topology_class}
+          </span>
           <span className="text-xs text-white/35 font-mono font-light">${base.toFixed(0)} base</span>
           {report.discrimination_score != null && <span className="text-[9px] font-mono text-white/15 font-light">DI {report.discrimination_score.toFixed(0)}%</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={()=>exportJSON(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="JSON"><Download className="w-3 h-3"/></button>
           <button onClick={()=>exportCSV(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70 text-[8px] font-mono" title="CSV">CSV</button>
+          <button onClick={toggleBookmark} className={`p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors ${bookmarked ? "text-amber-400" : "text-white/15 hover:text-amber-400/60"}`} title={bookmarked ? "Remove bookmark" : "Bookmark"}><Star className={`w-3 h-3 ${bookmarked ? "fill-amber-400" : ""}`}/></button>
           <div className="relative">
             <button onClick={copyShareLink} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Copy share link"><Share2 className="w-3 h-3"/></button>
             {copyToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Link copied!</span>}
@@ -437,10 +476,25 @@ export function ResultCard({ report, onClose }: { report: TopologyReport; onClos
       )}
 
       {gemini?.plain_english_summary && (
-        <div className="px-5 py-4 border-b border-white/[0.06]">
-          <p className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] mb-1.5 font-light">AI Analysis</p>
-          <p className="text-xs text-white/60 font-light leading-relaxed">{gemini.plain_english_summary}</p>
-          {gemini.action_items?.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{gemini.action_items.map((item:string,i:number) => <span key={i} className="text-[8px] font-mono bg-white/[0.04] text-white/30 px-2.5 py-1 rounded-full border border-white/[0.06] font-light">{item}</span>)}</div>}
+        <div className="mx-5 my-4 border-l-2 border-neon/20 pl-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-3 h-3 text-neon/50" />
+            <p className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">AI Verdict</p>
+          </div>
+          <p className="text-[11px] text-white/55 font-light leading-relaxed">{gemini.plain_english_summary}</p>
+          {gemini.action_items?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {gemini.action_items.map((item: string, i: number) => (
+                <button
+                  key={i}
+                  className="text-[8px] font-mono bg-neon/5 text-neon/50 px-2.5 py-1 rounded-full border border-neon/10 hover:bg-neon/10 hover:text-neon/70 transition-colors font-light cursor-default"
+                  title="Action item"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -478,11 +532,11 @@ export function ResultCard({ report, onClose }: { report: TopologyReport; onClos
 
         {/* Comparison Table */}
         <div>
-          <button onClick={() => setShowComparison(!showComparison)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+          <button onClick={() => isLatest && setShowComparison(!showComparison)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
             <span>Variable Comparison</span>
-            {showComparison ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            {showComparison && isLatest ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
-          {showComparison && report.gradients.length > 0 && (
+          {isLatest && showComparison && report.gradients.length > 0 && (
             <div className="overflow-x-auto -mx-1 mt-2">
               <table className="w-full text-[9px] font-mono border-collapse">
                 <thead>
@@ -546,11 +600,11 @@ export function ResultCard({ report, onClose }: { report: TopologyReport; onClos
         <AgentGrid report={report} />
 
         <div>
-          <button onClick={()=>setShowHistogram(!showHistogram)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+          <button onClick={()=>isLatest && setShowHistogram(!showHistogram)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
             <span>Price Distribution</span>
-            {showHistogram ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
+            {showHistogram && isLatest ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
           </button>
-          {showHistogram && histData.length > 0 && (
+          {isLatest && showHistogram && histData.length > 0 && (
             <div className="h-32 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={histData} margin={{top:4,right:8,left:0,bottom:16}}>
@@ -566,11 +620,11 @@ export function ResultCard({ report, onClose }: { report: TopologyReport; onClos
         </div>
 
         <div>
-          <button onClick={()=>setShowAgents(!showAgents)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+          <button onClick={()=>isLatest && setShowAgents(!showAgents)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
             <span>All {report.agents.length} Agents</span>
-            {showAgents ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
+            {showAgents && isLatest ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
           </button>
-          {showAgents && <div className="space-y-1 mt-2">{agentRows.map((row,ri) => <div key={ri} className="grid grid-cols-4 sm:grid-cols-8 gap-1">{row.map(a => <div key={a.agent_id} className="bg-white/[0.02] rounded-xl p-2 border border-white/[0.04]"><div className="flex items-center justify-between mb-0.5"><span className="text-[6px] font-mono text-white/15">{a.agent_id.replace("AGENT_","A")}</span>{a.price !== null ? <span className="text-[7px] font-mono text-white/50">${a.price}</span> : <span className="text-[6px] text-rose-400/50 font-mono">BLKD</span>}</div>{a.network_tier != null && <div className="text-[5px] font-mono text-white/8">{["DC","RES","MOB"][a.network_tier]}</div>}</div>)}</div>)}</div>}
+          {isLatest && showAgents && <div className="space-y-1 mt-2">{agentRows.map((row,ri) => <div key={ri} className="grid grid-cols-4 sm:grid-cols-8 gap-1">{row.map(a => <div key={a.agent_id} className="bg-white/[0.02] rounded-xl p-2 border border-white/[0.04]"><div className="flex items-center justify-between mb-0.5"><span className="text-[6px] font-mono text-white/15">{a.agent_id.replace("AGENT_","A")}</span>{a.price !== null ? <span className="text-[7px] font-mono text-white/50">${a.price}</span> : <span className="text-[6px] text-rose-400/50 font-mono">BLKD</span>}</div>{a.network_tier != null && <div className="text-[5px] font-mono text-white/8">{["DC","RES","MOB"][a.network_tier]}</div>}</div>)}</div>)}</div>}
         </div>
       </div>
 
@@ -593,7 +647,7 @@ function FloatingOrbs() {
 
 /* ─── Main Chat Component ────────────────────────────────────────────── */
 
-export default function Terminal() {
+export default function Terminal({ initialUrl, initialSession }: { initialUrl?: string; initialSession?: string } = {}) {
   const [user, setUser] = useState<User | null>(null);
   const [supabase] = useState(() => createClient());
   useEffect(() => {
@@ -610,18 +664,42 @@ export default function Terminal() {
     };
   }, [supabase]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialUrl || "");
   const [running, setRunning] = useState(false);
   const [useCache, setUseCache] = useState(false);
+  const [urlError, setUrlError] = useState("");
+  const [pastedUrl, setPastedUrl] = useState("");
+  const [expandedResult, setExpandedResult] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastUrlRef = useRef("");
+  const params = useSearchParams();
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const queryInitRef = useRef(false);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (initialUrl && !initialSession) {
+      const timer = setTimeout(() => handleSend(), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [initialUrl]);
+  // Restore past probe from session ID
+  useEffect(() => {
+    if (initialSession) {
+      fetch(`${apiBase}/api/result/${initialSession}`).then(r=>r.json()).then(data => {
+        if (data && data.status) {
+          addMsg({id:Date.now().toString(),role:"assistant",content:"Complete.",status:"complete",report:data});
+        }
+      }).catch(() => {});
+    }
+  }, [initialSession]);
 
   const saveConv = useCallback((report: any) => {
     try {
       const existing = JSON.parse(localStorage.getItem("probe-conversations")||"[]");
-      existing.unshift({id:report.session_id,title:(report.target_name||report.target_url||"Probe").slice(0,50),timestamp:Date.now(),targetUrl:report.target_url,targetName:report.target_name,baselinePrice:report.baseline_price,savings:report.max_price_spread,topologyClass:report.topology_class});
+      existing.unshift({id:report.session_id,session_id:report.session_id,title:(report.target_name||report.target_url||"Probe").slice(0,50),timestamp:Date.now(),targetUrl:report.target_url,targetName:report.target_name,baselinePrice:report.baseline_price,savings:report.max_price_spread,topologyClass:report.topology_class});
       localStorage.setItem("probe-conversations", JSON.stringify(existing.slice(0,50)));
     } catch {}
   }, []);
@@ -633,6 +711,7 @@ export default function Terminal() {
 
   const runProbe = useCallback(async (targetUrl: string, targetName: string) => {
     setRunning(true);
+    lastUrlRef.current = targetUrl;
     const mid = Date.now().toString();
     addMsg({id:mid,role:"assistant",content:"Deploying 24 probe agents across 3 staggered waves...",status:"scanning",startedAt: Date.now()});
     if (useCache) {
@@ -648,6 +727,7 @@ export default function Terminal() {
         if (ar.ok) { const a=await ar.json(); updateLast({content:"Complete.",report:{...DEMO,_demo:true,_analysis:a}as any,status:"complete"}); }
         else { updateLast({content:"Complete.",report:{...DEMO,_demo:true}as any,status:"complete"}); }
       } catch { updateLast({content:"Complete.",report:{...DEMO,_demo:true}as any,status:"complete"}); }
+      setExpandedResult(mid);
       setRunning(false); return;
     }
     try {
@@ -675,7 +755,12 @@ export default function Terminal() {
               } catch { updateLast({status:"complete",report:data,content:"Complete."}); }
             } else { updateLast({status:"error",report:data,error:data.error??undefined,content:data.error||"Failed."}); }
             setRunning(false);
-          } else { updateLast({content:`Scanning... (${data.successful_agents}/${data.total_agents} agents)`,report:data}); }
+          } else {
+            const succ = data.successful_agents;
+            const wave = succ < 8 ? "Wave 1/3 — Datacenter" : succ < 16 ? "Wave 2/3 — Residential" : "Wave 3/3 — Mobile";
+            const elapsed = data.elapsed_seconds ? `${data.elapsed_seconds.toFixed(0)}s` : "";
+            updateLast({content:`${wave} — ${succ}/${data.total_agents} agents (${elapsed})`,report:data});
+          }
         } catch(e:any) {
           if (pollRef.current) clearInterval(pollRef.current);
           updateLast({status:"error",error:e.message,content:`Error: ${e.message}`}); setRunning(false);
@@ -689,9 +774,11 @@ export default function Terminal() {
     const text = input.trim();
     if (!text||running) return;
     const url = extractUrl(text);
+    if (!url) { setUrlError("Enter a valid URL to probe"); return; }
+    setUrlError(""); setPastedUrl("");
     const label = url ? SAMPLES.find(t=>t.url===url)?.label||url : text;
     addMsg({id:Date.now().toString(),role:"user",content:text}); setInput("");
-    runProbe(url||"demo", label);
+    runProbe(url, label);
   }, [input, running, addMsg, runProbe]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); handleSend(); } };
@@ -716,6 +803,12 @@ export default function Terminal() {
             </div>
             <span className="text-[7px] font-mono text-white/15 group-hover:text-white/30 font-light">demo</span>
           </label>
+          {running && (
+            <button onClick={() => { if (pollRef.current) clearInterval(pollRef.current); setRunning(false); addMsg({id:Date.now().toString(),role:"assistant",content:"Probe cancelled",status:"error",error:"Cancelled"}); }}
+              className="text-[9px] font-mono text-white/25 hover:text-rose-400/70 transition-colors">
+              cancel
+            </button>
+          )}
           <span className={`w-1 h-1 rounded-full ${running?"bg-neon animate-pulse":hasMsgs?"bg-neon/60":"bg-white/10"}`}/>
         </div>
       </header>
@@ -759,8 +852,8 @@ export default function Terminal() {
             </div>
           )}
 
-          {messages.map(msg => (
-            <div key={msg.id} className="space-y-2">
+          {messages.map((msg, mi) => (
+            <div key={msg.id} className="space-y-2" style={{animation: `fadeUp 0.4s ease-out ${mi * 0.1}s both`}}>
               {msg.role==="user" && (
                 <div className="flex justify-end">
                   <div className="max-w-[85%] bg-white/[0.04] backdrop-blur-xl border border-white/[0.06] rounded-2xl rounded-br-md px-4 py-3">
@@ -781,7 +874,12 @@ export default function Terminal() {
                   )}
                   {msg.status==="error" && (
                     <div className={cx("p-4","border-rose-400/10")}>
-                      <div className="flex items-start gap-3"><AlertTriangle className="w-4 h-4 mt-0.5 text-rose-400/60 shrink-0"/><p className="text-xs text-rose-400/70 font-mono font-light">{msg.error||msg.content}</p></div>
+                      <div className="flex items-start gap-3"><AlertTriangle className="w-4 h-4 mt-0.5 text-rose-400/60 shrink-0"/>
+                        <div className="flex-1">
+                          <p className="text-xs text-rose-400/70 font-mono font-light">{msg.error||msg.content}</p>
+                          {lastUrlRef.current && <button onClick={()=>runProbe(lastUrlRef.current, lastUrlRef.current)} className="mt-2 text-[9px] font-mono text-neon/50 hover:text-neon/80 border border-neon/20 hover:border-neon/40 rounded px-2.5 py-1 transition-all">Retry</button>}
+                        </div>
+                      </div>
                     </div>
                   )}
                   {msg.status==="complete" && msg.report && (
@@ -809,13 +907,15 @@ export default function Terminal() {
       <div className="border-t border-white/[0.06] bg-black/80 backdrop-blur-xl shrink-0 relative z-10">
         <div className="max-w-3xl mx-auto w-full px-4 py-3">
           <div className="flex items-end gap-2 bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl focus-within:border-neon/20 transition-colors px-4 py-2.5">
-            <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Paste a URL to probe..." disabled={running}
+            <textarea ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setUrlError("");}} onKeyDown={handleKeyDown} onPaste={e=>{const t=e.clipboardData.getData('text/plain');if(/https?:\/\/[^\s]+/.test(t)){setPastedUrl(t);setTimeout(()=>setPastedUrl(""),5000);}}} placeholder="Paste a URL to probe..." disabled={running} autoFocus
               rows={1} className="flex-1 bg-transparent text-xs text-white/60 placeholder-white/12 outline-none resize-none font-mono font-light max-h-32 py-0.5 disabled:opacity-30" style={{minHeight:"22px"}}/>
+            {pastedUrl && <button onClick={()=>{setInput(pastedUrl);setPastedUrl("");setTimeout(handleSend,100);}} className="absolute -top-7 right-0 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap hover:bg-neon/20 transition-colors">Probe this URL?</button>}
             <button onClick={handleSend} disabled={!input.trim()||running}
               className="w-8 h-8 rounded-xl flex items-center justify-center bg-neon/10 hover:bg-neon/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all shrink-0 border border-neon/15">
               {running ? <Loader2 className="w-3.5 h-3.5 text-neon/60 animate-spin"/> : <Send className="w-3.5 h-3.5 text-neon/60"/>}
             </button>
           </div>
+          {urlError && <p className="text-[9px] font-mono text-rose-400/70 text-center mt-1">{urlError}</p>}
           <p className="text-[7px] font-mono text-white/8 text-center mt-2 font-light">24 agents probe pricing across location / device / cookies / referrer / network tier</p>
         </div>
       </div>

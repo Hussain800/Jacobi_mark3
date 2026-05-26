@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=480">
+  <title>JACOBI — Settings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #08090c;
+      --surface: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.07);
+      --accent: #00ff41;
+      --accent-dim: rgba(0,255,65,0.12);
+      --accent-glow: rgba(0,255,65,0.2);
+      --text: #c8ccd4;
+      --text-dim: rgba(255,255,255,0.45);
+      --text-faint: rgba(255,255,255,0.18);
+      --danger: rgba(239,68,68,0.8);
+      --danger-dim: rgba(239,68,68,0.12);
+      --font: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 32px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 460px; margin: 0 auto; }
+
+    .header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    .logo { display: flex; align-items: center; gap: 1px; font-size: 22px; line-height: 1; }
+    .logo-bracket { color: rgba(0,255,65,0.2); font-weight: 300; }
+    .logo-letter { color: var(--accent); font-weight: 400; text-shadow: 0 0 20px var(--accent-glow); }
+    .logo-rest { color: rgba(0,255,65,0.12); font-size: 12px; margin-left: 3px; letter-spacing: 0.05em; }
+    .page-title { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 28px; }
+
+    .section {
+      margin-bottom: 24px;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .section-label {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-faint);
+      margin-bottom: 12px;
+    }
+
+    .section-desc {
+      font-size: 9px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="url"]:focus {
+      border-color: rgba(0,255,65,0.3);
+      background: rgba(0,255,65,0.06);
+    }
+
+    input[type="text"]::placeholder { color: var(--text-faint); }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .toggle-label { font-size: 11px; color: var(--text-dim); }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.08);
+      border-radius: 11px;
+      cursor: pointer;
+      transition: background 0.25s;
+    }
+
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      left: 2px; top: 2px;
+      width: 18px; height: 18px;
+      background: var(--text-dim);
+      border-radius: 50%;
+      transition: transform 0.25s, background 0.25s;
+    }
+
+    .toggle input:checked + .toggle-slider { background: rgba(0,255,65,0.2); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: var(--accent); }
+
+    .slider-row { display: flex; align-items: center; gap: 12px; }
+
+    input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px; height: 14px;
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    .slider-value {
+      font-size: 11px;
+      color: var(--accent);
+      min-width: 24px;
+      text-align: right;
+      font-weight: 500;
+    }
+
+    .slider-label { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+
+    .theme-options { display: flex; gap: 8px; }
+
+    .theme-option {
+      flex: 1;
+      padding: 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      font-family: var(--font);
+      font-size: 10px;
+      color: var(--text-dim);
+      transition: all 0.2s;
+    }
+
+    .theme-option:hover {
+      border-color: rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .theme-option.active {
+      border-color: rgba(0,255,65,0.35);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .theme-icon {
+      display: block;
+      margin: 0 auto 6px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+    }
+
+    .theme-icon.dark { background: #08090c; border: 1px solid rgba(255,255,255,0.2); }
+    .theme-icon.light { background: #f5f5f5; border: 1px solid rgba(0,0,0,0.15); opacity: 0.3; }
+
+    .theme-badge {
+      font-size: 7px;
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-faint);
+      margin-left: 4px;
+    }
+
+    .btn-row { display: flex; gap: 8px; }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 7px;
+      font-family: var(--font);
+      font-size: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-save {
+      flex: 1;
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,255,65,0.2);
+      color: var(--accent);
+    }
+
+    .btn-save:hover {
+      background: rgba(0,255,65,0.18);
+      border-color: rgba(0,255,65,0.35);
+      box-shadow: 0 0 20px rgba(0,255,65,0.08);
+    }
+
+    .btn-danger {
+      background: transparent;
+      border: 1px solid rgba(239,68,68,0.2);
+      color: rgba(239,68,68,0.7);
+    }
+
+    .btn-danger:hover {
+      background: var(--danger-dim);
+      border-color: rgba(239,68,68,0.4);
+      color: var(--danger);
+    }
+
+    .status-banner {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 9px;
+      margin-top: 12px;
+      text-align: center;
+      transition: opacity 0.3s;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .status-banner.show { opacity: 1; }
+    .status-banner.success { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,255,65,0.15); }
+    .status-banner.error { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.15); }
+
+    .footer { margin-top: 28px; text-align: center; font-size: 8px; color: rgba(255,255,255,0.06); letter-spacing: 0.05em; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">
+        <span class="logo-bracket">[</span>
+        <span class="logo-letter">J</span>
+        <span class="logo-bracket">]</span>
+        <span class="logo-rest">acobi</span>
+      </div>
+    </div>
+    <div class="page-title">Extension Settings</div>
+
+    <!-- Backend URL -->
+    <div class="section">
+      <div class="section-label">Backend URL</div>
+      <input type="url" id="backend-url" placeholder="http://localhost:3000">
+      <div class="section-desc">JACOBI server endpoint used to open probe sessions.</div>
+    </div>
+
+    <!-- Auto-probe -->
+    <div class="section">
+      <div class="section-label">Auto-probe</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Automatically detect &amp; probe pricing pages</span>
+        <label class="toggle">
+          <input type="checkbox" id="auto-probe">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="section-desc">When enabled, the extension will proactively probe pages from supported e-commerce and booking sites.</div>
+    </div>
+
+    <!-- Max recent probes -->
+    <div class="section">
+      <div class="section-label">Max Recent Probes</div>
+      <div class="slider-label" id="slider-label">15 entries</div>
+      <div class="slider-row">
+        <input type="range" id="max-recent" min="5" max="50" value="15" step="1">
+        <span class="slider-value" id="slider-value">15</span>
+      </div>
+      <div class="section-desc">How many recent probes to keep in the popup history.</div>
+    </div>
+
+    <!-- Theme -->
+    <div class="section">
+      <div class="section-label">Theme</div>
+      <div class="theme-options">
+        <button class="theme-option active" data-theme="dark">
+          <span class="theme-icon dark"></span>
+          Dark<span class="theme-badge">default</span>
+        </button>
+        <button class="theme-option" data-theme="light" disabled style="opacity:0.35;cursor:not-allowed;" title="Coming soon">
+          <span class="theme-icon light"></span>
+          Light
+        </button>
+      </div>
+      <div class="section-desc">Light theme support is coming in a future update.</div>
+    </div>
+
+    <!-- Actions -->
+    <div class="btn-row">
+      <button class="btn btn-save" id="btn-save">Save Settings</button>
+      <button class="btn btn-danger" id="btn-clear-all">Clear All Data</button>
+    </div>
+    <div class="status-banner" id="status-banner"></div>
+
+    <div class="footer">24 agents &middot; 3 tiers &middot; 5 variables</div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

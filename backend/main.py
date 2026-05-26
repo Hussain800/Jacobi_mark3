@@ -27,6 +27,7 @@ from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
+from cognee_memory import remember_probe, is_available as cognee_available
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
@@ -984,6 +985,11 @@ async def launch_probe(input: TargetProbeInput, _: None = Depends(check_rate_lim
             await save_probe(session)
         except Exception as db_err:
             print(f"[MAIN] Supabase save skipped: {db_err}")
+        # Persist to Cognee memory (fire-and-forget, no-op if not configured)
+        try:
+            await remember_probe(session)
+        except Exception:
+            pass
         return {"session_id": session["session_id"], "status": session["status"]}
     except Exception as e:
         # On MCP connection failure, return demo data with a warning

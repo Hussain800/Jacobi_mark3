@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import Tactical3DNetwork from "../components/Tactical3DNetwork";
-import TacticalCard from "../components/TacticalCard";
 
 /* ─── Presets for Interactive Sandbox ────────────────────────────────── */
 
@@ -268,24 +267,6 @@ function VerticalStep({ step, title, desc, icon: Icon, isLast = false }: { step:
   );
 }
 
-function StatBlock({ value, suffix, label, icon: Icon, inView }: { value: number; suffix: string; label: string; icon: React.ElementType; inView: boolean }) {
-  const count = useCountUp(value, 2000, inView);
-  return (
-    <div className="relative flex flex-col items-center text-center px-4 py-8 bg-[#0c0d12]/30 backdrop-blur-sm group">
-      <span className="tech-bracket tech-bracket-tl opacity-0 group-hover:opacity-100 transition-opacity text-[#00d992]/40" />
-      <span className="tech-bracket tech-bracket-tr opacity-0 group-hover:opacity-100 transition-opacity text-[#00d992]/40" />
-      <span className="tech-bracket tech-bracket-bl opacity-0 group-hover:opacity-100 transition-opacity text-[#00d992]/40" />
-      <span className="tech-bracket tech-bracket-br opacity-0 group-hover:opacity-100 transition-opacity text-[#00d992]/40" />
-      <Icon className="w-5 h-5 text-[#00d992]/50 mb-3 group-hover:text-[#00d992] transition-colors" />
-      <div className="text-3xl md:text-4xl font-bold tracking-tight text-white tabular-nums">
-        {formatNum(count)}
-        <span className="text-[#00d992] ml-0.5">{suffix}</span>
-      </div>
-      <p className="text-[9px] font-mono text-white/30 mt-2.5 uppercase tracking-widest">{label}</p>
-    </div>
-  );
-}
-
 /* ─── Main Landing Page Overhaul ─── */
 
 export default function LandingPage() {
@@ -398,7 +379,7 @@ export default function LandingPage() {
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.0] font-display text-white/95 uppercase">
               24 ADVERSARIAL AGENTS.
               <br />
-              <span className="bg-gradient-to-r from-[#00d992] via-[#00d992] to-cyan-400 bg-clip-text text-transparent animate-gradient-text bg-[length:200%_200%] tech-glow-text-emerald">
+              <span className="text-[#00d992] font-bold">
                 ONE TRUTH.
               </span>
             </h1>
@@ -709,31 +690,39 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <TacticalCard
-              number="01"
-              title="24-AGENT SWARM"
-              desc="Deploying concurrent agent clusters. Each node adopts a unique digital identity (browser headers, IP footprints) targeting the endpoint synchronously."
-              icon={Network}
-              color="emerald"
-              statusCode="AGENT_SWARM_INIT"
-            />
-            <TacticalCard
-              number="02"
-              title="AXIS DISCRIMINATION"
-              desc="Calculates anomalies across 4 operational axes: geo-location, device fingerprinting, cookie state, and incoming traffic origin."
-              icon={Eye}
-              color="blue"
-              statusCode="AXIS_CHECK_READY"
-            />
-            <TacticalCard
-              number="03"
-              title="AI VERDICT ENGINE"
-              desc="Ingests differential outputs into deep statistical solvers and multi-tier LLMs to calculate saving margins and discrimination severity indexes."
-              icon={BarChart3}
-              color="amber"
-              statusCode="AI_COMPILER_OK"
-            />
+          <div className="space-y-6">
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+              <div className="shrink-0 w-12 h-12 rounded-lg bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center">
+                <Network className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-emerald-400/60 tracking-widest mb-1 uppercase">Phase 01</div>
+                <div className="text-sm font-semibold text-white/90 mb-1">24-agent swarm deploys</div>
+                <div className="text-xs text-white/40 leading-relaxed">Each agent adopts a unique digital identity across browser headers and IP footprints, targeting the endpoint synchronously.</div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+              <div className="shrink-0 w-12 h-12 rounded-lg bg-blue-400/10 border border-blue-400/20 flex items-center justify-center">
+                <Eye className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-blue-400/60 tracking-widest mb-1 uppercase">Phase 02</div>
+                <div className="text-sm font-semibold text-white/90 mb-1">Axis discrimination analysis</div>
+                <div className="text-xs text-white/40 leading-relaxed">Anomalies calculated across 4 operational axes: geo-location, device fingerprinting, cookie state, and incoming traffic origin.</div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-5 p-5 rounded-lg border border-white/[0.06] bg-white/[0.01]">
+              <div className="shrink-0 w-12 h-12 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-amber-400/60 tracking-widest mb-1 uppercase">Phase 03</div>
+                <div className="text-sm font-semibold text-white/90 mb-1">AI verdict engine</div>
+                <div className="text-xs text-white/40 leading-relaxed">Differential outputs fed into statistical solvers and multi-tier LLMs to compute savings margins and discrimination severity.</div>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -941,12 +930,31 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ═══════════════ STATS COUNTERS ═══════════════ */}
-      <section ref={statsRef} className="relative border-b border-white/[0.04] bg-[#0c0d12]/20">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/[0.04]">
-          <StatBlock value={1247892} suffix="" label="SYSTEM_PROBES_DEPLOYED" icon={Activity} inView={statsInView} />
-          <StatBlock value={4823450} suffix="$" label="TOTAL_SAVINGS_CAPTURED" icon={DollarSign} inView={statsInView} />
-          <StatBlock value={98} suffix="%" label="DECISION_ACCURACY_RATING" icon={TrendingUp} inView={statsInView} />
+      {/* ═══════════════ TRUST SIGNALS ═══════════════ */}
+      <section ref={statsRef} className="border-t border-white/[0.04] px-6 lg:px-16 py-14 bg-white/[0.01]">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex flex-wrap justify-center gap-x-16 gap-y-6 text-center">
+            <div>
+              <div className="text-[10px] font-mono text-white/30 uppercase tracking-wider mb-2">Infrastructure</div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-mono text-white/50">24 parallel agents</span>
+                <span className="w-px h-4 bg-white/[0.06]" />
+                <span className="text-xs font-mono text-white/50">4 discrimination axes</span>
+                <span className="w-px h-4 bg-white/[0.06]" />
+                <span className="text-xs font-mono text-white/50">Real-time topology</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-mono text-white/30 uppercase tracking-wider mb-2">Powered by</div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-mono text-white/50">BrightData</span>
+                <span className="w-px h-4 bg-white/[0.06]" />
+                <span className="text-xs font-mono text-white/50">DeepSeek AI</span>
+                <span className="w-px h-4 bg-white/[0.06]" />
+                <span className="text-xs font-mono text-white/50">OpenCode</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

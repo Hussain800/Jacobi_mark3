@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=360">
+  <title>Jacobi Price Shield</title>
+  <style>
+    /* ─── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      min-height: 220px;
+      background: #08090c;
+      color: #c8ccd4;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 20px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Header ────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .logo-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #00d992, #00b87a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #08090c;
+      flex-shrink: 0;
+    }
+
+    .header-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #eaedf3;
+      letter-spacing: 0.02em;
+    }
+
+    .header-version {
+      font-size: 10px;
+      color: #555a64;
+    }
+
+    /* ─── Verdict Card ──────────────────────────────────────────────────── */
+    .verdict-card {
+      background: #0f1117;
+      border: 1px solid #1a1d24;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .verdict-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555a64;
+      margin-bottom: 6px;
+    }
+
+    .verdict-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .verdict-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .verdict-dot.fair     { background: #00d992; box-shadow: 0 0 6px rgba(0,217,146,0.4); }
+    .verdict-dot.inflated { background: #f5a623; box-shadow: 0 0 6px rgba(245,166,35,0.4); }
+    .verdict-dot.error    { background: #e74c3c; }
+
+    .verdict-text {
+      font-size: 13px;
+      color: #eaedf3;
+    }
+
+    .verdict-meta {
+      font-size: 10px;
+      color: #555a64;
+      margin-top: 6px;
+    }
+
+    /* ─── Toggle Row ────────────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f1117;
+      border: 1px solid #1a1d24;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      color: #c8ccd4;
+    }
+
+    /* Custom toggle switch */
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #1a1d24;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.25s ease;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      bottom: 3px;
+      background: #555a64;
+      border-radius: 50%;
+      transition: transform 0.25s ease, background 0.25s ease;
+    }
+
+    .switch input:checked + .slider {
+      background: #003d29;
+    }
+
+    .switch input:checked + .slider::before {
+      transform: translateX(18px);
+      background: #00d992;
+    }
+
+    /* ─── Footer ────────────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #33363d;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-mark">J</div>
+    <div class="header-text">
+      <span class="header-title">Jacobi Price Shield</span>
+      <span class="header-version">v0.1.0</span>
+    </div>
+  </div>
+
+  <!-- Verdict Card -->
+  <div class="verdict-card">
+    <div class="verdict-label">Current Page Verdict</div>
+    <div class="verdict-row">
+      <span class="verdict-dot" id="verdict-dot"></span>
+      <span class="verdict-text" id="verdict-text">No data</span>
+    </div>
+    <div class="verdict-meta" id="verdict-meta">—</div>
+  </div>
+
+  <!-- Toggle -->
+  <div class="toggle-row">
+    <span class="toggle-label">Price Monitoring</span>
+    <label class="switch">
+      <input type="checkbox" id="toggle-enabled" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="footer">aegis · jacobi</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

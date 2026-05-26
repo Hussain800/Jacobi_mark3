@@ -1,6 +1,6 @@
 import asyncio, sys
 sys.path.insert(0, ".")
-from main import BrightDataMCPClient, parse_page_prices, check_bot_detection
+from main import BrightDataMCPClient, check_bot_detection, extract_price
 
 async def t():
     client = BrightDataMCPClient()
@@ -20,9 +20,9 @@ async def t():
         status = "OK" if r["success"] else f"FAIL({r.get('error','')[:50]})"
         price = ""
         if r["success"]:
-            p = parse_page_prices(r["text"], url)[:3]
+            p = extract_price(r["text"])
             det, sig = check_bot_detection(r["text"])
-            price = f"prices={p} bot={det}"
+            price = f"price={p} bot={det}"
         print(f"Agent {i}: {status} {price} {r.get('elapsed_ms',0)}ms")
     
     await client.close()

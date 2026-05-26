@@ -1,6 +1,6 @@
 """
 JACOBI — Adversarial Pricing Topology Probe
-Backend: FastAPI + BrightData MCP (PRO mode)
+Backend: FastAPI + Bright Data Unlocker API
 24-agent parallel probe in 3 staggered waves of 8.
 Zero infrastructure: in-memory dict, no Celery, no Redis, no SQL.
 """
@@ -22,14 +22,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
-from dotenv import load_dotenv
+from brightdata_config import (
+    BRIGHTDATA_API_KEY,
+    BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
+    BRIGHTDATA_UNLOCKER_ZONE,
+    brightdata_auth_headers,
+    brightdata_configured,
+)
 from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
-
-load_dotenv()
-BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
 
 
 class TargetProbeInput(BaseModel):
@@ -185,20 +188,53 @@ def check_zero_variance(prices: Dict[str, Optional[float]]) -> bool:
     return (max(valid) - min(valid)) < 0.01
 
 
+def build_identity_headers(identity: dict) -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    user_agent = identity.get("user_agent")
+    referrer = identity.get("referrer")
+    cookie = identity.get("cookie")
+    sec_ch_ua = identity.get("sec_ch_ua")
+    geo = identity.get("geo", "US")
+    country = geo.split("-")[0].upper()
+
+    if user_agent:
+        headers["User-Agent"] = user_agent
+    if referrer:
+        headers["Referer"] = referrer
+    if cookie:
+        headers["Cookie"] = cookie
+    if sec_ch_ua:
+        headers["Sec-CH-UA"] = sec_ch_ua
+    headers["Accept-Language"] = _accept_language_for_country(country)
+    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    return headers
+
+
+def _accept_language_for_country(country: str) -> str:
+    return {
+        "AE": "en-AE,en;q=0.9,ar-AE;q=0.7,ar;q=0.6",
+        "AU": "en-AU,en;q=0.9",
+        "GB": "en-GB,en;q=0.9",
+        "IN": "en-IN,en;q=0.9,hi-IN;q=0.6",
+        "US": "en-US,en;q=0.9",
+    }.get(country, "en-US,en;q=0.9")
+
+
 class BrightDataAPIError(Exception):
     pass
 
 
 class BrightDataMCPClient:
-    """BrightData HTTP API client (replaces MCP stdio transport).
+    """Bright Data HTTP API client.
     
-    Uses the Unlocker API directly via REST instead of the MCP subprocess,
-    which has known stdio issues on Windows.
+    Uses the Unlocker API directly via REST so Windows local runs do not
+    depend on MCP stdio transport.
     """
     BRD_API = "https://api.brightdata.com/request"
 
     def __init__(self):
         self.api_key = BRIGHTDATA_API_KEY
+        self.zone = BRIGHTDATA_UNLOCKER_ZONE
         self._client = None
 
     async def start(self):
@@ -211,34 +247,49 @@ class BrightDataMCPClient:
         start_ts = time.time()
         geo = identity.get("geo", "US")
         country = geo.split("-")[0].lower()
+        request_headers = build_identity_headers(identity)
         try:
+            if not self.api_key:
+                return {
+                    "success": False,
+                    "elapsed_ms": 0,
+                    "error": "BRIGHTDATA_API_KEY is not configured",
+                    "country": country,
+                    "headers_sent": [],
+                }
             payload = {
-                "zone": "mcp_unlocker",
+                "zone": self.zone,
                 "url": url,
                 "format": "raw",
                 "data_format": "markdown",
                 "country": country,
+                "method": "GET",
+                "headers": request_headers,
             }
             response = await asyncio.wait_for(
                 self._client.post(
                     self.BRD_API,
                     json=payload,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=brightdata_auth_headers(),
                 ),
                 timeout=timeout_s,
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if response.status_code != 200:
                 return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
+                        "error": f"API returned {response.status_code}: {response.text[:200]}",
+                        "country": country, "headers_sent": list(request_headers.keys())}
             page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
+            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms,
+                    "country": country, "headers_sent": list(request_headers.keys())}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Timeout {timeout_s}s"}
+                    "error": f"Timeout {timeout_s}s",
+                    "country": country, "headers_sent": list(request_headers.keys())}
         except Exception as e:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": str(e)}
+                    "error": str(e),
+                    "country": country, "headers_sent": list(request_headers.keys())}
 
     async def close(self):
         if self._client:
@@ -260,7 +311,16 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         price_range=None, max_price_spread=None, max_price_spread_pct=None, gradients=[],
         discrimination_index=0.0, topology_class="unknown", summary="",
         max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None,
-        discrimination_score=0.0)
+        discrimination_score=0.0,
+        probe_evidence={
+            "brightdata_requests_per_agent": True,
+            "agent_count": 24,
+            "waves": 3,
+            "custom_headers_sent": True,
+            "custom_headers_zone_required": True,
+            "custom_headers_enabled_flag": BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
+        },
+        limitations=[])
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
     return session_id, session
@@ -321,9 +381,13 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
     s = dict(agent_id=cfg["id"], label=cfg["label"], status="in_flight", price=None,
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
-        delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False))
+        delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
+        request_country=None, fingerprint_headers=[], custom_headers_requested=False)
     try:
         r = await bd.probe_url(url, cfg, 30.0)
+        s["request_country"] = r.get("country")
+        s["fingerprint_headers"] = r.get("headers_sent", [])
+        s["custom_headers_requested"] = bool(r.get("headers_sent"))
         if not r["success"]:
             s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
@@ -341,6 +405,16 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
 async def run_full_probe(url: str, name: str) -> dict:
     sid, session = create_session(url, name)
     overall_start = time.time()
+    if not brightdata_configured():
+        session["status"] = "failed"
+        session["error"] = "BRIGHTDATA_API_KEY is not configured. Add your key to .env.local or backend/.env."
+        session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+        return session
+    if not BRIGHTDATA_CUSTOM_HEADERS_ENABLED:
+        session["limitations"].append(
+            "Bright Data custom headers/cookies must be enabled on the Unlocker zone for "
+            "User-Agent, Referer, Cookie, and Sec-CH-UA overrides to be honored."
+        )
     bd = BrightDataMCPClient()
     await bd.start()
     try:
@@ -481,14 +555,25 @@ FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONT
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "jacobi-backend", "brightdata_configured": bool(BRIGHTDATA_API_KEY)}
+    return {
+        "status": "healthy",
+        "service": "jacobi-backend",
+        "brightdata_configured": brightdata_configured(),
+        "brightdata_zone": BRIGHTDATA_UNLOCKER_ZONE,
+        "custom_headers_enabled_flag": BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
+    }
 
 
 @app.post("/api/probe")
 async def launch_probe(input: TargetProbeInput):
-    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
+    """Launch a pricing probe."""
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}
+    if not brightdata_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Live probe requires BRIGHTDATA_API_KEY in .env.local or backend/.env. Use /api/demo for demo data.",
+        )
     try:
         session = await run_full_probe(input.target_url, input.target_name)
         # Persist to Supabase
@@ -498,15 +583,7 @@ async def launch_probe(input: TargetProbeInput):
             print(f"[MAIN] Supabase save skipped: {db_err}")
         return {"session_id": session["session_id"], "status": session["status"]}
     except Exception as e:
-        # On MCP connection failure, return demo data with a warning
-        err_msg = str(e)
-        if "Connection closed" in err_msg or "MCP" in err_msg:
-            return {
-                "session_id": "demo_session_static",
-                "status": "completed",
-                "warning": "Live probe unavailable (MCP connection issue). Showing simulated results.",
-            }
-        raise HTTPException(status_code=500, detail=err_msg)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def build_agent_list(session: dict) -> list:
@@ -518,7 +595,9 @@ def build_agent_list(session: dict) -> list:
             bot_detected=a.get("bot_detected",False), detection_signal=a.get("detection_signal"),
             error_message=a.get("error_message"), variables=a.get("variables",{}),
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
-            is_control=a.get("is_control",False),
+            is_control=a.get("is_control",False), request_country=a.get("request_country"),
+            fingerprint_headers=a.get("fingerprint_headers", []),
+            custom_headers_requested=a.get("custom_headers_requested", False),
         ))
     return agents
 
@@ -545,6 +624,8 @@ async def get_result(session_id: str):
         summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
         min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
         discrimination_score=session.get("discrimination_score", 0),
+        probe_evidence=session.get("probe_evidence", {}),
+        limitations=session.get("limitations", []),
         error=session.get("error"),
     )
 

@@ -1,4 +1,5 @@
 import httpx, asyncio, re
+from brightdata_config import BRIGHTDATA_UNLOCKER_ZONE, brightdata_auth_headers
 
 URLS = [
     "https://www.google.com/travel/flights?q=Flights+to+DXB+from+KTM",
@@ -12,8 +13,8 @@ async def t():
     async with httpx.AsyncClient(timeout=30) as c:
         for url in URLS:
             print(f"\n=== {url[:60]}... ===")
-            payload = {'url': url, 'zone': 'mcp_unlocker', 'format': 'raw'}
-            r = await c.post('https://api.brightdata.com/request', json=payload, headers={'Authorization': 'Bearer 254d841d-f14d-4f4b-a394-3da0b03af036'})
+            payload = {'url': url, 'zone': BRIGHTDATA_UNLOCKER_ZONE, 'format': 'raw'}
+            r = await c.post('https://api.brightdata.com/request', json=payload, headers=brightdata_auth_headers())
             text = r.text
             print(f"HTML length: {len(text)}")
             for pat in patterns:

@@ -1,8 +1,9 @@
 import httpx, asyncio, re
+from brightdata_config import BRIGHTDATA_UNLOCKER_ZONE, brightdata_auth_headers
 async def t():
     async with httpx.AsyncClient(timeout=30) as c:
-        payload = {'url': 'https://www.flydubai.com/en/plan/flights/select-flights?from=DXB&to=KTM&departureDate=2026-06-15&adults=1', 'zone': 'mcp_unlocker', 'format': 'raw'}
-        r = await c.post('https://api.brightdata.com/request', json=payload, headers={'Authorization': 'Bearer 254d841d-f14d-4f4b-a394-3da0b03af036'})
+        payload = {'url': 'https://www.flydubai.com/en/plan/flights/select-flights?from=DXB&to=KTM&departureDate=2026-06-15&adults=1', 'zone': BRIGHTDATA_UNLOCKER_ZONE, 'format': 'raw'}
+        r = await c.post('https://api.brightdata.com/request', json=payload, headers=brightdata_auth_headers())
         text = r.text
         # Search for price-like patterns
         patterns = [r'\$\s*(\d[\d,.]*)', r'AED\s*(\d[\d,]*)', r'(\d[\d,]*)\s*AED', r'(\d[\d,]*)\s*د\.إ', r'price.*?(\d[\d,.]*)', r'fare.*?(\d[\d,.]*)']

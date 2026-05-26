@@ -129,8 +129,12 @@ WAVE_STAGGER_S = 2.0
 PRICE_PATTERN = re.compile(r"\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)")
 ALT_PRICE_PATTERNS = [
     re.compile(r"USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
+    re.compile(r"AED\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
+    re.compile(r"EUR\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
+    re.compile(r"GBP\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
     re.compile(r"fare[:\s]*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
     re.compile(r"total[:\s]*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.IGNORECASE),
+    re.compile(r'"priceAmount":\s*(\d+\.?\d*)', re.IGNORECASE),
 ]
 NOISE_PATTERNS = [re.compile(p) for p in [
     r"session[a-z_]*=[a-z0-9]{16,}", r"token[a-z_]*=[a-z0-9]{20,}",
@@ -139,7 +143,7 @@ NOISE_PATTERNS = [re.compile(p) for p in [
 HONEYPOT_SIGNALS = [
     "captcha", "confirm you are human", "unusual traffic", "too many requests",
     "access denied", "check your browser", "blocked", "rate limit",
-    "please wait", "automated query", "sorry", "verify your identity",
+    "please wait", "automated query", "verify your identity",
 ]
 
 
@@ -162,7 +166,7 @@ def extract_price(text: str) -> Optional[float]:
                     candidates.append(p)
                 except ValueError:
                     continue
-    valid = [p for p in candidates if 20.0 <= p <= 5000.0]
+    valid = [p for p in candidates if 5.0 <= p <= 50000.0]
     return max(valid) if valid else None
 
 
@@ -181,48 +185,65 @@ def check_zero_variance(prices: Dict[str, Optional[float]]) -> bool:
     return (max(valid) - min(valid)) < 0.01
 
 
+class BrightDataAPIError(Exception):
+    pass
+
+
 class BrightDataMCPClient:
+    """BrightData HTTP API client (replaces MCP stdio transport).
+    
+    Uses the Unlocker API directly via REST instead of the MCP subprocess,
+    which has known stdio issues on Windows.
+    """
+    BRD_API = "https://api.brightdata.com/request"
+
     def __init__(self):
         self.api_key = BRIGHTDATA_API_KEY
-        self._session = None
+        self._client = None
 
     async def start(self):
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
-        env = {"API_TOKEN": self.api_key, "PRO_MODE": "true"}
-        server_params = StdioServerParameters(command="npx", args=["-y", "@brightdata/mcp"], env=env)
-        self._read, self._write = await stdio_client(server_params).__aenter__()
-        self._session = await ClientSession(self._read, self._write).__aenter__()
-        await self._session.initialize()
+        import httpx
+        self._client = httpx.AsyncClient(timeout=30.0)
 
-    async def probe_url(self, url: str, identity: dict, timeout_s: float = 15.0) -> dict:
-        if not self._session:
-            raise RuntimeError("MCP session not initialized")
+    async def probe_url(self, url: str, identity: dict, timeout_s: float = 30.0) -> dict:
+        if not self._client:
+            raise RuntimeError("Client not initialized")
         start_ts = time.time()
         geo = identity.get("geo", "US")
-        nav_args = {"url": url, "proxy_country": geo.split("-")[0]}
-        if geo == "US-NY": nav_args["proxy_state"] = "NY"
-        elif geo == "US-IA": nav_args["proxy_state"] = "IA"
-        elif geo == "US-CA": nav_args["proxy_state"] = "CA"
-        elif geo == "US-MS": nav_args["proxy_state"] = "MS"
+        country = geo.split("-")[0].lower()
         try:
-            await asyncio.wait_for(self._session.call_tool("scraping_browser_navigate", nav_args), timeout=timeout_s)
-            await asyncio.sleep(1.5)
-            text_result = await asyncio.wait_for(self._session.call_tool("scraping_browser_get_text", {}), timeout=timeout_s)
+            payload = {
+                "zone": "mcp_unlocker",
+                "url": url,
+                "format": "raw",
+                "data_format": "markdown",
+                "country": country,
+            }
+            response = await asyncio.wait_for(
+                self._client.post(
+                    self.BRD_API,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                ),
+                timeout=timeout_s,
+            )
             elapsed_ms = int((time.time() - start_ts) * 1000)
-            page_text = text_result.content[0].text if text_result and text_result.content else ""
+            if response.status_code != 200:
+                return {"success": False, "elapsed_ms": elapsed_ms,
+                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
+            page_text = response.text
             return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
         except asyncio.TimeoutError:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000), "error": f"Timeout {timeout_s}s"}
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": f"Timeout {timeout_s}s"}
         except Exception as e:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000), "error": str(e)}
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": str(e)}
 
     async def close(self):
-        try:
-            if self._session: await self._session.__aexit__(None, None, None)
-            if hasattr(self, "_write") and self._write: await self._write.close()
-            if hasattr(self, "_read") and self._read: await self._read.close()
-        except Exception: pass
+        if self._client:
+            await self._client.aclose()
+            self._client = None
 
 
 SESSION_STORE: Dict[str, dict] = {}
@@ -302,7 +323,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False))
     try:
-        r = await bd.probe_url(url, cfg, 15.0)
+        r = await bd.probe_url(url, cfg, 30.0)
         if not r["success"]:
             s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
@@ -447,8 +468,7 @@ app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.
 VERCEL_FRONTEND = os.environ.get("VERCEL_FRONTEND_URL", "https://jacobi.vercel.app")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", VERCEL_FRONTEND, "http://localhost:3000", "http://localhost:8000"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

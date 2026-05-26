@@ -1,7 +1,12 @@
 import Terminal from "../../components/dashboard";
+import ErrorBoundary from "../../components/ErrorBoundary";
 
 export const dynamic = "force-dynamic";
 
 export default function ChatPage() {
-  return <Terminal />;
+  return (
+    <ErrorBoundary>
+      <Terminal />
+    </ErrorBoundary>
+  );
 }

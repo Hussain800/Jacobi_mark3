@@ -5,10 +5,10 @@ import NavAuth from "../components/nav-auth";
 
 export const metadata: Metadata = {
   title: "JACOBI — 24-Agent Pricing Topology Probe",
-  description: "JACOBI: 24-agent adversarial pricing probe that reveals hidden pricing discrimination via BrightData MCP. Built for BrightData × MIT Hackathon.",
+  description: "JACOBI: 24-agent adversarial pricing probe that reveals hidden pricing discrimination via BrightData MCP. Powered by BrightData.",
   openGraph: {
     title: "JACOBI — 24-Agent Pricing Topology Probe",
-    description: "24-agent probe engine revealing hidden pricing topology via BrightData MCP. Built for BrightData × MIT Hackathon.",
+    description: "24-agent probe engine revealing hidden pricing topology via BrightData MCP. Powered by BrightData.",
     type: "website",
   },
 };

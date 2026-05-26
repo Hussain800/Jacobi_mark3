@@ -345,7 +345,7 @@ export default function LandingPage() {
               <a href="#how" className="text-[#666] hover:text-white transition-colors">How it works</a>
             </div>
             <div className="text-[9px] text-[#444]">
-              BrightData x MIT Hackathon
+              BrightData
             </div>
           </div>
         </footer>

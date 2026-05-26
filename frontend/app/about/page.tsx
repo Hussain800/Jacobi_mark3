@@ -252,7 +252,7 @@ export default function AboutPage() {
             </Link>
           </div>
           <div className="text-[9px] text-[#444]">
-            BrightData x MIT Hackathon
+            BrightData
           </div>
         </div>
       </footer>

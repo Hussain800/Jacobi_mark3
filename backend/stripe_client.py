@@ -67,3 +67,56 @@ def verify_webhook(payload: bytes, sig_header: str) -> stripe.Event:
     if not STRIPE_WEBHOOK_SECRET:
         raise RuntimeError("STRIPE_WEBHOOK_SECRET is not configured.")
     return stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+
+
+def find_active_subscription_for_user(user_id: str, user_email: str) -> Optional[dict]:
+    """Look up an active Pro subscription for this Supabase user.
+
+    Used by the /sync endpoint so the frontend can self-heal when the webhook
+    didn't land (e.g., local dev without Stripe CLI, transient network issue,
+    Stripe API hiccup). Strategy:
+      1. Search subscriptions by metadata.supabase_user_id (set at checkout)
+      2. Fall back to a customer lookup by email if no metadata match yet
+         (handles the brief window before Stripe propagates metadata)
+
+    Returns a dict with stripe_customer_id, stripe_subscription_id,
+    current_period_end_iso, or None if nothing active is found.
+    """
+    if not STRIPE_SECRET_KEY:
+        return None
+
+    # 1. Metadata search — exact match on the supabase_user_id we set
+    #    at checkout. This is the durable identifier.
+    try:
+        result = stripe.Subscription.search(
+            query=f"status:'active' AND metadata['supabase_user_id']:'{user_id}'",
+            limit=1,
+        )
+        if result.data:
+            sub = result.data[0]
+            return {
+                "stripe_customer_id": sub.customer,
+                "stripe_subscription_id": sub.id,
+                "current_period_end_iso": None,
+            }
+    except Exception as e:
+        print(f"[STRIPE] subscription search failed: {e!r}", flush=True)
+
+    # 2. Email fallback — find the customer by email, then their active subs
+    if not user_email:
+        return None
+    try:
+        customers = stripe.Customer.search(query=f"email:'{user_email}'", limit=10)
+        for cust in customers.data:
+            subs = stripe.Subscription.list(customer=cust.id, status="active", limit=1)
+            if subs.data:
+                sub = subs.data[0]
+                return {
+                    "stripe_customer_id": cust.id,
+                    "stripe_subscription_id": sub.id,
+                    "current_period_end_iso": None,
+                }
+    except Exception as e:
+        print(f"[STRIPE] customer email lookup failed: {e!r}", flush=True)
+
+    return None

@@ -8,28 +8,41 @@ All sync supabase-py calls are wrapped in asyncio.to_thread().
 """
 import asyncio
 import os
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 
-SUPABASE_URL = (
-    os.getenv("SUPABASE_URL")
-    or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-    or ""
-)
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-
-FREE_MONTHLY_LIMIT = int(os.getenv("FREE_MONTHLY_PROBES", "15"))
+# Trigger dotenv via brightdata_config so SUPABASE_* env vars are present.
+from brightdata_config import PROJECT_ROOT  # noqa: F401
 
 _client = None
 
 
+def _free_monthly_limit() -> int:
+    try:
+        return int(os.getenv("FREE_MONTHLY_PROBES", "15"))
+    except ValueError:
+        return 15
+
+
+# Back-compat alias for any callers/tests that import this constant.
+FREE_MONTHLY_LIMIT = _free_monthly_limit()
+
+
 def _service_client():
     global _client
-    if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+    url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL") or ""
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    if not (url and key):
+        print(f"[PROFILE] service client unavailable: url_set={bool(url)} key_set={bool(key)}", flush=True)
         return None
     if _client is None:
-        from supabase import create_client
-        _client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        try:
+            from supabase import create_client
+            _client = create_client(url, key)
+        except Exception as e:
+            print(f"[PROFILE] create_client failed: {e!r}\n{traceback.format_exc()}", flush=True)
+            return None
     return _client
 
 
@@ -38,7 +51,11 @@ def _service_client():
 
 async def ensure_profile(user_id: str, email: Optional[str] = None) -> Optional[dict]:
     """Return the profile row, creating it if missing. None if Supabase off."""
-    client = _service_client()
+    try:
+        client = _service_client()
+    except Exception as e:
+        print(f"[PROFILE] _service_client raised: {e!r}\n{traceback.format_exc()}", flush=True)
+        return None
     if not client:
         return None
 
@@ -46,7 +63,6 @@ async def ensure_profile(user_id: str, email: Optional[str] = None) -> Optional[
         result = client.table("profiles").select("*").eq("id", user_id).execute()
         if result.data:
             return result.data[0]
-        # Insert a fresh profile with defaults from the migration
         new_row = {
             "id": user_id,
             "email": email,
@@ -60,7 +76,7 @@ async def ensure_profile(user_id: str, email: Optional[str] = None) -> Optional[
     try:
         return await asyncio.to_thread(_go)
     except Exception as e:
-        print(f"[PROFILE] ensure_profile failed: {e}")
+        print(f"[PROFILE] ensure_profile failed: {e!r}\n{traceback.format_exc()}", flush=True)
         return None
 
 

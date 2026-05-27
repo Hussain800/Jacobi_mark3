@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Crown } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
-import { fetchPlan, type Plan } from "../lib/billing";
+import { fetchPlan, startPortal, type Plan } from "../lib/billing";
 
 export default function NavAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -64,6 +64,13 @@ export default function NavAuth() {
     setUser(null);
   }
 
+  async function openBillingPortal() {
+    try {
+      const url = await startPortal();
+      if (url) window.location.href = url;
+    } catch {}
+  }
+
   if (loading) {
     return <div className="w-12 h-5" aria-hidden />;
   }
@@ -78,13 +85,13 @@ export default function NavAuth() {
     return (
       <div className="flex items-center gap-2">
         {isPro ? (
-          <Link
-            href="/pricing"
-            title="Pro plan — manage billing"
-            className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5 hover:border-emerald-400/70 transition-colors"
+          <button
+            onClick={openBillingPortal}
+            title="Manage billing — open Stripe Customer Portal"
+            className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5 hover:border-emerald-400/70 hover:bg-emerald-400/5 transition-colors cursor-pointer"
           >
-            <Crown className="w-3 h-3" /> PRO
-          </Link>
+            <Crown className="w-3 h-3" /> PRO · manage
+          </button>
         ) : (
           <Link
             href="/pricing"

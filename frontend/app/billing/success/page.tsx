@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Crown, Loader2 } from "lucide-react";
-import { fetchPlan } from "../../../lib/billing";
+import { fetchPlan, syncSubscription } from "../../../lib/billing";
 
 export default function BillingSuccessPage() {
   const [status, setStatus] = useState<"pending" | "active" | "timeout">("pending");
@@ -11,23 +11,34 @@ export default function BillingSuccessPage() {
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
-    const poll = async () => {
+
+    // Belt-and-suspenders: try to sync from Stripe directly (works even
+    // when the webhook hasn't landed yet), then poll /plan to confirm.
+    const tryActivate = async () => {
       if (cancelled) return;
       attempts += 1;
       try {
+        if (attempts === 1) {
+          const sync = await syncSubscription();
+          if (sync.synced && sync.tier === "pro") {
+            setStatus("active");
+            return;
+          }
+        }
         const plan = await fetchPlan();
         if (plan.tier === "pro") {
           setStatus("active");
           return;
         }
       } catch {}
-      if (attempts >= 15) {
+      if (attempts >= 10) {
         setStatus("timeout");
         return;
       }
-      setTimeout(poll, 2000);
+      setTimeout(tryActivate, 2000);
     };
-    poll();
+
+    tryActivate();
     return () => {
       cancelled = true;
     };

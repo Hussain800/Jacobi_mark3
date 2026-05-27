@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Zap, Shield, BarChart3, Download, Clock, Crown } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
-import { fetchPlan, startCheckout, startPortal, type Plan } from "../../lib/billing";
+import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
 
 const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
@@ -18,7 +18,18 @@ export default function PricingPage() {
   useEffect(() => {
     const sb = createClient();
     sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
-    fetchPlan().then(setPlan).catch(() => {});
+    // Self-heal: pull from Stripe in case a previous checkout never had
+    // its webhook delivered. Cheap idempotent call.
+    (async () => {
+      try {
+        const sync = await syncSubscription();
+        if (sync.tier === "pro") {
+          setPlan({ tier: "pro", used: 0, limit: null });
+          return;
+        }
+      } catch {}
+      fetchPlan().then(setPlan).catch(() => {});
+    })();
   }, []);
 
   async function onSubscribe() {

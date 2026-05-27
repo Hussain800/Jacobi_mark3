@@ -10,28 +10,34 @@ from typing import Optional
 import httpx
 from fastapi import Header
 
-SUPABASE_URL = (
-    os.getenv("SUPABASE_URL")
-    or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-    or ""
-).rstrip("/")
-SUPABASE_ANON_KEY = (
-    os.getenv("SUPABASE_ANON_KEY")
-    or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-    or ""
-)
+# Importing brightdata_config triggers its module-level load_dotenv() calls,
+# so SUPABASE_* env vars are populated before we read them below.
+from brightdata_config import PROJECT_ROOT  # noqa: F401
+
+
+def _supabase_url() -> str:
+    return (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or ""
+    ).rstrip("/")
+
+
+def _supabase_anon_key() -> str:
+    return (
+        os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        or ""
+    )
 
 
 async def get_optional_user(
     authorization: Optional[str] = Header(default=None),
 ) -> Optional[dict]:
-    """Resolve the user from a Bearer token. Returns None for anonymous callers.
-
-    Calls Supabase Auth's GET /auth/v1/user which validates the JWT and returns
-    the user record. We don't try to verify the JWT locally because Supabase
-    rotates JWKS — using the server endpoint avoids the cache headache.
-    """
-    if not authorization or not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    """Resolve the user from a Bearer token. Returns None for anonymous callers."""
+    supabase_url = _supabase_url()
+    supabase_anon_key = _supabase_anon_key()
+    if not authorization or not supabase_url or not supabase_anon_key:
         return None
     if not authorization.lower().startswith("bearer "):
         return None
@@ -41,10 +47,10 @@ async def get_optional_user(
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(
-                f"{SUPABASE_URL}/auth/v1/user",
+                f"{supabase_url}/auth/v1/user",
                 headers={
                     "Authorization": f"Bearer {token}",
-                    "apikey": SUPABASE_ANON_KEY,
+                    "apikey": supabase_anon_key,
                 },
             )
             if r.status_code != 200:

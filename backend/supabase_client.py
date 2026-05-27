@@ -27,8 +27,13 @@ def get_supabase():
     return _client
 
 
-async def save_probe(session_data: dict) -> Optional[str]:
-    """Save a completed probe session to Supabase. Returns the probe ID."""
+async def save_probe(session_data: dict, user_id: Optional[str] = None) -> Optional[str]:
+    """Save a completed probe session to Supabase. Returns the probe ID.
+
+    If `user_id` is provided, tags the row so RLS / quota / history filter
+    correctly. Requires the migration that adds `probes.user_id`; if the column
+    is missing, retries the insert without it and logs a warning.
+    """
     client = get_supabase()
     if not client:
         return None
@@ -51,16 +56,27 @@ async def save_probe(session_data: dict) -> Optional[str]:
         "status": session_data.get("status", "completed"),
         "raw_result": session_data,
     }
+    if user_id:
+        data["user_id"] = user_id
 
-    def _insert():
-        result = client.table("probes").insert(data).execute()
+    def _insert(row):
+        result = client.table("probes").insert(row).execute()
         if result.data and len(result.data) > 0:
             return result.data[0]["id"]
         return None
 
     try:
-        return await asyncio.to_thread(_insert)
+        return await asyncio.to_thread(_insert, data)
     except Exception as e:
+        msg = str(e)
+        if "user_id" in msg and "column" in msg:
+            # Migration not applied yet — retry without user_id
+            fallback = {k: v for k, v in data.items() if k != "user_id"}
+            try:
+                return await asyncio.to_thread(_insert, fallback)
+            except Exception as e2:
+                print(f"[SUPABASE] Failed to save probe (no user_id col): {e2}")
+                return None
         print(f"[SUPABASE] Failed to save probe: {e}")
         return None
 

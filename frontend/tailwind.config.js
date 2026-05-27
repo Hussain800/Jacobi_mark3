@@ -9,6 +9,7 @@ module.exports = {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
+        // ─── Existing tokens (kept — do not remove until Phase ≥ 3) ───
         surface: {
           0: "#050505",
           1: "#0d0d0d",
@@ -31,6 +32,36 @@ module.exports = {
         accent: {
           amber: "#d4a040",
           rose: "#cc5566",
+        },
+
+        // ─── Phase 1 — new semantic design system (additive) ───
+        // Backgrounds. `ink` instead of `base` to avoid colliding with
+        // Tailwind's built-in `text-base` font-size utility.
+        ink:     "#07080c",   // bg-ink     · deep canvas
+        raised:  "#0c0e13",   // bg-raised  · cards & panels (flat, no glass)
+        line:    "#16191f",   // bg-line / border-line · hairlines
+
+        // Text
+        primary:   "#e8eaed", // text-primary
+        secondary: "#9ba1ad", // text-secondary
+        muted:     "#5b6270", // text-muted
+
+        // Semantic — strict usage:
+        //   signal      → LIVE state, positive outcomes, primary action
+        //   overcharge  → discrimination / hidden premium / negative delta
+        //   warning     → demo mode, partial blocking, soft caution
+        signal: {
+          DEFAULT: "#00d97a",
+          soft:    "rgba(0, 217, 122, 0.10)",
+          glow:    "rgba(0, 217, 122, 0.22)",
+        },
+        overcharge: {
+          DEFAULT: "#ff5d6c",
+          soft:    "rgba(255, 93, 108, 0.10)",
+        },
+        warning: {
+          DEFAULT: "#d4a040",
+          soft:    "rgba(212, 160, 64, 0.10)",
         },
       },
       fontSize: {

@@ -1,355 +1,673 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowRight, Zap, Search, Globe, Smartphone, Cookie,
-  ExternalLink, Crosshair, Terminal, Network,
+  ArrowRight,
+  Globe,
+  Smartphone,
+  Cookie,
+  ExternalLink,
+  Wifi,
 } from "lucide-react";
-import {
-  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
-} from "recharts";
-import MatricesCursor from "../components/MatricesCursor";
-import { useScrollReveal } from "../components/ScrollReveal";
-import Tactical3DNetwork from "../components/Tactical3DNetwork";
 
-/* ─── Simulation data (preserved from agents) ───────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────
+   Static data — preserved from product logic, no API calls here.
+   The 24-agent fingerprint counts mirror the real backend mix.
+   ───────────────────────────────────────────────────────────────────── */
 
-const SIMS = [
-  {
-    name: "UA182 JFK to LHR", url: "https://united.com/flights/jfk-lhr-ua182",
-    baseline: 640, min: 498, spread: 142, severity: "severe",
-    classLabel: "Algorithmic Personalized Exploitation",
-    data: [
-      { label: "Rural Iowa (VPN)", price: 498 },
-      { label: "Bangalore (VPN)", price: 512 },
-      { label: "London (Direct)", price: 590 },
-      { label: "Manhattan (Direct)", price: 640 },
-      { label: "Tokyo (Direct)", price: 625 },
-    ],
-    advice: "Route through a rural Iowa proxy. Clear cookie footprints before searching.",
-  },
-  {
-    name: "Paris Grand Hotel", url: "https://booking.com/hotels/paris-grand-suite",
-    baseline: 385, min: 300, spread: 85, severity: "moderate",
-    classLabel: "Static Price Discrimination",
-    data: [
-      { label: "Android Mobile", price: 300 },
-      { label: "Linux Firefox", price: 320 },
-      { label: "Windows Edge", price: 360 },
-      { label: "macOS Safari", price: 385 },
-    ],
-    advice: "Spoof user-agent to Android Mobile. Save $85.",
-  },
-  {
-    name: "SaaSDB Enterprise", url: "https://saasdb.io/pricing/enterprise",
-    baseline: 120, min: 120, spread: 0, severity: "none",
-    classLabel: "Uniform Pricing",
-    data: [{ label: "Any Profile", price: 120 }],
-    advice: "No profile-based markup detected. Direct purchase is safe.",
-  },
-];
+const SAMPLE_URL =
+  "https://www.united.com/en/us/flightdetails?flight=UA182";
 
-const DISCRIMINATION_FACTORS = [
-  { icon: Globe, label: "Location", desc: "High-income ZIP codes see higher prices. A VPN to a lower-income area changes the price instantly." },
-  { icon: Smartphone, label: "Device", desc: "Premium devices signal willingness to pay. Android users often see lower prices than iPhone users." },
-  { icon: Cookie, label: "Cookies", desc: "Search history and loyalty status feed real-time pricing models. Clear them and the price drops." },
-  { icon: ExternalLink, label: "Referrer", desc: "Coming from Kayak? The site knows you are comparing. Prices adjust accordingly." },
-];
+type Axis = "loc" | "dev" | "cookie" | "ref" | "ctrl";
+type Tier = "DC" | "RES" | "MOB";
 
-/* ─── Hooks ─────────────────────────────────────────────────────────── */
-
-function useInView(threshold = 0.1) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setInView(true); obs.unobserve(el); }
-    }, { threshold });
-    obs.observe(el); return () => obs.disconnect();
-  }, [threshold]);
-  return [ref, inView] as const;
+interface Fingerprint {
+  axis: Axis;
+  tier: Tier;
+  label: string;
+  note: string;
 }
 
-/* ─── Severity badge ────────────────────────────────────────────────── */
+const SWARM: Fingerprint[] = [
+  // Wave 1 · datacenter
+  { axis: "ctrl", tier: "DC", label: "BASE",  note: "Control · Manhattan macbook" },
+  { axis: "loc",  tier: "DC", label: "NYC",   note: "Manhattan · high-income" },
+  { axis: "loc",  tier: "DC", label: "IOWA",  note: "Rural Iowa · low-income" },
+  { axis: "loc",  tier: "DC", label: "SFO",   note: "San Francisco · tech" },
+  { axis: "loc",  tier: "DC", label: "LDN",   note: "London · GBP" },
+  { axis: "loc",  tier: "DC", label: "MUM",   note: "Mumbai · INR" },
+  { axis: "dev",  tier: "DC", label: "iPhn",  note: "iPhone 15 Pro Safari" },
+  { axis: "dev",  tier: "DC", label: "Andr",  note: "Budget Android Chrome" },
+  // Wave 2 · residential
+  { axis: "dev",  tier: "RES", label: "M3",    note: "MacBook Pro M3" },
+  { axis: "dev",  tier: "RES", label: "Cbk",   note: "Chromebook (budget)" },
+  { axis: "dev",  tier: "RES", label: "Glx",   note: "Galaxy S24 Ultra" },
+  { axis: "cookie", tier: "RES", label: "Aged", note: "30-day high-intent profile" },
+  { axis: "cookie", tier: "RES", label: "Fresh",note: "First-visit, no history" },
+  { axis: "cookie", tier: "RES", label: "Plat", note: "90-day platinum loyalty" },
+  { axis: "ref",  tier: "RES", label: "Kayak", note: "Referred from Kayak" },
+  { axis: "ref",  tier: "RES", label: "Dir",   note: "Direct URL entry" },
+  // Wave 3 · mobile
+  { axis: "ref",  tier: "MOB", label: "Sky",   note: "Referred from Skyscanner" },
+  { axis: "ref",  tier: "MOB", label: "Dir·M", note: "Direct · mobile network" },
+  { axis: "loc",  tier: "MOB", label: "DXB",   note: "Dubai · AED" },
+  { axis: "loc",  tier: "MOB", label: "MS",    note: "Rural Mississippi" },
+  { axis: "dev",  tier: "MOB", label: "iPad",  note: "iPad Pro 12.9" },
+  { axis: "dev",  tier: "MOB", label: "SE",    note: "iPhone SE (budget)" },
+  { axis: "ctrl", tier: "MOB", label: "CTR·1", note: "Control replicate 1" },
+  { axis: "ctrl", tier: "MOB", label: "CTR·2", note: "Control replicate 2" },
+];
 
-function SeverityBadge({ severity }: { severity: string }) {
-  const m: Record<string, string> = {
-    severe: "text-rose-300 border-rose-400/25 bg-rose-400/5",
-    moderate: "text-amber-300 border-amber-400/25 bg-amber-400/5",
-    none: "text-emerald-300 border-emerald-400/25 bg-emerald-400/5",
-  };
-  return <span className={`text-[11px] font-mono px-2 py-0.5 rounded-sm border uppercase tracking-wider ${m[severity] || ""}`}>{severity}</span>;
-}
+const AXIS_COUNT = SWARM.reduce<Record<Axis, number>>(
+  (acc, a) => ({ ...acc, [a.axis]: (acc[a.axis] || 0) + 1 }),
+  { loc: 0, dev: 0, cookie: 0, ref: 0, ctrl: 0 },
+);
 
-/* ─── Main Page ─────────────────────────────────────────────────────── */
+const DEMO_PROFILES = [
+  { profile: "iPhone · Manhattan · direct",     price: 640 },
+  { profile: "Safari · Tokyo · direct",          price: 625 },
+  { profile: "Edge · London · direct",           price: 590 },
+  { profile: "Firefox · Bangalore · VPN",        price: 512 },
+  { profile: "Chrome · Rural Iowa · VPN",        price: 498 },
+];
+
+/* ─── Page ──────────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
-  const [mounted, setMounted] = useState(false);
-  const [activeSim, setActiveSim] = useState(0);
-  const [demoInView, setDemoInView] = useState(false);
-  const demoRef = useRef<HTMLDivElement>(null);
-  const heroRef = useScrollReveal({ direction: "none" });
-  const probRef = useScrollReveal({ direction: "up", distance: 24 });
-  const howRef = useScrollReveal({ direction: "up", distance: 24, delay: 80 });
-
-  useEffect(() => { setMounted(true); }, []);
+  const router = useRouter();
+  const reducedMotion = useReducedMotion();
+  const [url, setUrl] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const el = demoRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setDemoInView(true); obs.unobserve(el); }
-    }, { threshold: 0.15 });
-    obs.observe(el); return () => obs.disconnect();
+    // Soft focus on mount so the URL field is the obvious next move
+    inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const sim = SIMS[activeSim];
-  const chartColors = sim.data.map(d => {
-    if (d.price <= sim.min * 1.05) return "#00d992";
-    if (d.price <= sim.baseline) return "#60a5fa";
-    return "#fb7185";
-  });
+  function probe(target?: string) {
+    let raw = (target ?? url).trim();
+    if (!raw) {
+      inputRef.current?.focus();
+      return;
+    }
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    router.push(`/chat?url=${encodeURIComponent(raw)}`);
+  }
+
+  const fadeIn = reducedMotion
+    ? {}
+    : {
+        initial: { opacity: 0, y: 12 },
+        whileInView: { opacity: 1, y: 0 },
+        viewport: { once: true, margin: "-80px" },
+        transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+      };
+
+  /* demo math — drives bar widths + verdict */
+  const cheapest = Math.min(...DEMO_PROFILES.map((p) => p.price));
+  const dearest = Math.max(...DEMO_PROFILES.map((p) => p.price));
+  const spread = dearest - cheapest;
+  const spreadPct = Math.round((spread / cheapest) * 100);
 
   return (
-    <>
-      <style>{`
-        html { scroll-behavior: smooth; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-        .fade-up { animation: fadeUp 0.7s cubic-bezier(0.22,1,0.36,1) both; }
-        @media (prefers-reduced-motion: reduce) { .fade-up { animation: none; opacity: 1; transform: none; } }
-      `}</style>
+    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20">
+      {/* ═══════════════════════ HERO ═══════════════════════ */}
+      <section className="relative px-5 sm:px-8 pt-16 sm:pt-24 pb-24 sm:pb-32">
+        {/* single subtle top light — replaces the old gradient blur soup */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-[60vh] [background:radial-gradient(ellipse_at_top,rgba(0,217,122,0.045),transparent_65%)]"
+        />
 
-      <div className="min-h-screen bg-[#07080c] text-[#d4d4d4] font-mono overflow-x-hidden selection:bg-emerald-400/20 selection:text-white">
-        <MatricesCursor />
+        <div className="relative max-w-4xl mx-auto text-center">
+          <motion.div
+            initial={reducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6 }}
+          >
+            <span className="inline-flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.22em] text-secondary mb-10">
+              <span className="relative flex items-center justify-center w-1.5 h-1.5">
+                <span className="absolute inset-0 rounded-full bg-signal animate-ping opacity-50" />
+                <span className="relative w-1.5 h-1.5 rounded-full bg-signal" />
+              </span>
+              <span>JACOBI &middot; Adversarial pricing probe</span>
+            </span>
+          </motion.div>
 
-        {/* ═══════════════ HERO ═══════════════ */}
-        <section className="relative min-h-screen flex items-center px-6 lg:px-12 overflow-hidden">
-          {/* Ambient gradient behind agents */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-[10%] left-[5%] w-[500px] h-[500px] rounded-full bg-emerald-400/3 blur-[120px]" />
-            <div className="absolute bottom-[20%] right-[10%] w-[300px] h-[300px] rounded-full bg-blue-400/2 blur-[100px]" />
-          </div>
+          <motion.h1
+            initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
+            className="font-serif text-5xl sm:text-7xl lg:text-[88px] leading-[0.95] tracking-tight text-primary mb-7"
+          >
+            Find your{" "}
+            <em className="not-italic relative inline-block">
+              <span className="relative z-10 text-signal">hidden</span>
+              <span
+                aria-hidden
+                className="absolute inset-x-0 bottom-1 sm:bottom-2 h-[0.18em] bg-signal/15 rounded-sm -z-0"
+              />
+            </em>{" "}
+            premium.
+          </motion.h1>
 
-          {/* Right: 24-agent 3D network (sits in background) */}
-          <div className="absolute right-0 top-0 w-full lg:w-[55%] h-full pointer-events-none">
-            <Tactical3DNetwork isActive={true} />
-          </div>
+          <motion.p
+            initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="text-secondary text-base sm:text-lg max-w-xl mx-auto mb-12 leading-relaxed"
+          >
+            The internet charges different shoppers different prices for the same
+            product. JACOBI deploys 24 synthetic identities to reveal exactly what
+            the algorithm is charging{" "}
+            <span className="text-primary">you</span> that it isn&rsquo;t
+            charging someone else.
+          </motion.p>
 
-          <div className="relative z-10 max-w-xl" style={{ animation: mounted ? "fadeUp 0.9s cubic-bezier(0.22,1,0.36,1) both" : "none" }}>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-sm border border-emerald-400/20 bg-emerald-400/4 mb-10">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] text-emerald-400/70 tracking-widest uppercase">24 agents &middot; 4 axes</span>
-            </div>
-
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.92] text-white mb-6">
-              They see
-              <br />
-              <span className="text-emerald-400">you coming</span>
-            </h1>
-
-            <p className="text-sm sm:text-base text-[#888] leading-relaxed mb-8 max-w-md">
-              Jacobi deploys 24 adversarial agents to detect hidden pricing discrimination.
-              Each agent probes as a different shopper. The price difference is the truth.
-            </p>
-
-            <div className="flex items-center gap-3 mb-12">
-              <Link
-                href="/chat"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-sm bg-emerald-400 text-[#07080c] font-bold text-xs hover:bg-emerald-300 transition-all duration-300 active:scale-[0.97]"
+          {/* Hero — the URL input is the whole product surface */}
+          <motion.form
+            initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.25 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              probe();
+            }}
+            className="max-w-2xl mx-auto"
+          >
+            <div className="group relative flex items-stretch bg-raised border border-line rounded-md focus-within:border-signal/45 transition-colors">
+              <span className="flex items-center pl-4 sm:pl-5 pr-2 sm:pr-3 text-muted shrink-0">
+                <Globe className="w-4 h-4" />
+              </span>
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste a URL — flight, hotel, or product page"
+                aria-label="Paste a URL to probe"
+                className="flex-1 bg-transparent py-4 sm:py-5 pr-2 text-primary placeholder-muted/80 outline-none text-sm sm:text-base font-mono caret-signal min-w-0"
+              />
+              <button
+                type="submit"
+                className="m-1.5 sm:m-2 inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-md bg-signal text-ink font-mono text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.12em] hover:brightness-110 active:scale-[0.98] transition-all shrink-0"
               >
-                <Crosshair className="w-3.5 h-3.5" />
-                Start probing
+                Probe
                 <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-              <a
-                href="#how"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-sm border border-white/10 text-[#888] text-xs hover:text-white hover:border-white/30 transition-all duration-300"
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[11px] font-mono text-muted">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-signal animate-pulse" />
+                <span className="uppercase tracking-[0.16em] text-secondary">
+                  Ready
+                </span>
+              </span>
+              <span className="text-muted/60">&middot;</span>
+              <span>24 agents on standby</span>
+              <span className="text-muted/60">&middot;</span>
+              <button
+                type="button"
+                onClick={() => probe(SAMPLE_URL)}
+                className="text-secondary hover:text-signal transition-colors underline-offset-4 decoration-dotted hover:underline"
               >
-                <Terminal className="w-3.5 h-3.5" />
-                How it works
-              </a>
+                Try a sample probe &rarr;
+              </button>
             </div>
+          </motion.form>
+        </div>
 
-            {/* Trust bar — replaced hero-metrics */}
-            <div className="flex items-center gap-5 text-[10px] text-[#555]">
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400/60" />BrightData</span>
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-blue-400/60" />DeepSeek AI</span>
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400/60" />OpenCode</span>
-            </div>
-          </div>
-        </section>
+        {/* Trust strip — three claims, hairline-divided, no card chrome */}
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.45 }}
+          className="max-w-4xl mx-auto mt-20 sm:mt-24 grid grid-cols-1 sm:grid-cols-3 border-y border-line"
+        >
+          <TrustItem
+            primary="Bright Data"
+            secondary="Live web infrastructure"
+          />
+          <TrustItem
+            primary="24"
+            secondary="Profile probes per URL"
+            divider
+          />
+          <TrustItem
+            primary="Evidence"
+            secondary="Per-axis backed verdict"
+            divider
+          />
+        </motion.div>
+      </section>
 
-        {/* ═══════════════ THE PROBLEM ═══════════════ */}
-        <section className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28" ref={probRef.ref} style={probRef.style}>
-          <div className="max-w-6xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">The problem</span>
-            <p className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-white leading-[1.1] max-w-3xl mb-16">
-              The internet prices you by who it thinks you are.
-            </p>
+      {/* ═══════════════════════ MECHANISM ═══════════════════════ */}
+      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+        <div className="max-w-5xl mx-auto">
+          <motion.span
+            {...fadeIn}
+            className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-12"
+          >
+            The mechanism
+          </motion.span>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-14 gap-y-10">
-              {DISCRIMINATION_FACTORS.map((f, i) => (
-                <div key={i} className="flex items-start gap-4" style={{ animation: mounted ? `fadeUp 0.6s both` : "none", animationDelay: `${i * 0.12}s` }}>
-                  <div className="shrink-0 w-10 h-10 rounded-sm bg-emerald-400/5 border border-emerald-400/15 flex items-center justify-center">
-                    <f.icon className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-white mb-1">{f.label}</div>
-                    <div className="text-xs text-[#777] leading-relaxed">{f.desc}</div>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-0">
+            {[
+              {
+                n: "01",
+                title: "One URL",
+                body:
+                  "You paste a flight, hotel, or product page. No login on the target site. No cookies on your side.",
+              },
+              {
+                n: "02",
+                title: "24 synthetic shoppers",
+                body:
+                  "JACOBI deploys 24 identities — different locations, devices, cookie profiles, referrers, network tiers — through Bright Data's residential infrastructure.",
+              },
+              {
+                n: "03",
+                title: "Hidden premium, exposed",
+                body:
+                  "We compute the spread, isolate which axis is driving the markup, and surface the verdict with evidence — not vibes.",
+              },
+            ].map((step, i) => (
+              <motion.div
+                key={step.n}
+                initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{
+                  duration: 0.6,
+                  delay: i * 0.08,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className={`md:px-8 ${
+                  i > 0 ? "md:border-l md:border-line" : ""
+                }`}
+              >
+                <div className="font-mono text-[11px] text-signal mb-3 tracking-[0.18em]">
+                  {step.n}
                 </div>
-              ))}
+                <h3 className="font-serif text-2xl sm:text-3xl text-primary mb-3 leading-tight">
+                  {step.title}
+                </h3>
+                <p className="text-secondary text-sm leading-relaxed">
+                  {step.body}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════ AGENT SWARM ═══════════════════════ */}
+      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-10 sm:mb-12">
+            <motion.div {...fadeIn}>
+              <span className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-3">
+                The swarm
+              </span>
+              <h2 className="font-serif text-3xl sm:text-4xl text-primary leading-tight">
+                Twenty-four shoppers. One URL.
+              </h2>
+            </motion.div>
+            <motion.span
+              {...fadeIn}
+              transition={{
+                duration: 0.5,
+                delay: 0.08,
+                ease: [0.22, 1, 0.36, 1] as const,
+              }}
+              className="text-[11px] font-mono text-muted tracking-[0.12em]"
+            >
+              4 axes &middot; 3 network tiers
+            </motion.span>
+          </div>
+
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-120px" }}
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  staggerChildren: reducedMotion ? 0 : 0.028,
+                  delayChildren: 0.1,
+                },
+              },
+            }}
+            className="grid grid-cols-6 gap-1.5 sm:gap-2 mb-10"
+            role="group"
+            aria-label="Agent swarm — 24 synthetic shopper fingerprints"
+          >
+            {SWARM.map((a, i) => (
+              <motion.div
+                key={i}
+                variants={{
+                  hidden: { opacity: 0, scale: 0.85 },
+                  visible: {
+                    opacity: 1,
+                    scale: 1,
+                    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] },
+                  },
+                }}
+                title={`${a.tier} · ${a.label} — ${a.note}`}
+                className="aspect-square flex flex-col items-center justify-center rounded-sm bg-raised border border-line p-1 hover:border-signal/35 transition-colors"
+              >
+                <span className="font-mono text-[7px] sm:text-[8px] text-muted leading-none mb-1">
+                  {a.tier}
+                </span>
+                <span className="font-mono text-[9px] sm:text-[11px] text-secondary leading-none truncate w-full text-center">
+                  {a.label}
+                </span>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          <motion.div
+            {...fadeIn}
+            transition={{
+              duration: 0.5,
+              delay: 0.1,
+              ease: [0.22, 1, 0.36, 1] as const,
+            }}
+            className="grid grid-cols-2 sm:grid-cols-5 gap-x-6 gap-y-3 text-[12px] font-mono"
+          >
+            <AxisLegend
+              icon={<Globe className="w-3.5 h-3.5" />}
+              label="Location"
+              count={AXIS_COUNT.loc}
+            />
+            <AxisLegend
+              icon={<Smartphone className="w-3.5 h-3.5" />}
+              label="Device"
+              count={AXIS_COUNT.dev}
+            />
+            <AxisLegend
+              icon={<Cookie className="w-3.5 h-3.5" />}
+              label="Cookies"
+              count={AXIS_COUNT.cookie}
+            />
+            <AxisLegend
+              icon={<ExternalLink className="w-3.5 h-3.5" />}
+              label="Referrer"
+              count={AXIS_COUNT.ref}
+            />
+            <AxisLegend
+              icon={<Wifi className="w-3.5 h-3.5" />}
+              label="Controls"
+              count={AXIS_COUNT.ctrl}
+            />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════ EVIDENCE / SAMPLE PROBE ═══════════════════════ */}
+      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+        <div className="max-w-5xl mx-auto">
+          <motion.span
+            {...fadeIn}
+            className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-3"
+          >
+            Evidence &middot; sample probe
+          </motion.span>
+          <motion.h2
+            {...fadeIn}
+            transition={{
+              duration: 0.5,
+              delay: 0.05,
+              ease: [0.22, 1, 0.36, 1] as const,
+            }}
+            className="font-serif text-3xl sm:text-4xl text-primary mb-2 leading-tight"
+          >
+            UA182 / JFK &rarr; LHR
+          </motion.h2>
+          <motion.p
+            {...fadeIn}
+            transition={{
+              duration: 0.5,
+              delay: 0.1,
+              ease: [0.22, 1, 0.36, 1] as const,
+            }}
+            className="text-[12px] font-mono text-muted mb-12 tracking-wide"
+          >
+            Same flight. Same seat. Same date. Five different identities.
+          </motion.p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-10 lg:gap-16 items-center">
+            <div className="space-y-5">
+              {DEMO_PROFILES.map((p, i) => {
+                const isCheapest = p.price === cheapest;
+                const isDearest = p.price === dearest;
+                const widthPct =
+                  ((p.price - cheapest) / (dearest - cheapest)) * 100;
+                const barColor = isCheapest
+                  ? "bg-signal"
+                  : isDearest
+                  ? "bg-overcharge"
+                  : "bg-secondary/40";
+                const priceColor = isCheapest
+                  ? "text-signal"
+                  : isDearest
+                  ? "text-overcharge"
+                  : "text-secondary";
+
+                return (
+                  <motion.div
+                    key={i}
+                    initial={
+                      reducedMotion ? false : { opacity: 0, x: -10 }
+                    }
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true, margin: "-100px" }}
+                    transition={{
+                      duration: 0.5,
+                      delay: i * 0.07,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                    className="grid grid-cols-[1fr_auto] gap-4 sm:gap-6 items-center"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 font-mono text-[11px] sm:text-[12px] text-secondary mb-2">
+                        <span>{p.profile}</span>
+                        {isCheapest && (
+                          <span className="text-[9px] text-signal uppercase tracking-[0.18em]">
+                            baseline
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-1.5 rounded-full bg-raised overflow-hidden">
+                        <motion.div
+                          initial={
+                            reducedMotion
+                              ? { width: `${Math.max(6, widthPct)}%` }
+                              : { width: 0 }
+                          }
+                          whileInView={{
+                            width: `${Math.max(6, widthPct)}%`,
+                          }}
+                          viewport={{ once: true, margin: "-100px" }}
+                          transition={{
+                            duration: 0.9,
+                            delay: 0.25 + i * 0.07,
+                            ease: [0.22, 1, 0.36, 1],
+                          }}
+                          className={`h-full ${barColor}`}
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className={`font-mono text-base sm:text-lg tabular-nums ${priceColor}`}
+                    >
+                      ${p.price}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
 
-            <div className="mt-14 border border-white/[0.04] bg-white/[0.01] p-6 max-w-xl">
-              <p className="text-xs text-[#999] leading-relaxed">
-                &ldquo;The same flight can cost $320 or $380 depending on your location, device, and cookies. That is not a bug. It is the algorithm.&rdquo;
+            <motion.aside
+              {...fadeIn}
+              transition={{
+                duration: 0.6,
+                delay: 0.3,
+                ease: [0.22, 1, 0.36, 1] as const,
+              }}
+              className="lg:border-l lg:border-line lg:pl-12 text-center lg:text-left"
+            >
+              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-overcharge mb-3">
+                Hidden premium
+              </div>
+              <div className="font-serif text-7xl sm:text-8xl text-primary leading-none mb-3 tabular-nums">
+                +${spread}
+              </div>
+              <div className="font-mono text-[11px] text-muted tracking-wide mb-6">
+                {spreadPct}% over baseline &middot; per ticket
+              </div>
+              <p className="text-sm text-secondary leading-relaxed max-w-xs mx-auto lg:mx-0">
+                iPhone users in Manhattan paid{" "}
+                <span className="text-overcharge font-medium">$142 more</span>{" "}
+                than Android users in rural Iowa for the same seat on the same
+                flight.
               </p>
-              <p className="text-[10px] text-[#555] mt-3 font-mono">verified across 10,000+ probes</p>
-            </div>
+            </motion.aside>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ═══════════════ LIVE PROBE SIMULATOR ═══════════════ */}
-        <section ref={demoRef} className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28 bg-white/[0.005]">
-          <div className="max-w-6xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">Live simulation</span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
-              See pricing discrimination in action
-            </h2>
-            <p className="text-xs text-[#777] mb-10 max-w-lg">
-              Select a scenario to see how different shopper profiles get different prices for the same product.
-            </p>
+      {/* ═══════════════════════ CTA ═══════════════════════ */}
+      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+        <div className="max-w-2xl mx-auto text-center">
+          <motion.h2
+            {...fadeIn}
+            className="font-serif text-4xl sm:text-5xl text-primary mb-4 leading-tight"
+          >
+            Find what you&rsquo;re overpaying.
+          </motion.h2>
+          <motion.p
+            {...fadeIn}
+            transition={{
+              duration: 0.5,
+              delay: 0.1,
+              ease: [0.22, 1, 0.36, 1] as const,
+            }}
+            className="text-secondary mb-10"
+          >
+            One URL. 24 shoppers. The truth in under a minute.
+          </motion.p>
+          <motion.button
+            initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{
+              duration: 0.5,
+              delay: 0.15,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            onClick={() => {
+              inputRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+              setTimeout(() => inputRef.current?.focus(), 350);
+            }}
+            className="inline-flex items-center gap-3 px-7 py-4 rounded-md bg-signal text-ink font-mono text-[12px] font-semibold uppercase tracking-[0.14em] hover:brightness-110 active:scale-[0.98] transition-all"
+          >
+            Probe a URL
+            <ArrowRight className="w-4 h-4" />
+          </motion.button>
+        </div>
+      </section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Scenario selector */}
-              <div className="flex flex-col gap-2">
-                {SIMS.map((s, i) => (
-                  <button key={i} onClick={() => setActiveSim(i)}
-                    className={`text-left px-4 py-3 border text-xs font-mono transition-all duration-300 ${
-                      activeSim === i
-                        ? "border-emerald-400/30 bg-emerald-400/5 text-white"
-                        : "border-white/[0.04] text-[#666] hover:text-[#999] hover:border-white/[0.10]"}`}>
-                    <div className="text-[9px] tracking-wider uppercase mb-1 opacity-50">{s.classLabel}</div>
-                    <div className="font-semibold">{s.name}</div>
-                    <div className="text-[10px] mt-1 opacity-40">Spread: ${s.spread}</div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Chart */}
-              <div className="lg:col-span-2 border border-white/[0.04] bg-white/[0.01] p-6">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <div className="text-sm font-semibold text-white mb-1">{sim.name}</div>
-                    <SeverityBadge severity={sim.severity} />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[9px] text-[#555] uppercase tracking-wider">Savings opportunity</div>
-                    <div className="text-2xl font-bold text-emerald-400">${sim.spread}</div>
-                  </div>
-                </div>
-
-                {(demoInView || mounted) && (
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={sim.data} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.02)" />
-                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.04)" }} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.04)" }} />
-                        <Tooltip contentStyle={{ background: "#0a0b10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "2px", fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#d4d4d4" }} />
-                        <Bar dataKey="price" radius={[1, 1, 0, 0]}>
-                          {sim.data.map((_, i) => <Cell key={i} fill={chartColors[i]} />)}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-
-                <div className="mt-5 flex items-start gap-3 border border-white/[0.04] bg-white/[0.01] p-4">
-                  <div className="w-5 h-5 rounded-full bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[9px] text-emerald-400 font-bold">!</span>
-                  </div>
-                  <p className="text-xs text-[#888] leading-relaxed">{sim.advice}</p>
-                </div>
-              </div>
-            </div>
+      {/* ═══════════════════════ FOOTER ═══════════════════════ */}
+      <footer className="px-5 sm:px-8 py-10 border-t border-line">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm text-primary tracking-wider">
+              JACOBI
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
+              pricing transparency
+            </span>
           </div>
-        </section>
-
-        {/* ═══════════════ HOW IT WORKS ═══════════════ */}
-        <section id="how" className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28" ref={howRef.ref} style={howRef.style}>
-          <div className="max-w-3xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">How it works</span>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-16">
-              From URL to verdict in seconds.
-            </h2>
-
-            <div className="space-y-12">
-              {[
-                { num: "01", title: "Paste a URL", desc: "Any product or booking page. Flights, hotels, e-commerce." },
-                { num: "02", title: "24 agents deploy", desc: "Each agent assumes a unique profile across location, device, cookies, and referrer." },
-                { num: "03", title: "AI analyzes", desc: "DeepSeek and Gemini compare prices across all 24 profiles for significant differentials." },
-                { num: "04", title: "Get the verdict", desc: "Plain English: exactly how much you are overpaying and exactly what to do about it." },
-              ].map((s, i) => (
-                <div key={i} className="flex items-start gap-6 group" style={{ animation: mounted ? `fadeUp 0.6s both` : "none", animationDelay: `${i * 0.15}s` }}>
-                  <div className="shrink-0 w-10 h-10 rounded-sm border border-white/[0.06] bg-white/[0.01] flex items-center justify-center group-hover:border-emerald-400/30 group-hover:bg-emerald-400/5 transition-all duration-300">
-                    <span className="text-[11px] text-[#555] group-hover:text-emerald-400 transition-colors">{s.num}</span>
-                  </div>
-                  <div className="pt-1.5">
-                    <div className="text-sm font-semibold text-white mb-1">{s.title}</div>
-                    <div className="text-xs text-[#777] leading-relaxed">{s.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ═══════════════ CTA ═══════════════ */}
-        <section className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
-              Stop overpaying.
-            </h2>
-            <p className="text-xs text-[#777] mb-8 max-w-xs mx-auto">
-              One URL is all it takes. Jacobi probes, analyzes, and tells you exactly what to do.
-            </p>
+          <div className="flex items-center gap-6 text-[11px] font-mono">
             <Link
               href="/chat"
-              className="inline-flex items-center gap-3 px-8 py-4 rounded-sm bg-emerald-400 text-[#07080c] font-bold text-xs hover:bg-emerald-300 transition-all duration-300 active:scale-[0.97]"
+              className="text-secondary hover:text-primary transition-colors"
             >
-              <Crosshair className="w-4 h-4" />
-              Launch the probe
-              <ArrowRight className="w-4 h-4" />
+              Probe
+            </Link>
+            <Link
+              href="/history"
+              className="text-secondary hover:text-primary transition-colors"
+            >
+              History
+            </Link>
+            <Link
+              href="/pricing"
+              className="text-secondary hover:text-primary transition-colors"
+            >
+              Pricing
             </Link>
           </div>
-        </section>
+        </div>
+      </footer>
+    </main>
+  );
+}
 
-        {/* ═══════════════ FOOTER ═══════════════ */}
-        <footer className="border-t border-white/[0.04] px-6 lg:px-12 py-10">
-          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-sm border border-emerald-400/30 flex items-center justify-center">
-                <Crosshair className="w-3 h-3 text-emerald-400" />
-              </div>
-              <span className="text-sm font-semibold text-white">JACOBI</span>
-              <span className="text-[9px] text-[#555]">pricing transparency</span>
-            </div>
-            <div className="flex items-center gap-6 text-[11px]">
-              <Link href="/chat" className="text-[#666] hover:text-white transition-colors">Probe</Link>
-              <Link href="/history" className="text-[#666] hover:text-white transition-colors">History</Link>
-              <a href="#how" className="text-[#666] hover:text-white transition-colors">How it works</a>
-            </div>
-            <div className="text-[9px] text-[#444]">
-              BrightData
-            </div>
-          </div>
-        </footer>
+/* ─── Small presentational helpers (file-local) ─────────────────────── */
+
+function TrustItem({
+  primary,
+  secondary,
+  divider = false,
+}: {
+  primary: string;
+  secondary: string;
+  divider?: boolean;
+}) {
+  return (
+    <div
+      className={`px-6 py-7 text-center ${
+        divider ? "sm:border-l sm:border-line" : ""
+      }`}
+    >
+      <div className="font-serif text-2xl text-primary leading-none mb-2">
+        {primary}
       </div>
-    </>
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+        {secondary}
+      </div>
+    </div>
+  );
+}
+
+function AxisLegend({
+  icon,
+  label,
+  count,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="text-signal/70 shrink-0">{icon}</span>
+      <span className="text-secondary">{label}</span>
+      <span className="text-muted/60">&middot;</span>
+      <span className="text-primary tabular-nums">{count}</span>
+    </div>
   );
 }

@@ -51,6 +51,16 @@ export async function startCheckout(): Promise<string | null> {
   return data.url || null;
 }
 
+export async function syncSubscription(): Promise<{ tier: string; synced: boolean }> {
+  const headers = await authHeaders();
+  const r = await fetch(`${API_BASE}/api/billing/sync`, {
+    method: "POST",
+    headers,
+  });
+  if (!r.ok) return { tier: "free", synced: false };
+  return r.json();
+}
+
 export async function startPortal(): Promise<string | null> {
   const headers = await authHeaders();
   const r = await fetch(`${API_BASE}/api/billing/portal`, {

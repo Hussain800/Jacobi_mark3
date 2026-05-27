@@ -14,6 +14,7 @@ from profile_store import (
 from stripe_client import (
     create_checkout_session,
     create_portal_session,
+    find_active_subscription_for_user,
     stripe_configured,
     verify_webhook,
 )
@@ -53,6 +54,40 @@ async def start_checkout(
         print(f"[BILLING] create_checkout_session crashed: {e!r}\n{_tb.format_exc()}", flush=True)
         raise HTTPException(502, f"Stripe error: {e}")
     return {"url": session["url"], "id": session["id"]}
+
+
+@router.post("/sync")
+async def sync_from_stripe(user=Depends(get_optional_user)):
+    """Pull the user's subscription state from Stripe and update Supabase.
+
+    Self-healing fallback when the webhook didn't land — e.g. local dev
+    without Stripe CLI forwarding, or a transient failure. Idempotent:
+    safe to call any time the frontend wants to verify the user's tier.
+    """
+    if not user:
+        raise HTTPException(401, "Sign in first.")
+    if not stripe_configured():
+        raise HTTPException(500, "Stripe is not configured on the server.")
+    try:
+        match = find_active_subscription_for_user(user["id"], user.get("email") or "")
+    except Exception as e:
+        import traceback as _tb
+        print(f"[BILLING] /sync stripe lookup crashed: {e!r}\n{_tb.format_exc()}", flush=True)
+        raise HTTPException(502, f"Stripe lookup error: {e}")
+    if not match:
+        return {"tier": "free", "synced": False}
+    try:
+        await apply_subscription_active(
+            user_id=user["id"],
+            stripe_customer_id=match["stripe_customer_id"],
+            stripe_subscription_id=match["stripe_subscription_id"],
+            current_period_end_iso=match.get("current_period_end_iso"),
+        )
+    except Exception as e:
+        import traceback as _tb
+        print(f"[BILLING] /sync apply failed: {e!r}\n{_tb.format_exc()}", flush=True)
+        raise HTTPException(502, f"Could not persist subscription: {e}")
+    return {"tier": "pro", "synced": True}
 
 
 @router.post("/portal")

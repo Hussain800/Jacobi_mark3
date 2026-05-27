@@ -36,13 +36,22 @@ async def start_checkout(
         raise HTTPException(500, "Stripe is not configured on the server.")
     if not user:
         raise HTTPException(401, "Sign in to upgrade.")
-    await ensure_profile(user["id"], user.get("email"))
-    session = create_checkout_session(
-        user_id=user["id"],
-        user_email=user.get("email") or "",
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
-    )
+    try:
+        await ensure_profile(user["id"], user.get("email"))
+    except Exception as e:
+        import traceback as _tb
+        print(f"[BILLING] start_checkout ensure_profile crashed: {e!r}\n{_tb.format_exc()}", flush=True)
+    try:
+        session = create_checkout_session(
+            user_id=user["id"],
+            user_email=user.get("email") or "",
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+        )
+    except Exception as e:
+        import traceback as _tb
+        print(f"[BILLING] create_checkout_session crashed: {e!r}\n{_tb.format_exc()}", flush=True)
+        raise HTTPException(502, f"Stripe error: {e}")
     return {"url": session["url"], "id": session["id"]}
 
 
@@ -58,10 +67,20 @@ async def start_portal(user=Depends(get_optional_user)):
 
 @router.get("/plan")
 async def get_plan(user=Depends(get_optional_user)):
-    """Frontend polls this to learn the current tier + quota."""
+    """Frontend polls this to learn the current tier + quota.
+
+    Wraps the profile lookup in a top-level try so any Supabase / schema /
+    library issue degrades to a safe `free` response instead of leaking a
+    500 (which would also strip CORS headers and confuse the browser).
+    """
     if not user:
         return {"tier": "anon", "used": 0, "limit": None}
-    profile = await ensure_profile(user["id"], user.get("email"))
+    try:
+        profile = await ensure_profile(user["id"], user.get("email"))
+    except Exception as e:
+        import traceback as _tb
+        print(f"[BILLING] get_plan ensure_profile crashed: {e!r}\n{_tb.format_exc()}", flush=True)
+        profile = None
     if not profile:
         return {"tier": "free", "used": 0, "limit": 15}
     tier = profile.get("subscription_tier") or "free"

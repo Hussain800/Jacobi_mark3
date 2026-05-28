@@ -1,288 +1,200 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Check, Zap, Shield, BarChart3, Download, Clock, Crown } from "lucide-react";
+import { createClient } from "../../lib/supabase/client";
+import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
 
-export const metadata: Metadata = {
-  title: "Pricing — JACOBI",
-  description: "Simple pricing for the 24-agent adversarial pricing probe.",
-};
-
-const TIERS = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "",
-    description: "Try the probe with no commitment. Five probes every month, on us.",
-    features: [
-      "5 probes per month",
-      "Email reports",
-      "Community support",
-      "7-day history",
-    ],
-    cta: "Get started free",
-    href: "/chat",
-  },
-  {
-    name: "Pro",
-    price: "$9",
-    period: "/mo",
-    description: "For serious shoppers and frequent travelers who probe regularly.",
-    features: [
-      "50 probes per month",
-      "PDF export",
-      "Priority support",
-      "Shareable links",
-      "90-day history",
-    ],
-    cta: "Start Pro",
-    href: "/chat",
-    highlighted: true,
-  },
-  {
-    name: "Enterprise",
-    price: "$49",
-    period: "/mo",
-    description: "Teams and organizations monitoring pricing at scale.",
-    features: [
-      "Unlimited probes",
-      "API access",
-      "Webhook alerts",
-      "SLA",
-      "Dedicated support",
-      "1-year history",
-    ],
-    cta: "Contact us",
-    href: "/chat",
-  },
-];
-
-const FAQS = [
-  {
-    q: "What counts as a probe?",
-    a: "One probe is one URL tested against all 24 agent profiles. Even if you submit the same URL twice, each submission counts as a separate probe because pricing can change between visits. Results are always fresh.",
-  },
-  {
-    q: "Can I cancel anytime?",
-    a: "Yes. No contracts, no cancellation fees. Your plan remains active until the end of the current billing period. Downgrade to Free at any time and your remaining probes stay available until the period ends.",
-  },
-  {
-    q: "Do you store my browsing data?",
-    a: "Probe results are stored according to your plan history window (7 days for Free, 90 days for Pro, 1 year for Enterprise). After the retention window, raw data is purged. We never share your probe history or pricing data with third parties.",
-  },
-  {
-    q: "What sites does JACOBI work on?",
-    a: "JACOBI works best on public product pages, booking sites, and checkout flows. Sites that require authentication or use aggressive anti-bot measures may return partial results. The system is continuously updated to handle new detection patterns through BrightData infrastructure.",
-  },
-];
+const STRIPE_TEST_MODE =
+  (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
 
 export default function PricingPage() {
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    const sb = createClient();
+    sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+    // Self-heal: pull from Stripe in case a previous checkout never had
+    // its webhook delivered. Cheap idempotent call.
+    (async () => {
+      try {
+        const sync = await syncSubscription();
+        if (sync.tier === "pro") {
+          setPlan({ tier: "pro", used: 0, limit: null });
+          return;
+        }
+      } catch {}
+      fetchPlan().then(setPlan).catch(() => {});
+    })();
+  }, []);
+
+  async function onSubscribe() {
+    setError(null);
+    setBusy(true);
+    try {
+      if (!signedIn) {
+        const sb = createClient();
+        await sb.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: `${window.location.origin}/auth/callback?next=/pricing` },
+        });
+        return;
+      }
+      const url = await startCheckout();
+      if (url) window.location.href = url;
+    } catch (e: any) {
+      setError(e?.message || "Checkout failed. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onManage() {
+    setBusy(true);
+    try {
+      const url = await startPortal();
+      if (url) window.location.href = url;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isPro = plan?.tier === "pro";
+
   return (
-    <div className="min-h-screen bg-[#07080c] text-[#d4d4d4] font-mono overflow-x-hidden selection:bg-emerald-400/20 selection:text-white">
-      {/* ═══════════════ HERO ═══════════════ */}
-      <section className="relative px-6 lg:px-12 pt-20 pb-12 lg:pt-28 lg:pb-16 overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-[15%] left-[15%] w-[350px] h-[350px] rounded-full bg-emerald-400/2 blur-[100px]" />
-          <div className="absolute bottom-[5%] right-[10%] w-[250px] h-[250px] rounded-full bg-blue-400/2 blur-[80px]" />
-        </div>
-
-        <div className="relative z-10 max-w-2xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-sm border border-emerald-400/20 bg-emerald-400/4 mb-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-emerald-400/70 tracking-widest uppercase">
-              Transparent pricing
-            </span>
+    <main className="min-h-screen bg-[#050505] text-white py-16 px-4">
+      <div className="max-w-5xl mx-auto">
+        {STRIPE_TEST_MODE && (
+          <div className="mb-8 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-[11px] font-mono text-amber-300/90">
+            <span className="font-semibold">Stripe Test Mode</span> · Use card{" "}
+            <code className="px-1.5 py-0.5 rounded bg-amber-400/10">4242 4242 4242 4242</code>{" "}
+            with any future expiry and any 3-digit CVC. No real charges.
           </div>
+        )}
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[0.94] text-white mb-4">
-            Simple{" "}
-            <span className="text-emerald-400">Pricing</span>
-          </h1>
-
-          <p className="text-sm sm:text-base text-[#888] leading-relaxed max-w-md mx-auto">
-            Pay for what you use
+        <header className="text-center mb-12">
+          <h1 className="text-4xl sm:text-5xl font-light tracking-tight mb-3">Pricing</h1>
+          <p className="text-white/50 text-sm font-mono max-w-xl mx-auto">
+            Run probes to reveal hidden pricing discrimination. Start free, upgrade when you need more.
           </p>
-        </div>
-      </section>
+        </header>
 
-      {/* ═══════════════ TIERS ═══════════════ */}
-      <section className="border-t border-white/[0.04] px-6 lg:px-12 py-16 lg:py-24">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {TIERS.map((tier) => (
-              <div
-                key={tier.name}
-                className={`relative flex flex-col bg-white/[0.02] backdrop-blur-xl border rounded-2xl p-6 transition-all duration-300 ${
-                  tier.highlighted
-                    ? "border-emerald-400/20 bg-emerald-400/[0.02]"
-                    : "border-white/[0.06] hover:border-white/[0.10]"
-                }`}
-              >
-                {tier.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="text-[9px] font-mono uppercase tracking-widest px-3 py-1 rounded-sm bg-emerald-400 text-[#07080c] font-bold">
-                      Most popular
-                    </span>
-                  </div>
-                )}
-
-                <div className="mb-6">
-                  <div className="text-sm font-semibold text-white mb-1">
-                    {tier.name}
-                  </div>
-                  <div className="flex items-baseline gap-1 mb-2">
-                    <span className="text-3xl font-bold text-white">
-                      {tier.price}
-                    </span>
-                    {tier.period && (
-                      <span className="text-xs text-[#555]">{tier.period}</span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-[#666] leading-relaxed">
-                    {tier.description}
-                  </p>
-                </div>
-
-                <ul className="space-y-3 mb-8 flex-1">
-                  {tier.features.map((f, i) => (
-                    <li key={i} className="flex items-start gap-2.5">
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        className={`shrink-0 mt-0.5 ${tier.highlighted ? "text-emerald-400" : "text-[#444]"}`}
-                      >
-                        <path
-                          d="M3 7.5L5.5 10L11 4"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      <span className="text-[11px] text-[#888] leading-relaxed">
-                        {f}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-
-                <Link
-                  href={tier.href}
-                  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-sm text-xs font-bold transition-all duration-300 ${
-                    tier.highlighted
-                      ? "bg-emerald-400 text-[#07080c] hover:bg-emerald-300"
-                      : "border border-white/[0.08] text-[#999] hover:text-white hover:border-white/[0.20]"
-                  }`}
-                >
-                  {tier.cta}
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M1 6h10M7 2l4 4-4 4" />
-                  </svg>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════ FAQ ═══════════════ */}
-      <section className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28 bg-white/[0.005]">
-        <div className="max-w-3xl mx-auto">
-          <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">
-            FAQ
-          </span>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-14 leading-[1.15]">
-            Questions you might have
-          </h2>
-
-          <div className="space-y-3">
-            {FAQS.map((faq, i) => (
-              <details
-                key={i}
-                className="group border border-white/[0.04] bg-white/[0.01] hover:border-white/[0.10] transition-all duration-300"
-              >
-                <summary className="flex items-center justify-between cursor-pointer p-5 list-none">
-                  <span className="text-sm font-semibold text-white group-open:text-emerald-400 transition-colors">
-                    {faq.q}
-                  </span>
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 14 14"
-                    fill="none"
-                    stroke="#555"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    className="shrink-0 ml-4 transition-transform duration-200 group-open:rotate-45"
-                  >
-                    <path d="M7 1v12M1 7h12" />
-                  </svg>
-                </summary>
-                <div className="px-5 pb-5 -mt-1">
-                  <p className="text-xs text-[#777] leading-relaxed">{faq.a}</p>
-                </div>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════ FOOTER ═══════════════ */}
-      <footer className="border-t border-white/[0.04] px-6 lg:px-12 py-10">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded-sm border border-emerald-400/30 flex items-center justify-center">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="#34d399"
-                strokeWidth="1.2"
-              >
-                <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
-              </svg>
+        <div className="grid md:grid-cols-2 gap-5">
+          {/* FREE */}
+          <article className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-7 flex flex-col">
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-xs font-mono uppercase tracking-widest text-white/40">Free</span>
+              {plan?.tier === "free" && (
+                <span className="text-[10px] font-mono text-emerald-300/80 border border-emerald-400/30 rounded-full px-2 py-0.5">
+                  current
+                </span>
+              )}
             </div>
-            <span className="text-sm font-semibold text-white">JACOBI</span>
-            <span className="text-[9px] text-[#555]">
-              pricing transparency
-            </span>
-          </div>
-          <div className="flex items-center gap-6 text-[11px]">
+            <div className="flex items-baseline gap-1 mb-6">
+              <span className="text-5xl font-light">$0</span>
+              <span className="text-white/40 text-sm">/forever</span>
+            </div>
+            <ul className="space-y-3 text-sm text-white/70 mb-8 flex-1">
+              <Bullet>15 probes per month</Bullet>
+              <Bullet>24-agent probe (3 staggered waves, ~60–90s)</Bullet>
+              <Bullet>Topline discrimination index + spread</Bullet>
+              <Bullet>7-day history retention</Bullet>
+              <Bullet muted>No exports · No per-agent breakdown</Bullet>
+            </ul>
             <Link
               href="/chat"
-              className="text-[#666] hover:text-white transition-colors"
+              className="block text-center rounded-full border border-white/[0.12] hover:border-white/30 text-sm font-mono py-2.5 transition-colors"
             >
-              Probe
+              {plan?.tier === "free" ? "Open the probe" : "Start free"}
             </Link>
-            <Link
-              href="/about"
-              className="text-[#666] hover:text-white transition-colors"
-            >
-              About
-            </Link>
-            <Link
-              href="/pricing"
-              className="text-[#666] hover:text-white transition-colors"
-            >
-              Pricing
-            </Link>
-          </div>
-          <div className="text-[9px] text-[#444]">
-            BrightData
-          </div>
+          </article>
+
+          {/* PRO */}
+          <article className="relative rounded-3xl border border-emerald-400/30 bg-gradient-to-b from-emerald-400/5 to-transparent p-7 flex flex-col">
+            <div className="absolute -top-3 left-7">
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-emerald-300 bg-[#050505] border border-emerald-400/40 rounded-full px-2.5 py-1">
+                <Crown className="w-3 h-3" /> Pro
+              </span>
+            </div>
+            <div className="flex items-baseline gap-2 mb-1 mt-2">
+              <span className="text-xs font-mono uppercase tracking-widest text-emerald-300/80">Pro</span>
+              {isPro && (
+                <span className="text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5">
+                  active
+                </span>
+              )}
+            </div>
+            <div className="flex items-baseline gap-1 mb-6">
+              <span className="text-5xl font-light">$29</span>
+              <span className="text-white/40 text-sm">/month</span>
+            </div>
+            <ul className="space-y-3 text-sm text-white/80 mb-8 flex-1">
+              <Bullet icon={<Zap className="w-3.5 h-3.5 text-emerald-300" />}>
+                <span className="text-white">Unlimited probes</span>
+              </Bullet>
+              <Bullet icon={<Clock className="w-3.5 h-3.5 text-emerald-300" />}>
+                Priority probing — single-wave concurrent <span className="text-white/50">(~15s)</span>
+              </Bullet>
+              <Bullet icon={<BarChart3 className="w-3.5 h-3.5 text-emerald-300" />}>
+                Full per-agent fingerprint breakdown
+              </Bullet>
+              <Bullet icon={<Download className="w-3.5 h-3.5 text-emerald-300" />}>
+                PDF, CSV, and JSON exports
+              </Bullet>
+              <Bullet icon={<Shield className="w-3.5 h-3.5 text-emerald-300" />}>
+                Unlimited probe history
+              </Bullet>
+            </ul>
+            {isPro ? (
+              <button
+                onClick={onManage}
+                disabled={busy}
+                className="block text-center rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.12] text-sm font-mono py-2.5 transition-colors disabled:opacity-50"
+              >
+                {busy ? "Opening…" : "Manage billing"}
+              </button>
+            ) : (
+              <button
+                onClick={onSubscribe}
+                disabled={busy}
+                className="block text-center rounded-full bg-emerald-400 hover:bg-emerald-300 text-black text-sm font-mono font-semibold py-2.5 transition-colors disabled:opacity-50"
+              >
+                {busy ? "Loading…" : signedIn ? "Subscribe — $29 / mo" : "Sign in to subscribe"}
+              </button>
+            )}
+            {error && (
+              <p className="text-rose-400 text-[11px] font-mono mt-3 text-center">{error}</p>
+            )}
+          </article>
         </div>
-      </footer>
-    </div>
+
+        <p className="text-center text-white/30 text-[11px] font-mono mt-10">
+          Cancel anytime from the customer portal. No commitment.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function Bullet({
+  children,
+  icon,
+  muted,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <li className={`flex items-start gap-2.5 ${muted ? "text-white/35" : ""}`}>
+      <span className="mt-1 shrink-0">
+        {icon ?? <Check className="w-3.5 h-3.5 text-white/40" />}
+      </span>
+      <span>{children}</span>
+    </li>
   );
 }

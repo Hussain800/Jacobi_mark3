@@ -28,6 +28,8 @@ from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
 from cognee_memory import remember_probe, is_available as cognee_available
+from billing import router as billing_router
+from auth_user import get_optional_user
 from triggerware import dispatch_probe_event as triggerware_dispatch
 
 load_dotenv()
@@ -787,16 +789,18 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         s["status"] = "failed"; s["error_message"] = str(e); return s
 
 
-async def run_full_probe(url: str, name: str) -> dict:
+async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
     sid, session = create_session(url, name)
+    session["tier"] = tier
     overall_start = time.time()
     bd = BrightDataMCPClient()
     await bd.start()
     try:
-        for wi in range(3):
-            configs = WAVE_CONFIGS.get(wi, [])
-            if not configs: continue
-            tasks = [launch_single_agent(bd, url, c) for c in configs]
+        if tier == "pro":
+            # Pro: single concurrent wave (no inter-wave stagger). Targets the
+            # original PRD's <15s execution window. All 24 agents fire at once.
+            all_configs = [c for wi in range(3) for c in WAVE_CONFIGS.get(wi, [])]
+            tasks = [launch_single_agent(bd, url, c) for c in all_configs]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
                 if isinstance(r, Exception): session["failed_agents"] += 1; continue
@@ -804,7 +808,19 @@ async def run_full_probe(url: str, name: str) -> dict:
                 if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
                 elif r.get("bot_detected"): session["detected_agents"] += 1
                 else: session["failed_agents"] += 1
-            if wi < 2: await asyncio.sleep(WAVE_STAGGER_S)
+        else:
+            for wi in range(3):
+                configs = WAVE_CONFIGS.get(wi, [])
+                if not configs: continue
+                tasks = [launch_single_agent(bd, url, c) for c in configs]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for r in results:
+                    if isinstance(r, Exception): session["failed_agents"] += 1; continue
+                    session["agents"].append(r)
+                    if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
+                    elif r.get("bot_detected"): session["detected_agents"] += 1
+                    else: session["failed_agents"] += 1
+                if wi < 2: await asyncio.sleep(WAVE_STAGGER_S)
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
         if session["detected_agents"] > 12:
@@ -964,6 +980,7 @@ app.add_middleware(
 )
 
 app.include_router(export_router)
+app.include_router(billing_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None
@@ -975,17 +992,52 @@ async def health():
 
 
 @app.post("/api/probe")
-async def launch_probe(input: TargetProbeInput, _: None = Depends(check_rate_limit)):
-    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
+async def launch_probe(
+    input: TargetProbeInput,
+    _: None = Depends(check_rate_limit),
+    user=Depends(get_optional_user),
+):
+    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails.
+
+    Tier gating:
+      - Anonymous: allowed (frontend enforces a soft localStorage cap)
+      - Free signed-in: capped at FREE_MONTHLY_PROBES per calendar month
+      - Pro signed-in: unlimited, runs single-wave concurrent
+    """
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}
+
+    tier = "free"
+    if user:
+        allowed, info = await can_run_probe(user["id"])
+        if not allowed:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "quota_exceeded",
+                    "tier": info["tier"],
+                    "used": info["used"],
+                    "limit": info["limit"],
+                    "message": f"You've used {info['used']}/{info['limit']} free probes this month. Upgrade to Pro for unlimited.",
+                },
+            )
+        tier = info["tier"]
+
     try:
-        session = await run_full_probe(input.target_url, input.target_name)
-        # Persist to Supabase
+        session = await run_full_probe(input.target_url, input.target_name, tier=tier)
+        # Persist to Supabase (and bump the user's monthly counter on success)
         try:
+            await save_probe(session, user_id=user["id"] if user else None)
+        except TypeError:
+            # save_probe may not yet accept user_id on older deploys
             await save_probe(session)
         except Exception as db_err:
             print(f"[MAIN] Supabase save skipped: {db_err}")
+        if user and session.get("status") == "completed" and tier != "pro":
+            try:
+                await increment_probe_count(user["id"])
+            except Exception as e:
+                print(f"[MAIN] increment skipped: {e}")
         # Persist to Cognee memory (fire-and-forget, no-op if not configured)
         try:
             await remember_probe(session)

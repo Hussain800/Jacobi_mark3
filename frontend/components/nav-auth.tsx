@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Crown } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
+import { fetchPlan, startPortal, type Plan } from "../lib/billing";
 
 export default function NavAuth() {
   const [user, setUser] = useState<User | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(true);
   const [showEmailSignIn, setShowEmailSignIn] = useState(false);
   const [email, setEmail] = useState("");
@@ -28,6 +32,14 @@ export default function NavAuth() {
       sub.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (!user) {
+      setPlan(null);
+      return;
+    }
+    fetchPlan().then(setPlan).catch(() => {});
+  }, [user]);
 
   async function signInWithGoogle() {
     const redirectTo = `${window.location.origin}/auth/callback`;
@@ -52,6 +64,13 @@ export default function NavAuth() {
     setUser(null);
   }
 
+  async function openBillingPortal() {
+    try {
+      const url = await startPortal();
+      if (url) window.location.href = url;
+    } catch {}
+  }
+
   if (loading) {
     return <div className="w-12 h-5" aria-hidden />;
   }
@@ -62,8 +81,25 @@ export default function NavAuth() {
       user.email?.split("@")[0] ||
       "user";
     const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
+    const isPro = plan?.tier === "pro";
     return (
       <div className="flex items-center gap-2">
+        {isPro ? (
+          <button
+            onClick={openBillingPortal}
+            title="Manage billing — open Stripe Customer Portal"
+            className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5 hover:border-emerald-400/70 hover:bg-emerald-400/5 transition-colors cursor-pointer"
+          >
+            <Crown className="w-3 h-3" /> PRO · manage
+          </button>
+        ) : (
+          <Link
+            href="/pricing"
+            className="text-[10px] font-mono text-white/35 border border-white/[0.12] rounded-full px-2 py-0.5 hover:text-white/70 hover:border-white/30 transition-colors"
+          >
+            free · upgrade →
+          </Link>
+        )}
         {avatarUrl && (
           <img src={avatarUrl} alt="" className="w-5 h-5 rounded-full" />
         )}

@@ -79,12 +79,30 @@ Sample probe data the redesign uses for demos: **UA182 / JFK → LHR**. 5 repres
 
 ## 6 · Current completed work
 
-Branch `feat/frontend-redesign` carries 7 commits on top of `main`:
+**Active branch is now `feat/frontend-redesign-v2`** (NOT `feat/frontend-redesign`). The
+v2 branch was started by the user's friends with backend audit fixes on top of the
+Phase-1.5 commit, then we merged `origin/main` into it and continued from there.
+
+`origin/main` was merged in at `f3f22c0` and carries: Docker/CI, Sentry, backend
+test suite, scheduler, triggerware, supabase-client build-time fix, leaderboard
+page, direct-HTTP fallback in `backend/main.py`, etc. Trust the latest `main` for
+all backend behavior.
+
+Full commit timeline on `feat/frontend-redesign-v2` (most recent first):
 
 ```
+0818ebd  feat(ui): port Phase 6 swarm vocabulary into cockpit + grid surface
+bd0994c  feat(landing): glowy color-tinted swarm with cursor repulsion + premium input
+4b35332  feat(landing): alive hero — perpetual life, cursor halo, parallax
+48f2304  feat(ui): polish probe cockpit and report surfaces
+0fd0a13  Fix local frontend API fallback                 (codex)
+f3f22c0  Merge remote-tracking branch 'origin/main' into feat/frontend-redesign-v2
+c22ebf7  docs(handoff): record Phase 2+3 state for downstream agents
 89bfe90  fix(probe): trim duplicate cockpit nav, defer to global layout
 39887fa  feat(probe): redesign chat into pricing probe cockpit
 b984e29  feat(landing): refine immersive pricing probe hero
+769cc4c  fix(probe): add direct HTTP fallback when BrightData zone unavailable (friend)
+5f61aac  Fix all remaining 24 audit bugs                 (friend, backend)
 86b308a  feat(landing): add immersive agent deployment hero  (handoff doc only)
 cdeec24  feat(landing): Phase 1.5 — cinematic hero scene
 65ab7ad  feat(landing): luxury forensic redesign — Phase 1
@@ -132,77 +150,138 @@ cdeec24  feat(landing): Phase 1.5 — cinematic hero scene
 
 **Known issue at end of Phase 3**: user reports `/chat` rendering unstyled in dev mode despite clean `next build`. Diagnosis: dev-server process is in a broken state (HTML serves but CSS chunks don't). Production output verified — 44 KB CSS chunk at `.next/static/css/*.css`. Recovery: see the "dev server cure" section.
 
-**What hasn't started yet** (Phase 4+):
-- Restyling `/history` / `/share/[id]` / `/pricing` pages to match the new cockpit/landing system
-- Migrating the global nav in `app/layout.tsx:25-44` from `bg-surface`/`text-white`/`bg-[#07080c]` to the new token system (`bg-ink`/`text-primary`/`border-line`)
-- Deleting `Tactical3DNetwork`, `MatricesCursor`, `DotMatrix`, `matrix-elements`, `ScrollReveal`, `TacticalCard`, `GeoHeatmap`, `jacobi-logo` — now fully unreferenced
-- Migrating any remaining `text-neon` callsites to the new `signal`/`primary` tokens
-- Code-split `Evidence.tsx`'s recharts modules behind a result event to drop `/chat` initial FLJ
-- Single persistent radial stage that morphs from live-deploy → result-with-endpoints in place (instead of two separate stages stacked)
-- Mobile cockpit hand-testing (drawer-becomes-bottom-sheet at <sm, cluster geometry under 400px width)
+**Phase 4** (`48f2304`):
+- Single persistent radial stage that morphs from live-deploy → result-with-endpoints in place (no more unmount/remount jank between scan and result).
+- ScanTimeline collapses to a quiet "Probe complete · Xs · 22/24 agents" badge on completion.
+- `Evidence.tsx` lazy-loaded via `lazy(() => import("./cockpit/Evidence"))`. Recharts only enters the bundle once a result lands. `/chat` dropped 322 → 210 kB FLJ.
+- Quiet cancel state (border-line + muted icon), explained timeout state with retry, generic error state with retry.
+- Full restyle of `/history` to logbook feel with per-row signal-green intensity bar, token migration. Rerun links carry `?url=` so click continues the investigation.
+- Light token alignment on `/pricing`, `/leaderboard`, `/share/[id]`.
+- Light token alignment on the global nav in `app/layout.tsx`.
+- ShareResultClient now passes `embedStage` so the public share page renders its own agent stage.
+
+**Phase 5** (`4b35332`):
+- Landing hero made ALIVE per user feedback. The swarm no longer freezes after the cinematic — perpetual gentle rotation (every 50 ms, ~30 s/rev), per-node organic breath with individual offsets, mouse-tracked cursor halo, 2.5D parallax on cluster + strand layers.
+- Curved bezier strands (organic, not straight rays).
+- Depth-opacity (`0.7 + 0.3 × (1+sin)/2`) for 2.5D illusion.
+- Hover responsiveness on every node + connected strand.
+
+**Phase 6** (`bd0994c` + `0818ebd`):
+- **Per-axis color palette** introduced in shared `frontend/components/cockpit/orbital.ts`: Location signal-green, Device cyan (#22d3ee), Cookies amber (#f5b945), Referrer rose (#ff5d6c), Network violet (#a78bfa). Each axis gets `core` / `glow` / `soft` rgba tones. No SaaS rainbow — every color earned by axis semantics.
+- **Glowy circles**: `box-shadow: 0 0 14–32px <axis-glow>` on every node, with idle/focus/deploy/result intensities. Endpoint pills (cheapest+dearest) get 32 px shadow blast.
+- **Spider-web strands**: SVG `<linearGradient>` defs, bone-white at the input origin to axis core at the node end. Hover tint to solid axis core at 1.6 px with `drop-shadow`. Brighter, web-like.
+- **Cursor repulsion physics**: every node + its strand endpoint pushes away from cursor within 160 px radius via `((R−d)/R)^2.2 × 38 px`, spring-smoothed at stiffness 150 / damping 22. Strands warp with their nodes because path endpoints use the same offset.
+- **Verdict layout collision fixed**: the verbose verdict block (HIDDEN PREMIUM + $142 + caption) was crashing into the headline. Now: a clean docked **horizontal verdict card** ($498 — +$142 — $640) appears ABOVE the masthead on result; in the swarm there's only a thin gradient connector between the two endpoint pills.
+- **Premium input redesign**: wider/taller, animated gradient halo behind (signal→cyan→violet→rose at blur(12px), scales on focus), terminal-style corner ticks fade in on focus, bigger PROBE button with its own signal-green halo shadow.
+- **Cockpit fully ported**: `frontend/components/cockpit/RadialAgentStage.tsx` and `EmptyState.tsx` now use the same vocabulary. EmptyState has an orbital backdrop (24 glowy color-tinted nodes in 5 clusters rotating slowly behind the input + sample cards).
+- **Surface texture**: `globals.css` now establishes the surface with anchored radial gradients (warm-cool depth at bottom, lift at top-left) + a **forensic dot grid** (28 × 28 px, masked elliptically) + film grain at 0.035 opacity. No more flat black void.
+- **Landing label collision** definitively fixed in `0818ebd`: cluster labels pushed to `anchorR + 90` so they clear the entire tangential pill fan. Pre-fix the label landed on the LDN $590 neutral pill at factor 0.
+- **Landing strand-node disconnect** fixed in `0818ebd`: nodes and strands now share a single parallax magnitude (10 px both layers) instead of 12 vs 6, so circles always sit on their strand endpoints.
+
+**Bundle state at end of Phase 6**:
+- `/` 9.05 kB / 151 kB FLJ
+- `/chat` 1.54 kB / 216 kB FLJ
+- `/share/[id]` 307 B / 223 kB FLJ
+- `/history` 3.39 kB / 142 kB FLJ
+- `/pricing` 3.76 kB / 207 kB FLJ
+- `/leaderboard` 181 B / 96.5 kB FLJ
+
+**What hasn't started yet** (Phase 7+):
+- Topology badge PNG export feature (was on main's old monolithic dashboard at `56a227a`, not yet ported to the cockpit `Evidence.tsx` footer)
+- Mobile cockpit hand-testing at 390/430 px (drawer-becomes-bottom-sheet, radial geometry under 400 px width)
+- The duplicate `<defs>` block in landing HeroScene SVG (cosmetic — browsers handle it)
+- The framer-motion +41 kB on `/history` and `/pricing` could be replaced with plain CSS transitions if anyone cares
+- Deleting `Tactical3DNetwork`, `MatricesCursor`, `DotMatrix`, `matrix-elements`, `ScrollReveal`, `TacticalCard`, `GeoHeatmap`, `jacobi-logo` — fully unreferenced, ~1500 lines of dead code on disk
+- Migrating any remaining `text-neon` callsites to `signal`/`primary` tokens (just grep `text-neon`)
+- Old `CLAUDE_REDESIGN_HANDOFF.md` from before Phase 1 is still on disk; superseded by this file
 
 ---
 
-## 7 · Files recently touched
+## 7 · Files map (as of end of Phase 6)
 
-### Created in Phase 1.5
-- `frontend/components/landing/HeroScene.tsx` (605 lines — the cinematic)
-- `CLAUDE_SESSION_HANDOFF.md` (this file)
+### Landing surface
+- `frontend/app/page.tsx` — landing composition (HeroScene + Mechanism + Evidence + CTA + Footer)
+- `frontend/components/landing/HeroScene.tsx` — the alive hero. Owns: 4-phase state machine, perpetual rotation, per-node breath, cursor halo, cursor repulsion, parallax (10 px unified), curved bezier strands, depth opacity, axis-colored glowy nodes, premium input with gradient halo + corner ticks, docked verdict card above masthead
 
-### Modified in Phase 1 / 1.5
-- `frontend/app/page.tsx` — landing composition; now imports `HeroScene`
-- `frontend/tailwind.config.js` — added semantic tokens (`ink`, `raised`, `line`, `primary`, `secondary`, `muted`, `signal`, `overcharge`, `warning`); existing tokens preserved
-- `frontend/package.json` — added `framer-motion ^12.40.0`
-- `frontend/package-lock.json` — regenerated for framer-motion
-- `CLAUDE_REDESIGN_HANDOFF.md` — original Phase 1 handoff (older, still on disk for reference)
+### Cockpit
+- `frontend/components/dashboard.tsx` — Terminal default export (orchestration + runProbe + auth + localStorage). Also exports `ResultCard` (consumed by share-client) and `TopologyReport` type.
+- `frontend/components/cockpit/orbital.ts` — **shared primitives** (AXIS_COLOR, CLUSTER_ANGLE, CLUSTER_DELAY, strandPath, depthFactor, repulsionOffset). Imported by HeroScene, RadialAgentStage, EmptyState.
+- `frontend/components/cockpit/types.ts` — TopologyReport / Agent / Gradient / DEMO_REPORT / SAMPLES / INDEX_TO_AXIS / helpers
+- `frontend/components/cockpit/RadialAgentStage.tsx` — persistent live/result stage. mode="live"|"result" prop. Axis colors + glow + cursor halo + repulsion + spider-web strands.
+- `frontend/components/cockpit/EmptyState.tsx` — empty-cockpit surface. Decorative orbital backdrop + premium input + sample case-file cards + leaderboard.
+- `frontend/components/cockpit/AgentDetailDrawer.tsx` — right-side inspector (bottom sheet on mobile)
+- `frontend/components/cockpit/ScanTimeline.tsx` — queued → deploying → collecting → analyzing → verdict
+- `frontend/components/cockpit/ProbeHeader.tsx` — slim status strip below the global nav
+- `frontend/components/cockpit/VerdictPanel.tsx` — serif headline + spread + cheapest-identity card + action items
+- `frontend/components/cockpit/Evidence.tsx` — restyled bars / comparison table / network chart / histogram / agent roster / exports. Lazy-loaded in dashboard.tsx.
+- `frontend/components/cockpit/Leaderboard.tsx` — uses getClientApiBase()
 
-### Touched in the merged Stripe work (now on `main`, do not redo)
-- `backend/{auth_user,billing,profile_store,stripe_client}.py`
-- `frontend/app/{billing/success,pricing}/page.tsx`
-- `frontend/components/nav-auth.tsx`
+### Standalone pages (token-aligned to cockpit/landing)
+- `frontend/app/history/page.tsx` — logbook with per-row intensity bar
+- `frontend/app/pricing/page.tsx` — Stripe-untouched, only chrome migrated
+- `frontend/app/leaderboard/page.tsx` — server-rendered, signal/warning/overcharge ramp
+- `frontend/app/share/[id]/page.tsx` — server-rendered wrapper, banner + CTA
+- `frontend/app/share/[id]/share-client.tsx` — passes `embedStage` to ResultCard
+- `frontend/app/layout.tsx` — global nav lightly token-aligned
+
+### Surface / tokens
+- `frontend/app/globals.css` — body background gradients + forensic dot grid + film grain
+- `frontend/tailwind.config.js` — semantic tokens (ink, raised, line, primary, secondary, muted, signal, overcharge, warning) added in Phase 1, untouched since
+
+### Touched but stable (don't rewrite without need)
+- `frontend/lib/api-base.ts` (codex's local API fallback)
+- `frontend/lib/supabase/{client,server}.ts` (build-time resilience from main)
+- `frontend/components/nav-auth.tsx` (auth control in global nav)
+- `frontend/components/auth-button.tsx`
+
+### Critically NOT touched
+- All backend code (`backend/*`)
+- All Stripe billing surfaces beyond what already shipped
 - `frontend/lib/billing.ts`
 
-### Critically NOT touched in Phase 1 or 1.5 (and must stay untouched without explicit user approval)
-- `frontend/components/dashboard.tsx` (924 lines — the cockpit)
-- `frontend/app/chat/page.tsx`, `frontend/app/history/page.tsx`, `frontend/app/share/[id]/*`
-- All backend code
-- Auth, Stripe surfaces beyond what was already shipped
-- `frontend/app/globals.css` (keyframes preserved)
+### Dead code still on disk (safe to delete after grep)
+- `frontend/components/Tactical3DNetwork.tsx`
+- `frontend/components/MatricesCursor.tsx`
+- `frontend/components/dot-matrix.tsx`
+- `frontend/components/matrix-elements.tsx`
+- `frontend/components/ScrollReveal.tsx`
+- `frontend/components/TacticalCard.tsx`
+- `frontend/components/GeoHeatmap.tsx`
+- `frontend/components/jacobi-logo.tsx`
 
 ---
 
-## 8 · Exact current git state (as of handoff)
+## 8 · Exact current git state (end of Phase 6 — user switching to Claude Design)
 
 ```
-$ git status
-On branch feat/frontend-redesign
-Your branch is up to date with 'origin/feat/frontend-redesign'.
+$ git branch --show-current
+feat/frontend-redesign-v2
 
-Untracked files:
-  (use "git add <file>..." to include in what will be committed)
-	.pr-body.md
+$ git rev-list --left-right --count origin/feat/frontend-redesign-v2...HEAD
+0	0          # fully in sync with remote — pushed
 
-nothing added to commit but untracked files present (use "git add" to track)
+$ git status --short
+?? .omo/           # agent runtime metadata — DO NOT commit
+?? .pr-body.md     # leftover Stripe PR helper — DO NOT commit
+
+$ git log --oneline -10
+0818ebd feat(ui): port Phase 6 swarm vocabulary into cockpit + grid surface
+bd0994c feat(landing): glowy color-tinted swarm with cursor repulsion + premium input
+4b35332 feat(landing): alive hero — perpetual life, cursor halo, parallax
+48f2304 feat(ui): polish probe cockpit and report surfaces
+0fd0a13 Fix local frontend API fallback
+f3f22c0 Merge remote-tracking branch 'origin/main' into feat/frontend-redesign-v2
+9762c43 Merge: keep __main__ entry point fix
+a5f34dd Fix: add missing __main__ entry point for uvicorn
+b99c9d4 Production readiness: Docker, CI, Sentry, logging, test suite
+769cc4c fix(probe): add direct HTTP fallback when BrightData zone unavailable
 ```
 
-```
-$ git log --oneline --decorate -8
-cdeec24 (HEAD -> feat/frontend-redesign, origin/feat/frontend-redesign) feat(landing): Phase 1.5 — cinematic hero scene
-65ab7ad feat(landing): luxury forensic redesign — Phase 1
-59772e0 chore(frontend): add framer-motion + redesign handoff doc
-88a909a (origin/main, origin/HEAD, main) Merge pull request #20 from RaySam07/feat/stripe-billing
-ec14d6d (origin/feat/stripe-billing, feat/stripe-billing) feat(billing): make PRO badge in nav one-click open Stripe Portal
-b28aff1 feat(billing): self-healing /api/billing/sync — works without webhooks
-e3aa79f fix(billing): handle missing supabase package + harden error paths
-56586d1 fix(billing): defer env reads until after dotenv loads
-```
+GitHub: `https://github.com/RaySam07/Jacobi` — branch `feat/frontend-redesign-v2`
+already pushed and up to date.
 
-```
-$ git diff --stat
-(empty — working tree clean)
-```
-
-Note: `.pr-body.md` at the repo root is a leftover helper from the Stripe PR. It is NOT tracked and should NOT be committed unless explicitly asked.
+Production server: started via `npm run start` in `frontend/`, serves on port 3000.
+Current `.next/static/css/*.css` chunk hash: `5d56cb7382435918.css` (post-Phase-6).
 
 ---
 
@@ -225,18 +304,35 @@ These are sacred — the visual redesign rides on top of them:
 
 ---
 
-## 10 · Next recommended step for the new session
+## 10 · Next recommended steps for any agent picking up here
 
-1. **Read this entire file** before any tool call.
-2. Read `CLAUDE_REDESIGN_HANDOFF.md` (older, lower-priority context).
-3. **Inspect, don't edit yet**: open `frontend/app/page.tsx` and `frontend/components/landing/HeroScene.tsx`. Understand the 4-phase state machine, the position math, the SVG strand layer.
-4. Run `cd frontend && npx next build` to confirm green from a fresh checkout. (Stale dev servers are the #1 cause of weirdness here — see the "dev server cure" sequence below.)
-5. **Critique Phase 1.5** before proposing changes. What feels Apple-restrained? What's still template-like? Where does the cinematic land too long or feel anti-climactic? Surface these in a written assessment for the user before touching files.
-6. Only after that assessment is read and approved: propose Phase 2 scope. Likely candidates the user has discussed:
-   - Add subtle interactivity to the hero (input focus → nodes accelerate? hover a node → it pulses?)
-   - Refine cluster geometry / staggers
-   - Move on to redesigning `/chat` (the cockpit) — explicitly requires user approval to begin
-   - Restyle `/history`, `/share/[id]`, `/pricing` to match the new system
+The user is switching tooling (Claude Design / Codex / etc) and wants a clean
+resume point. The branch state is locked at `0818ebd` (Phase 6). Recommended
+order if resuming:
+
+1. **Read this whole file plus** `frontend/components/cockpit/orbital.ts` — it's
+   the single source for AXIS_COLOR, cluster math, and repulsion physics. Both
+   the landing HeroScene and the cockpit RadialAgentStage import from it.
+2. Open `frontend/components/landing/HeroScene.tsx` and
+   `frontend/components/cockpit/RadialAgentStage.tsx` side by side. They are
+   intentionally aligned in vocabulary — any future visual change to one
+   should usually mirror to the other.
+3. `cd frontend && npm run build` to confirm green. Bundle sizes at end of
+   Phase 6: `/` 9.05 kB / 151 kB FLJ, `/chat` 1.54 kB / 216 kB FLJ.
+4. The biggest open user pain points (frequently re-raised across phases):
+   - **Cockpit `/chat` empty state and probing state** should keep feeling
+     "$10K-worth" — premium, alive, interactive. Phase 6 ported the Phase-5/6
+     vocabulary in but the user may push for more depth (3D pseudo-orbits,
+     more sophisticated cursor effects, sound, particle systems).
+   - **Mobile** at 390/430 px width hasn't been hand-verified.
+   - **Result reveal** — the verdict card at the top of the cockpit is the
+     climax; if it lands flat, it's the highest-leverage place to invest.
+5. Phase-7 candidates the user has discussed but not started:
+   - Topology badge PNG export (port from main's `56a227a`)
+   - Delete the 8 dead `frontend/components/*.tsx` files
+   - Sweep `text-neon` callsites onto `signal` / `primary` tokens
+   - Add subtle ambient sound design on probe completion (Apple-style chime)
+   - 3D depth via CSS `perspective` on the swarm parent
 
 ---
 

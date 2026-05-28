@@ -27,10 +27,11 @@ from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
-from cognee_memory import remember_probe, is_available as cognee_available
+from cognee_memory import remember_probe, recall_probes, is_available as cognee_available
 from billing import router as billing_router
 from auth_user import get_optional_user
 from triggerware import dispatch_probe_event as triggerware_dispatch
+from scheduler import ScheduleRequest, create_schedule, get_active_schedules, run_scheduler_loop
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
@@ -968,6 +969,7 @@ app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(cleanup_expired_sessions())
+    asyncio.create_task(run_scheduler_loop(run_full_probe))
 
 
 # CORS: allow Vercel frontend + local dev
@@ -1043,12 +1045,37 @@ async def launch_probe(
             await remember_probe(session)
         except Exception:
             pass
+        # Recall past probe history from Cognee (fire-and-forget, no-op if not configured)
+        history: list[dict] = []
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(input.target_url).netloc
+            results = await recall_probes(query=f"JACOBI probe for {domain}", top_k=5)
+            for r in results:
+                meta = r.get("metadata") or r.get("content") or {}
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                history.append({
+                    "session_id": meta.get("session_id", ""),
+                    "target_url": meta.get("target_url", ""),
+                    "target_name": meta.get("target_name", ""),
+                    "topology_class": meta.get("topology_class", ""),
+                    "baseline_price": meta.get("baseline_price"),
+                    "max_price_spread": meta.get("max_price_spread"),
+                    "discrimination_index": meta.get("discrimination_index"),
+                    "summary": meta.get("summary", ""),
+                })
+        except Exception:
+            pass
         # Dispatch to TriggerWare.ai workflow (fire-and-forget, no-op if not configured)
         try:
             await triggerware_dispatch(session)
         except Exception:
             pass
-        return {"session_id": session["session_id"], "status": session["status"]}
+        return {"session_id": session["session_id"], "status": session["status"], "history": history}
     except Exception as e:
         # On MCP connection failure, return demo data with a warning
         err_msg = str(e)
@@ -1100,6 +1127,60 @@ async def get_result(session_id: str):
         discrimination_score=session.get("discrimination_score", 0),
         error=session.get("error"),
     )
+
+
+@app.get("/api/compare")
+async def compare_probes(session_id1: str, session_id2: str):
+    """Compare two completed probe sessions side by side."""
+    s1 = SESSION_STORE.get(session_id1)
+    s2 = SESSION_STORE.get(session_id2)
+
+    if not s1:
+        raise HTTPException(status_code=404, detail=f"Session {session_id1} not found")
+    if not s2:
+        raise HTTPException(status_code=404, detail=f"Session {session_id2} not found")
+
+    g1: list[dict] = s1.get("gradients", [])
+    g2: list[dict] = s2.get("gradients", [])
+    g1_by_var = {g["variable_name"]: g for g in g1}
+    g2_by_var = {g["variable_name"]: g for g in g2}
+    all_vars = sorted(set(list(g1_by_var.keys()) + list(g2_by_var.keys())))
+
+    gradient_diff = []
+    for var in all_vars:
+        entry: dict = {"variable_name": var}
+        if var in g1_by_var:
+            g = g1_by_var[var]
+            entry["probe1"] = {"delta": g["delta"], "delta_pct": g["delta_pct"], "significant": g["significant"], "mean_price_high": g["mean_price_high"], "mean_price_low": g["mean_price_low"]}
+        if var in g2_by_var:
+            g = g2_by_var[var]
+            entry["probe2"] = {"delta": g["delta"], "delta_pct": g["delta_pct"], "significant": g["significant"], "mean_price_high": g["mean_price_high"], "mean_price_low": g["mean_price_low"]}
+        gradient_diff.append(entry)
+
+    bp1 = s1.get("baseline_price") or 0
+    bp2 = s2.get("baseline_price") or 0
+
+    return {
+        "probe1": {
+            "session_id": session_id1,
+            "target_url": s1.get("target_url", ""),
+            "topology_class": s1.get("topology_class", ""),
+            "baseline_price": bp1,
+            "max_price_spread": s1.get("max_price_spread"),
+            "timestamp": s1.get("timestamp", ""),
+        },
+        "probe2": {
+            "session_id": session_id2,
+            "target_url": s2.get("target_url", ""),
+            "topology_class": s2.get("topology_class", ""),
+            "baseline_price": bp2,
+            "max_price_spread": s2.get("max_price_spread"),
+            "timestamp": s2.get("timestamp", ""),
+        },
+        "gradient_diff": gradient_diff,
+        "price_delta": round(bp1 - bp2, 2),
+        "timeline": [s1.get("timestamp", ""), s2.get("timestamp", "")],
+    }
 
 
 @app.get("/api/share/{session_id}")
@@ -1262,6 +1343,31 @@ async def analyze_demo():
         "gemini_report": gemini_report.model_dump() if gemini_report else None,
         "savings_verdict": verdict,
     }
+
+
+@app.post("/api/schedule")
+async def create_probe_schedule(input: ScheduleRequest):
+    if not input.target_url.strip():
+        raise HTTPException(status_code=400, detail="target_url is required")
+    if not input.target_name.strip():
+        raise HTTPException(status_code=400, detail="target_name is required")
+    try:
+        config = await create_schedule(input.target_url, input.target_name, input.interval_minutes)
+        return {
+            "id": config.id,
+            "status": "scheduled",
+            "next_run_at": datetime.fromtimestamp(config.next_run_at).isoformat(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/schedules")
+async def list_schedules():
+    try:
+        return get_active_schedules()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/_next/static/{rest:path}")

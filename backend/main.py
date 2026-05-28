@@ -952,6 +952,9 @@ async def check_rate_limit(request: Request) -> None:
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
 
+        if not timestamps:
+            del _rate_store[ip]
+
         if len(timestamps) >= _RATE_MAX:
             retry_after = int(timestamps[0] + _RATE_WINDOW - now) + 1
             raise HTTPException(
@@ -1132,8 +1135,8 @@ async def get_result(session_id: str):
 @app.get("/api/compare")
 async def compare_probes(session_id1: str, session_id2: str):
     """Compare two completed probe sessions side by side."""
-    s1 = SESSION_STORE.get(session_id1)
-    s2 = SESSION_STORE.get(session_id2)
+    s1 = DEMO_RESULT if session_id1 == "demo_session_static" else SESSION_STORE.get(session_id1)
+    s2 = DEMO_RESULT if session_id2 == "demo_session_static" else SESSION_STORE.get(session_id2)
 
     if not s1:
         raise HTTPException(status_code=404, detail=f"Session {session_id1} not found")
@@ -1338,7 +1341,7 @@ async def analyze_session(input: TargetProbeInput):
 
     gemini_report = None
     if report_data.get("status") in ("completed",):
-        gemini_report = analyze_report(report_data)
+        gemini_report = await asyncio.to_thread(analyze_report, report_data)
 
     verdict = compute_savings_verdict(report_data) if report_data else {}
 
@@ -1356,7 +1359,7 @@ async def analyze_session(input: TargetProbeInput):
 async def analyze_demo():
     """Run Gemini analysis on embedded demo data (no live probe needed)."""
     report_data = DEMO_RESULT
-    gemini_report = analyze_report(report_data)
+    gemini_report = await asyncio.to_thread(analyze_report, report_data)
     verdict = compute_savings_verdict(report_data)
     return {
         "session_id": "demo_analyzed",

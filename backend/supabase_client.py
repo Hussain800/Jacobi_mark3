@@ -10,7 +10,7 @@ import asyncio
 import os
 from typing import Optional
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://csfijqbfywdquuuwwplu.supabase.co")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 _client = None

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Send, Loader2, Globe, Smartphone, Cookie, ExternalLink,
   AlertTriangle, Network, ChevronDown, ChevronRight,
-  Shield, Download, Signal, Zap, X, Radio, Info,
+  Shield, Download, Signal, Zap, X, Radio, Info, Share2, Star, Image,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "../lib/supabase/client";
 import AuthButton from "./auth-button";
 import JacobiLogo from "./jacobi-logo";
 import DotMatrix from "./dot-matrix";
@@ -36,7 +38,7 @@ interface Agent {
   variables: Record<string, string>; network_tier?: number; proxy_type?: string;
 }
 
-interface TopologyReport {
+export interface TopologyReport {
   session_id: string; target_url: string; target_name: string;
   timestamp: string; status: string;
   total_agents: number; successful_agents: number;
@@ -56,6 +58,7 @@ interface TopologyReport {
 interface Message {
   id: string; role: "user" | "assistant"; content: string;
   report?: TopologyReport; status?: "scanning" | "complete" | "error"; error?: string;
+  startedAt?: number;
 }
 
 /* ─── Demo Data ──────────────────────────────────────────────────────── */
@@ -128,6 +131,22 @@ function clsColor(c: string) {
   }
 }
 
+function clsBg(c: string) {
+  switch(c) {
+    case "uniform": return "bg-neon/10"; case "selective": return "bg-blue-400/10";
+    case "progressive": return "bg-orange-400/10"; case "aggressive": return "bg-rose-400/10";
+    default: return "bg-white/[0.03]";
+  }
+}
+
+function clsDot(c: string) {
+  switch(c) {
+    case "uniform": return "bg-neon"; case "selective": return "bg-blue-400";
+    case "progressive": return "bg-orange-400"; case "aggressive": return "bg-rose-400";
+    default: return "bg-white/20";
+  }
+}
+
 function fmtDelta(d: number) { return d >= 0 ? `+$${d.toFixed(0)}` : `-$${Math.abs(d).toFixed(0)}`; }
 
 function buildHistogram(prices: Record<string, number | null>) {
@@ -158,6 +177,84 @@ function dl(blob: Blob, name: string) {
 
 function exportJSON(r: TopologyReport) { dl(new Blob([JSON.stringify(r,null,2)],{type:"application/json"}), `probe-${r.session_id||"report"}.json`); }
 function exportCSV(r: TopologyReport) { dl(new Blob([["agent_id,label,status,price,network_tier,proxy_type,response_time_ms",...r.agents.map(a=>[a.agent_id,`"${a.label}"`,a.status,a.price??"",a.network_tier??"",a.proxy_type??"",a.response_time_ms??""].join(","))].join("\n")],{type:"text/csv"}), `probe-agents-${r.session_id||"report"}.csv`); }
+
+const TOPOLOGY_COLORS: Record<string, string> = {
+  uniform: "#00ff41",
+  selective: "#fbbf24",
+  progressive: "#fb923c",
+  aggressive: "#fb7185",
+};
+
+const TOPOLOGY_BG: Record<string, string> = {
+  uniform: "#00ff411a",
+  selective: "#fbbf241a",
+  progressive: "#fb923c1a",
+  aggressive: "#fb71851a",
+};
+
+const VAR_LABELS: Record<string, string> = {
+  location: "Location",
+  device: "Device",
+  cookie_profile: "Cookies",
+  referrer: "Referrer",
+};
+
+function generateBadgeSVG(r: TopologyReport): string {
+  const cls = r.topology_class || "uniform";
+  const color = TOPOLOGY_COLORS[cls] || "#c8c8c8";
+  const bgColor = TOPOLOGY_BG[cls] || "#ffffff1a";
+  const baseline = r.baseline_price ?? 0;
+  const spread = r.max_price_spread ?? 0;
+  const sigCount = r.gradients.filter(g => g.significant).length;
+  const di = r.discrimination_score ?? r.discrimination_index;
+
+  const bars = r.gradients.map(g => ({
+    label: VAR_LABELS[g.variable_name] || g.variable_name,
+    significant: g.significant,
+    width: g.significant ? Math.max(Math.min(Math.abs(g.delta_pct) * 3, 120), 16) : 0,
+    delta: g.delta,
+  }));
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="390" viewBox="0 0 280 390">
+  <defs>
+    <linearGradient id="jbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#050505"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+  </defs>
+  <rect width="280" height="390" rx="12" fill="url(#jbg)" stroke="${color}" stroke-width="1.5" stroke-opacity="0.25"/>
+  <text x="20" y="36" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#c8c8c8" letter-spacing="3">JACOBI</text>
+  <text x="20" y="50" font-family="'JetBrains Mono',monospace" font-size="6.5" fill="#686868" letter-spacing="1.5">PRICING DISCRIMINATION BADGE</text>
+  <line x1="20" y1="62" x2="260" y2="62" stroke="rgba(255,255,255,0.06)"/>
+  <rect x="20" y="74" width="${cls === "uniform" ? 78 : 100}" height="24" rx="12" fill="${bgColor}" stroke="${color}" stroke-opacity="0.2" stroke-width="1"/>
+  <circle cx="35" cy="86" r="4.5" fill="${color}"/>
+  <text x="46" y="90" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="600" fill="${color}" letter-spacing="1">${cls.toUpperCase()}</text>
+  <text x="130" y="80" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DISCRIMINATION</text>
+  <text x="130" y="100" font-family="'JetBrains Mono',monospace" font-size="20" font-weight="300" fill="#ffffff">${di.toFixed(0)}</text>
+  <text x="178" y="100" font-family="'JetBrains Mono',monospace" font-size="9" fill="#686868">/100</text>
+  <line x1="20" y1="114" x2="260" y2="114" stroke="rgba(255,255,255,0.04)"/>
+  <text x="20" y="138" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">PRICE SPREAD</text>
+  <text x="20" y="162" font-family="'JetBrains Mono',monospace" font-size="22" font-weight="300" fill="${color}">$${spread.toFixed(0)}</text>
+  <text x="95" y="162" font-family="'JetBrains Mono',monospace" font-size="10" fill="#686868">from $${baseline.toFixed(0)} base</text>
+  <line x1="20" y1="180" x2="260" y2="180" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="202" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DETECTION AXES</text>
+  ${bars.map(b => {
+    const y = 218 + bars.indexOf(b) * 32;
+    const barColor = b.significant ? color : "rgba(255,255,255,0.08)";
+    const textColor = b.significant ? "#ffffffb3" : "rgba(255,255,255,0.2)";
+    const deltaLabel = b.significant ? (b.delta >= 0 ? `+$${b.delta.toFixed(0)}` : `-$${Math.abs(b.delta).toFixed(0)}`) : "n/s";
+    const deltaColor = b.significant ? color : "rgba(255,255,255,0.15)";
+    return `
+  <text x="25" y="${y}" font-family="'JetBrains Mono',monospace" font-size="9" fill="${textColor}">${b.label}</text>
+  <rect x="110" y="${y - 6}" width="${b.width}" height="10" rx="4" fill="${barColor}" opacity="${b.significant ? "0.5" : "1"}"/>
+  <text x="${110 + Math.max(b.width, 0) + 8}" y="${y}" font-family="'JetBrains Mono',monospace" font-size="8" fill="${deltaColor}">${deltaLabel}</text>`;
+  }).join("")}
+  <line x1="20" y1="348" x2="260" y2="348" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868">${sigCount} significant variable${sigCount !== 1 ? "s" : ""}</text>
+  <text x="150" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868" text-anchor="end">${r.total_agents} agents</text>
+  <text x="20" y="384" font-family="'JetBrains Mono',monospace" font-size="6" fill="rgba(255,255,255,0.08)">jacobi.tech &middot; topology probe</text>
+</svg>`;
+}
 
 /* ─── Network Fingerprint ────────────────────────────────────────────── */
 
@@ -260,42 +357,89 @@ function AgentDetailModal({ agent, onClose }: { agent: Agent; onClose: () => voi
           )}
         </div>
       </div>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes cellReveal{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}`}</style>
     </div>
   );
 }
 
 /* ─── Agent Grid ─────────────────────────────────────────────────────── */
 
-function AgentGrid({ report }: { report: TopologyReport }) {
+const AGENT_LABELS = [
+  "BASE","LOC\u2191","LOC\u2193","LOC\u2191","LOC\u2191","LOC\u2193",
+  "DEV\u2191","DEV\u2193","DEV\u2191","DEV\u2193","DEV\u2191","COOK\u2191",
+  "COOK\u2193","COOK\u2191","REF\u2191","REF\u2193","REF\u2191","REF\u2193",
+  "LOC\u2191","LOC\u2193","DEV\u2191","DEV\u2193","CTRL","CTRL",
+];
+
+function AgentCell({ idx, report, scanStarted, onSelect }: { idx: number; report: TopologyReport; scanStarted: number; onSelect: (a: Agent) => void }) {
+  const id = `AGENT_${String(idx).padStart(2,"0")}`;
+  const agent = report.agents.find(a => a.agent_id === id);
+  const tier = agent?.network_tier ?? (idx < 8 ? 0 : idx < 16 ? 1 : 2);
+  const wave = idx < 8 ? 0 : idx < 16 ? 1 : 2;
+
+  // three-tier status: real agent data > animated estimate > pending
+  let status = "pending";
+  if (agent) {
+    status = agent.status;
+  } else if (scanStarted > 0) {
+    const ms = Date.now() - scanStarted;
+    const waveDelay = wave * 2000 + (idx % 8) * 400;
+    status = ms > waveDelay ? "in_flight" : "pending";
+  }
+
+  const tierColors: Record<number, string> = { 0: "bg-neon/50", 1: "bg-neon/35", 2: "bg-neon/20" };
+  const statusStyles: Record<string, string> = {
+    pending: "bg-white/[0.03] border-white/[0.03]",
+    in_flight: `border border-neon/20 ${tierColors[tier]} animate-pulse`,
+    success: `border border-neon/10 ${tierColors[tier]}`,
+    failed: "bg-rose-400/20 border border-rose-400/20",
+    detected: "bg-rose-400/40 border border-rose-400/40",
+  };
+  const label = AGENT_LABELS[idx];
+  const hasPrice = agent?.price != null;
+  const clickable = agent && (agent.status === "success" || agent.status === "detected" || agent.status === "failed");
+
+  return (
+    <button
+      key={id}
+      onClick={() => clickable && onSelect(agent!)}
+      className={`relative rounded-xl aspect-square flex flex-col items-center justify-center overflow-hidden transition-all duration-500 ${statusStyles[status]} ${clickable ? "hover:ring-1 hover:ring-neon/40 hover:scale-110 cursor-pointer" : "cursor-default"}`}
+      style={{ animation: scanStarted > 0 ? `cellReveal 0.4s ease-out ${wave * 0.15 + (idx % 8) * 0.06}s both` : "none" }}
+      title={`${id}: ${status}${hasPrice ? ` $${agent.price}` : ""}`}
+    >
+      <span className={`font-mono font-light leading-none ${hasPrice ? "text-[7px] text-white/70" : status === "in_flight" ? "text-[6px] text-neon/60" : "text-[6px] text-white/12"}`}>
+        {hasPrice ? `$${agent!.price}` : label}
+      </span>
+      {hasPrice && <span className="text-[5px] font-mono text-white/20 mt-[1px]">{id.replace("AGENT_","")}</span>}
+    </button>
+  );
+}
+
+function AgentGrid({ report, scanStarted }: { report: TopologyReport; scanStarted?: number }) {
   const [selected, setSelected] = useState<Agent | null>(null);
-  const cells = Array.from({length:24}, (_,i) => {
-    const id = `AGENT_${String(i).padStart(2,"0")}`;
-    const agent = report.agents.find(a => a.agent_id === id);
-    const status = agent ? agent.status : "pending";
-    const tier = agent?.network_tier ?? (i<8?0:i<16?1:2);
-    const colors: Record<string,string> = {pending:"bg-white/[0.03]",in_flight:"bg-neon/30",success:tier===0?"bg-neon/50":tier===1?"bg-neon/35":"bg-neon/20",failed:"bg-rose-400/30",detected:"bg-rose-400/50"};
-    return {id,status,color:colors[status]||"bg-white/[0.03]",agent};
-  });
+  const started = scanStarted || 0;
   return (
     <>
       <div className={cx("p-4")}>
         <div className="flex items-center justify-between mb-3">
-          <span className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase tracking-[0.1em] font-light"><Radio className="w-3 h-3 text-neon/60"/>Agent Swarm</span>
-          <span className="text-[10px] font-mono text-neon/70">{report.successful_agents}/{report.total_agents} live</span>
+          <span className="flex items-center gap-2 text-[10px] font-mono text-white/30 uppercase tracking-[0.1em] font-light">
+            <Radio className="w-3 h-3 text-neon/60"/>Agent Swarm
+          </span>
+          <span className="flex items-center gap-2 text-[10px] font-mono">
+            <span className="text-neon/70">{report.successful_agents}/{report.total_agents}</span>
+            {started > 0 && <span className="text-white/20">{(Date.now() - started) / 1000 < 120 ? `${Math.floor((Date.now() - started) / 10) / 100}s` : ""}</span>}
+          </span>
         </div>
         <div className="grid grid-cols-6 gap-1.5">
-          {cells.map(cell => (
-            <button key={cell.id} onClick={() => cell.agent && setSelected(cell.agent)}
-              className={`aspect-square rounded-xl ${cell.color} transition-all duration-300 hover:ring-1 hover:ring-neon/30 hover:scale-110`}
-              title={`${cell.id}: ${cell.status}${cell.agent?.price != null ? ` $${cell.agent.price}` : ""}`} />
+          {Array.from({length: 24}, (_, i) => (
+            <AgentCell key={i} idx={i} report={report} scanStarted={started} onSelect={setSelected} />
           ))}
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-[8px] font-mono">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neon/50"/>{report.successful_agents} success</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400/30"/>{report.failed_agents} failed</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400/50"/>{report.detected_agents} blocked</span>
-          <span className="text-white/10 ml-auto">{report.elapsed_seconds.toFixed(1)}s</span>
+          <span className="text-white/10 ml-auto">{report.total_agents - report.successful_agents - report.failed_agents - report.detected_agents} pending</span>
           <span className="text-white/[0.04] ml-auto flex items-center gap-1"><Info className="w-2 h-2"/>click</span>
         </div>
         <div className="flex items-center gap-3 mt-2 text-[7px] font-mono text-white/10">
@@ -311,31 +455,106 @@ function AgentGrid({ report }: { report: TopologyReport }) {
 
 /* ─── Leaderboard ────────────────────────────────────────────────────── */
 
+interface LeaderboardEntry {
+  target_url: string;
+  target_name: string;
+  topology_class: string;
+  discrimination_index: number;
+  max_price_spread: number;
+  baseline_price: number;
+  successful_agents: number;
+  total_agents: number;
+  timestamp: string;
+}
+
 function Leaderboard() {
-  const [entries, setEntries] = useState<{name:string;savings:number;url:string}[]>([]);
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  useEffect(() => { fetch(`${apiBase}/api/leaderboard`).then(r=>r.json()).then(d=>setEntries((d||[]).slice(0,10))).catch(()=>setEntries([])).finally(()=>setLoading(false)); }, [apiBase]);
+  const router = useRouter();
+  useEffect(() => {
+    fetch(`${apiBase}/api/leaderboard?limit=5&min_agents=5`)
+      .then(r => r.json())
+      .then(d => setEntries(d.entries || []))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [apiBase]);
   if (loading) return <div className="text-[10px] font-mono text-white/15 text-center py-4 font-light">Loading...</div>;
-  if (!entries.length) return null;
+  if (error || !entries.length) return null;
   return (
     <div className={cx("overflow-hidden")}>
-      <div className="px-5 py-3 border-b border-white/[0.06] text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">Highest Savings</div>
-      {entries.map((e,i) => (
-        <div key={i} className="px-5 py-2 border-b border-white/[0.03] flex items-center justify-between text-[11px] font-mono">
-          <span className="text-white/50 font-light">{i+1}. {e.name}</span>
-          <span className="text-neon font-light">-${e.savings.toFixed(0)}</span>
-        </div>
+      <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
+        <span className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">Leaderboard</span>
+        <button onClick={() => router.push("/leaderboard")} className="text-[8px] font-mono text-white/20 hover:text-white/50 transition-colors">View all &rarr;</button>
+      </div>
+      {entries.map((e, i) => (
+        <button key={i} onClick={() => router.push("/leaderboard")} className="w-full px-5 py-2 border-b border-white/[0.03] flex items-center justify-between text-[11px] font-mono hover:bg-white/[0.03] transition-colors text-left">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-white/20 w-4 text-right shrink-0">{i+1}.</span>
+            <span className="text-white/50 font-light truncate">{e.target_name || e.target_url}</span>
+            {e.topology_class && (
+              <span className={`text-[7px] font-mono px-1.5 py-0.5 rounded-full border shrink-0 ${clsBg(e.topology_class)} ${clsColor(e.topology_class)}`}>
+                {e.topology_class}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-white/30 text-[9px]">DI {e.discrimination_index.toFixed(1)}</span>
+            <span className="text-neon font-light text-[10px]">${e.max_price_spread.toFixed(0)}</span>
+          </div>
+        </button>
       ))}
+      <div className="px-5 py-2 text-[8px] font-mono text-white/10 text-center">
+        <button onClick={() => router.push("/leaderboard")} className="hover:text-white/30 transition-colors">Full leaderboard &rarr;</button>
+      </div>
     </div>
   );
 }
 
 /* ─── Result Card ──────────────────────────────────────────────────────── */
 
-function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () => void }) {
+export function ResultCard({ report, onClose, isLatest = true }: { report: TopologyReport; onClose?: () => void; isLatest?: boolean }) {
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const [badgeToast, setBadgeToast] = useState(false);
+  const [bookmarked, setBookmarked] = useState(() => {
+    try {
+      const bm = JSON.parse(localStorage.getItem("jacobi-bookmarks") || "[]");
+      return bm.includes(report.session_id);
+    } catch { return false; }
+  });
+
+  const toggleBookmark = () => {
+    const sid = report.session_id;
+    if (!sid) return;
+    try {
+      const bm = JSON.parse(localStorage.getItem("jacobi-bookmarks") || "[]");
+      const idx = bm.indexOf(sid);
+      if (idx >= 0) { bm.splice(idx, 1); setBookmarked(false); }
+      else { bm.push(sid); setBookmarked(true); }
+      localStorage.setItem("jacobi-bookmarks", JSON.stringify(bm));
+    } catch {}
+  };
+
+  const copyShareLink = () => {
+    const sid = report.session_id;
+    if (!sid) return;
+    const url = `${window.location.origin}/share/${sid}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 2000);
+    }).catch(() => {});
+  };
+  const copyBadge = useCallback(() => {
+    const svg = generateBadgeSVG(report);
+    navigator.clipboard.writeText(svg).then(() => {
+      setBadgeToast(true);
+      setTimeout(() => setBadgeToast(false), 2000);
+    }).catch(() => {});
+  }, [report]);
+  const [showComparison, setShowComparison] = useState(false);
   const histData = buildHistogram(report.all_prices);
   const cls = clsColor(report.topology_class);
   const analysis = (report as any)._analysis;
@@ -353,13 +572,25 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <Shield className={`w-4 h-4 ${cls}`}/>
-          <span className={`text-sm font-mono font-medium ${cls}`}>{report.topology_class.toUpperCase()}</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-wider ${cls} ${clsBg(report.topology_class)} border-current/10`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${clsDot(report.topology_class)} shrink-0`} />
+            {report.topology_class}
+          </span>
           <span className="text-xs text-white/35 font-mono font-light">${base.toFixed(0)} base</span>
           {report.discrimination_score != null && <span className="text-[9px] font-mono text-white/15 font-light">DI {report.discrimination_score.toFixed(0)}%</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={()=>exportJSON(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="JSON"><Download className="w-3 h-3"/></button>
           <button onClick={()=>exportCSV(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70 text-[8px] font-mono" title="CSV">CSV</button>
+          <div className="relative">
+            <button onClick={copyBadge} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Badge"><Image className="w-3 h-3"/></button>
+            {badgeToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Badge copied!</span>}
+          </div>
+          <button onClick={toggleBookmark} className={`p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors ${bookmarked ? "text-amber-400" : "text-white/15 hover:text-amber-400/60"}`} title={bookmarked ? "Remove bookmark" : "Bookmark"}><Star className={`w-3 h-3 ${bookmarked ? "fill-amber-400" : ""}`}/></button>
+          <div className="relative">
+            <button onClick={copyShareLink} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Copy share link"><Share2 className="w-3 h-3"/></button>
+            {copyToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Link copied!</span>}
+          </div>
           {onClose && <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-white/50 ml-1 text-[10px]">X</button>}
         </div>
       </div>
@@ -372,10 +603,25 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
       )}
 
       {gemini?.plain_english_summary && (
-        <div className="px-5 py-4 border-b border-white/[0.06]">
-          <p className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] mb-1.5 font-light">AI Analysis</p>
-          <p className="text-xs text-white/60 font-light leading-relaxed">{gemini.plain_english_summary}</p>
-          {gemini.action_items?.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{gemini.action_items.map((item:string,i:number) => <span key={i} className="text-[8px] font-mono bg-white/[0.04] text-white/30 px-2.5 py-1 rounded-full border border-white/[0.06] font-light">{item}</span>)}</div>}
+        <div className="mx-5 my-4 border-l-2 border-neon/20 pl-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-3 h-3 text-neon/50" />
+            <p className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">AI Verdict</p>
+          </div>
+          <p className="text-[11px] text-white/55 font-light leading-relaxed">{gemini.plain_english_summary}</p>
+          {gemini.action_items?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {gemini.action_items.map((item: string, i: number) => (
+                <button
+                  key={i}
+                  className="text-[8px] font-mono bg-neon/5 text-neon/50 px-2.5 py-1 rounded-full border border-neon/10 hover:bg-neon/10 hover:text-neon/70 transition-colors font-light cursor-default"
+                  title="Action item"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -411,14 +657,81 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
           })}
         </div>
 
+        {/* Comparison Table */}
+        <div>
+          <button onClick={() => isLatest && setShowComparison(!showComparison)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
+            <span>Variable Comparison</span>
+            {showComparison && isLatest ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {isLatest && showComparison && report.gradients.length > 0 && (
+            <div className="overflow-x-auto -mx-1 mt-2">
+              <table className="w-full text-[9px] font-mono border-collapse">
+                <thead>
+                  <tr className="text-white/25 font-light">
+                    <th className="text-left py-2 px-2 whitespace-nowrap">Variable</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">High State</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Low State</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">Delta</th>
+                    <th className="text-right py-2 px-2 whitespace-nowrap">&Delta;%</th>
+                    <th className="text-center py-2 px-2 whitespace-nowrap">Sig</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.gradients.map(g => (
+                    <tr key={g.variable_name} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white/30">{VAR_ICONS[g.variable_name] || null}</span>
+                          <span className="text-white/50 font-light capitalize">{g.variable_name.replace(/_/g, " ")}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_high}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-neon/80">${g.mean_price_high.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_high})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <div className="text-white/60 font-light">{g.state_low}</div>
+                        <div className="flex items-center justify-center gap-2 mt-0.5">
+                          <span className="text-white/50">${g.mean_price_low.toFixed(0)}</span>
+                          <span className="text-white/15">(n={g.n_low})</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? (g.delta > 0 ? "text-rose-400/70" : "text-neon/70") : "text-white/15"}>
+                          {fmtDelta(g.delta)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap font-light">
+                        <span className={g.significant ? "text-white/40" : "text-white/12"}>
+                          {g.delta_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        {g.significant ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-neon/10 text-neon/80 text-[8px] font-bold" title="Statistically significant (p &lt; 0.05)">&#10003;</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/[0.03] text-white/15 text-[8px]" title="Not statistically significant">&mdash;</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         <AgentGrid report={report} />
 
         <div>
-          <button onClick={()=>setShowHistogram(!showHistogram)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+          <button onClick={()=>isLatest && setShowHistogram(!showHistogram)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
             <span>Price Distribution</span>
-            {showHistogram ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
+            {showHistogram && isLatest ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
           </button>
-          {showHistogram && histData.length > 0 && (
+          {isLatest && showHistogram && histData.length > 0 && (
             <div className="h-32 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={histData} margin={{top:4,right:8,left:0,bottom:16}}>
@@ -434,11 +747,11 @@ function ResultCard({ report, onClose }: { report: TopologyReport; onClose?: () 
         </div>
 
         <div>
-          <button onClick={()=>setShowAgents(!showAgents)} className="w-full flex items-center justify-between text-[9px] font-mono text-white/20 hover:text-white/40 transition-colors py-1.5 font-light">
+          <button onClick={()=>isLatest && setShowAgents(!showAgents)} className={`w-full flex items-center justify-between text-[9px] font-mono transition-colors py-1.5 font-light ${isLatest ? "text-white/20 hover:text-white/40" : "text-white/10 cursor-default"}`}>
             <span>All {report.agents.length} Agents</span>
-            {showAgents ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
+            {showAgents && isLatest ? <ChevronDown className="w-3 h-3"/> : <ChevronRight className="w-3 h-3"/>}
           </button>
-          {showAgents && <div className="space-y-1 mt-2">{agentRows.map((row,ri) => <div key={ri} className="grid grid-cols-4 sm:grid-cols-8 gap-1">{row.map(a => <div key={a.agent_id} className="bg-white/[0.02] rounded-xl p-2 border border-white/[0.04]"><div className="flex items-center justify-between mb-0.5"><span className="text-[6px] font-mono text-white/15">{a.agent_id.replace("AGENT_","A")}</span>{a.price !== null ? <span className="text-[7px] font-mono text-white/50">${a.price}</span> : <span className="text-[6px] text-rose-400/50 font-mono">BLKD</span>}</div>{a.network_tier != null && <div className="text-[5px] font-mono text-white/8">{["DC","RES","MOB"][a.network_tier]}</div>}</div>)}</div>)}</div>}
+          {isLatest && showAgents && <div className="space-y-1 mt-2">{agentRows.map((row,ri) => <div key={ri} className="grid grid-cols-4 sm:grid-cols-8 gap-1">{row.map(a => <div key={a.agent_id} className="bg-white/[0.02] rounded-xl p-2 border border-white/[0.04]"><div className="flex items-center justify-between mb-0.5"><span className="text-[6px] font-mono text-white/15">{a.agent_id.replace("AGENT_","A")}</span>{a.price !== null ? <span className="text-[7px] font-mono text-white/50">${a.price}</span> : <span className="text-[6px] text-rose-400/50 font-mono">BLKD</span>}</div>{a.network_tier != null && <div className="text-[5px] font-mono text-white/8">{["DC","RES","MOB"][a.network_tier]}</div>}</div>)}</div>)}</div>}
         </div>
       </div>
 
@@ -461,21 +774,59 @@ function FloatingOrbs() {
 
 /* ─── Main Chat Component ────────────────────────────────────────────── */
 
-export default function Terminal() {
-  const {data: session} = useSession();
+export default function Terminal({ initialUrl, initialSession }: { initialUrl?: string; initialSession?: string } = {}) {
+  const [user, setUser] = useState<User | null>(null);
+  const [supabase] = useState(() => createClient());
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (active) setUser(data.user ?? null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setUser(sess?.user ?? null);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialUrl || "");
   const [running, setRunning] = useState(false);
   const [useCache, setUseCache] = useState(false);
+  const [urlError, setUrlError] = useState("");
+  const [pastedUrl, setPastedUrl] = useState("");
+  const [expandedResult, setExpandedResult] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastUrlRef = useRef("");
+  const params = useSearchParams();
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const queryInitRef = useRef(false);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (initialUrl && !initialSession) {
+      const timer = setTimeout(() => handleSend(), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [initialUrl]);
+  // Restore past probe from session ID
+  useEffect(() => {
+    if (initialSession) {
+      fetch(`${apiBase}/api/result/${initialSession}`).then(r=>r.json()).then(data => {
+        if (data && data.status) {
+          addMsg({id:Date.now().toString(),role:"assistant",content:"Complete.",status:"complete",report:data});
+        }
+      }).catch(() => {});
+    }
+  }, [initialSession]);
 
   const saveConv = useCallback((report: any) => {
     try {
       const existing = JSON.parse(localStorage.getItem("probe-conversations")||"[]");
-      existing.unshift({id:report.session_id,title:(report.target_name||report.target_url||"Probe").slice(0,50),timestamp:Date.now(),targetUrl:report.target_url,targetName:report.target_name,baselinePrice:report.baseline_price,savings:report.max_price_spread,topologyClass:report.topology_class});
+      existing.unshift({id:report.session_id,session_id:report.session_id,title:(report.target_name||report.target_url||"Probe").slice(0,50),timestamp:Date.now(),targetUrl:report.target_url,targetName:report.target_name,baselinePrice:report.baseline_price,savings:report.max_price_spread,topologyClass:report.topology_class});
       localStorage.setItem("probe-conversations", JSON.stringify(existing.slice(0,50)));
     } catch {}
   }, []);
@@ -487,8 +838,9 @@ export default function Terminal() {
 
   const runProbe = useCallback(async (targetUrl: string, targetName: string) => {
     setRunning(true);
+    lastUrlRef.current = targetUrl;
     const mid = Date.now().toString();
-    addMsg({id:mid,role:"assistant",content:"Deploying 24 probe agents across 3 staggered waves...",status:"scanning"});
+    addMsg({id:mid,role:"assistant",content:"Deploying 24 probe agents across 3 staggered waves...",status:"scanning",startedAt: Date.now()});
     if (useCache) {
       await new Promise(r=>setTimeout(r,500));
       updateLast({content:"Wave 1/3 - 8 agents deployed",report:{total_agents:24,successful_agents:8,failed_agents:0,detected_agents:0,agents:DEMO.agents.slice(0,8)}as any});
@@ -502,6 +854,7 @@ export default function Terminal() {
         if (ar.ok) { const a=await ar.json(); updateLast({content:"Complete.",report:{...DEMO,_demo:true,_analysis:a}as any,status:"complete"}); }
         else { updateLast({content:"Complete.",report:{...DEMO,_demo:true}as any,status:"complete"}); }
       } catch { updateLast({content:"Complete.",report:{...DEMO,_demo:true}as any,status:"complete"}); }
+      setExpandedResult(mid);
       setRunning(false); return;
     }
     try {
@@ -511,6 +864,11 @@ export default function Terminal() {
       pollRef.current = setInterval(async () => {
         try {
           const r2 = await fetch(`${apiBase}/api/result/${b1.session_id}`);
+          if (r2.status === 404) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            updateLast({status:"error",error:"Probe session expired",content:"Probe session expired"}); setRunning(false);
+            return;
+          }
           if (!r2.ok) throw new Error(`Poll error: ${r2.status}`);
           const data: TopologyReport = await r2.json();
           if (data.status==="completed"||data.status==="failed") {
@@ -524,7 +882,12 @@ export default function Terminal() {
               } catch { updateLast({status:"complete",report:data,content:"Complete."}); }
             } else { updateLast({status:"error",report:data,error:data.error??undefined,content:data.error||"Failed."}); }
             setRunning(false);
-          } else { updateLast({content:`Scanning... (${data.successful_agents}/${data.total_agents} agents)`,report:data}); }
+          } else {
+            const succ = data.successful_agents;
+            const wave = succ < 8 ? "Wave 1/3 — Datacenter" : succ < 16 ? "Wave 2/3 — Residential" : "Wave 3/3 — Mobile";
+            const elapsed = data.elapsed_seconds ? `${data.elapsed_seconds.toFixed(0)}s` : "";
+            updateLast({content:`${wave} — ${succ}/${data.total_agents} agents (${elapsed})`,report:data});
+          }
         } catch(e:any) {
           if (pollRef.current) clearInterval(pollRef.current);
           updateLast({status:"error",error:e.message,content:`Error: ${e.message}`}); setRunning(false);
@@ -538,9 +901,11 @@ export default function Terminal() {
     const text = input.trim();
     if (!text||running) return;
     const url = extractUrl(text);
+    if (!url) { setUrlError("Enter a valid URL to probe"); return; }
+    setUrlError(""); setPastedUrl("");
     const label = url ? SAMPLES.find(t=>t.url===url)?.label||url : text;
     addMsg({id:Date.now().toString(),role:"user",content:text}); setInput("");
-    runProbe(url||"demo", label);
+    runProbe(url, label);
   }, [input, running, addMsg, runProbe]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); handleSend(); } };
@@ -557,7 +922,7 @@ export default function Terminal() {
           <span className="text-[8px] text-white/12 font-mono hidden sm:inline font-light ml-2">/ Probe Interface</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-[8px] text-white/20 font-mono hidden sm:inline font-light">{session?.user?.email?.split("@")[0]||"guest"}</span>
+          <span className="text-[8px] text-white/20 font-mono hidden sm:inline font-light">{user?.email?.split("@")[0] || "guest"}</span>
           <AuthButton />
           <label className="flex items-center gap-1.5 cursor-pointer group">
             <div className={`w-6 h-3 rounded-full border transition-colors relative ${useCache?"bg-neon/20 border-neon/20":"bg-white/[0.04] border-white/[0.06]"}`}>
@@ -565,6 +930,12 @@ export default function Terminal() {
             </div>
             <span className="text-[7px] font-mono text-white/15 group-hover:text-white/30 font-light">demo</span>
           </label>
+          {running && (
+            <button onClick={() => { if (pollRef.current) clearInterval(pollRef.current); setRunning(false); addMsg({id:Date.now().toString(),role:"assistant",content:"Probe cancelled",status:"error",error:"Cancelled"}); }}
+              className="text-[9px] font-mono text-white/25 hover:text-rose-400/70 transition-colors">
+              cancel
+            </button>
+          )}
           <span className={`w-1 h-1 rounded-full ${running?"bg-neon animate-pulse":hasMsgs?"bg-neon/60":"bg-white/10"}`}/>
         </div>
       </header>
@@ -608,8 +979,8 @@ export default function Terminal() {
             </div>
           )}
 
-          {messages.map(msg => (
-            <div key={msg.id} className="space-y-2">
+          {messages.map((msg, mi) => (
+            <div key={msg.id} className="space-y-2" style={{animation: `fadeUp 0.4s ease-out ${mi * 0.1}s both`}}>
               {msg.role==="user" && (
                 <div className="flex justify-end">
                   <div className="max-w-[85%] bg-white/[0.04] backdrop-blur-xl border border-white/[0.06] rounded-2xl rounded-br-md px-4 py-3">
@@ -625,12 +996,17 @@ export default function Terminal() {
                         <div className="w-7 h-7 rounded-xl bg-neon/5 border border-neon/15 flex items-center justify-center shrink-0"><Loader2 className="w-3.5 h-3.5 text-neon/70 animate-spin"/></div>
                         <p className="text-xs text-white/40 font-mono font-light pt-1">{msg.content}</p>
                       </div>
-                      {msg.report ? <AgentGrid report={msg.report}/> : <AgentGrid report={{agents:[],total_agents:24,successful_agents:0,failed_agents:0,detected_agents:0,elapsed_seconds:0}as any}/>}
+                      {msg.report ? <AgentGrid report={msg.report} scanStarted={msg.startedAt}/> : <AgentGrid report={{agents:[],total_agents:24,successful_agents:0,failed_agents:0,detected_agents:0,elapsed_seconds:0}as any} scanStarted={msg.startedAt}/>}
                     </div>
                   )}
                   {msg.status==="error" && (
                     <div className={cx("p-4","border-rose-400/10")}>
-                      <div className="flex items-start gap-3"><AlertTriangle className="w-4 h-4 mt-0.5 text-rose-400/60 shrink-0"/><p className="text-xs text-rose-400/70 font-mono font-light">{msg.error||msg.content}</p></div>
+                      <div className="flex items-start gap-3"><AlertTriangle className="w-4 h-4 mt-0.5 text-rose-400/60 shrink-0"/>
+                        <div className="flex-1">
+                          <p className="text-xs text-rose-400/70 font-mono font-light">{msg.error||msg.content}</p>
+                          {lastUrlRef.current && <button onClick={()=>runProbe(lastUrlRef.current, lastUrlRef.current)} className="mt-2 text-[9px] font-mono text-neon/50 hover:text-neon/80 border border-neon/20 hover:border-neon/40 rounded px-2.5 py-1 transition-all">Retry</button>}
+                        </div>
+                      </div>
                     </div>
                   )}
                   {msg.status==="complete" && msg.report && (
@@ -658,13 +1034,15 @@ export default function Terminal() {
       <div className="border-t border-white/[0.06] bg-black/80 backdrop-blur-xl shrink-0 relative z-10">
         <div className="max-w-3xl mx-auto w-full px-4 py-3">
           <div className="flex items-end gap-2 bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl focus-within:border-neon/20 transition-colors px-4 py-2.5">
-            <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Paste a URL to probe..." disabled={running}
+            <textarea ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setUrlError("");}} onKeyDown={handleKeyDown} onPaste={e=>{const t=e.clipboardData.getData('text/plain');if(/https?:\/\/[^\s]+/.test(t)){setPastedUrl(t);setTimeout(()=>setPastedUrl(""),5000);}}} placeholder="Paste a URL to probe..." disabled={running} autoFocus
               rows={1} className="flex-1 bg-transparent text-xs text-white/60 placeholder-white/12 outline-none resize-none font-mono font-light max-h-32 py-0.5 disabled:opacity-30" style={{minHeight:"22px"}}/>
+            {pastedUrl && <button onClick={()=>{setInput(pastedUrl);setPastedUrl("");setTimeout(handleSend,100);}} className="absolute -top-7 right-0 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap hover:bg-neon/20 transition-colors">Probe this URL?</button>}
             <button onClick={handleSend} disabled={!input.trim()||running}
               className="w-8 h-8 rounded-xl flex items-center justify-center bg-neon/10 hover:bg-neon/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all shrink-0 border border-neon/15">
               {running ? <Loader2 className="w-3.5 h-3.5 text-neon/60 animate-spin"/> : <Send className="w-3.5 h-3.5 text-neon/60"/>}
             </button>
           </div>
+          {urlError && <p className="text-[9px] font-mono text-rose-400/70 text-center mt-1">{urlError}</p>}
           <p className="text-[7px] font-mono text-white/8 text-center mt-2 font-light">24 agents probe pricing across location / device / cookies / referrer / network tier</p>
         </div>
       </div>

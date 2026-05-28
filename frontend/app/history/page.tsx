@@ -55,7 +55,7 @@ export default function HistoryPage() {
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem("jacobi-conversations");
+    const raw = localStorage.getItem("probe-conversations");
     if (raw) {
       try {
         const data = JSON.parse(raw);
@@ -71,7 +71,7 @@ export default function HistoryPage() {
   );
 
   const clearHistory = () => {
-    localStorage.removeItem("jacobi-conversations");
+    localStorage.removeItem("probe-conversations");
     setConversations([]);
     setConfirmClear(false);
   };

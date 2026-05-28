@@ -10,7 +10,7 @@ import asyncio
 import os
 from typing import Optional
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://csfijqbfywdquuuwwplu.supabase.co")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 _client = None
@@ -27,8 +27,13 @@ def get_supabase():
     return _client
 
 
-async def save_probe(session_data: dict) -> Optional[str]:
-    """Save a completed probe session to Supabase. Returns the probe ID."""
+async def save_probe(session_data: dict, user_id: Optional[str] = None) -> Optional[str]:
+    """Save a completed probe session to Supabase. Returns the probe ID.
+
+    If `user_id` is provided, tags the row so RLS / quota / history filter
+    correctly. Requires the migration that adds `probes.user_id`; if the column
+    is missing, retries the insert without it and logs a warning.
+    """
     client = get_supabase()
     if not client:
         return None
@@ -51,17 +56,56 @@ async def save_probe(session_data: dict) -> Optional[str]:
         "status": session_data.get("status", "completed"),
         "raw_result": session_data,
     }
+    if user_id:
+        data["user_id"] = user_id
 
-    def _insert():
-        result = client.table("probes").insert(data).execute()
+    def _insert(row):
+        result = client.table("probes").insert(row).execute()
         if result.data and len(result.data) > 0:
             return result.data[0]["id"]
         return None
 
     try:
-        return await asyncio.to_thread(_insert)
+        return await asyncio.to_thread(_insert, data)
     except Exception as e:
+        msg = str(e)
+        if "user_id" in msg and "column" in msg:
+            # Migration not applied yet — retry without user_id
+            fallback = {k: v for k, v in data.items() if k != "user_id"}
+            try:
+                return await asyncio.to_thread(_insert, fallback)
+            except Exception as e2:
+                print(f"[SUPABASE] Failed to save probe (no user_id col): {e2}")
+                return None
         print(f"[SUPABASE] Failed to save probe: {e}")
+        return None
+
+
+async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
+    """Retrieve a full probe result from Supabase by its session_id (stored in raw_result JSONB)."""
+    client = get_supabase()
+    if not client:
+        return None
+
+    def _fetch():
+        result = client.table("probes") \
+            .select("*") \
+            .filter("raw_result->>session_id", "eq", session_id) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            # Reconstruct TopologyReport from stored columns + raw_result
+            raw = row.get("raw_result") or {}
+            raw["session_id"] = session_id
+            return raw
+        return None
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        print(f"[SUPABASE] Failed to fetch probe by session_id: {e}")
         return None
 
 

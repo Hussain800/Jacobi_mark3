@@ -132,6 +132,12 @@ class IPReputationBroker:
     """Client-side IP reputation broker with exponential recovery and
     hysteresis-gated blacklist release.
 
+    NOTE: All reputation state is held **in-memory** in Python dicts
+    (``_registry`` and ``_session_registry``) and is **lost on process
+    restart**.  There is no persistent backing store.  This is acceptable
+    for a hackathon / MVP but should be replaced with Redis or Postgres
+    for any production deployment.
+
     The broker is **not** thread-safe; callers operating across threads
     must serialise access externally (e.g. via ``asyncio.Lock`` or
     ``threading.Lock``).

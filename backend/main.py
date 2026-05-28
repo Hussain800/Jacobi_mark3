@@ -690,6 +690,13 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         discrimination_score=0.0, _created_at=time.time())
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
+    if len(SESSION_STORE) > MAX_SESSION_ENTRIES:
+        overflow = sorted(
+            (sid for sid, s in SESSION_STORE.items() if s.get("status") != "running"),
+            key=lambda sid: SESSION_STORE[sid].get("_created_at", 0),
+        )
+        if overflow:
+            SESSION_STORE.pop(overflow[0], None)
     return session_id, session
 
 
@@ -1018,7 +1025,7 @@ app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(cleanup_expired_sessions())
-    asyncio.create_task(run_scheduler_loop(run_full_probe))
+    asyncio.create_task(run_scheduler_loop(run_full_probe, SESSION_STORE))
 
 
 # CORS: allow Vercel frontend + local dev

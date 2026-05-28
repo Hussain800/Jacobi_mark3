@@ -166,16 +166,15 @@
     shadow.width = sourceCanvas.width;
     shadow.height = sourceCanvas.height;
     const ctx = shadow.getContext("2d");
-    // Draw original content
     ctx.drawImage(sourceCanvas, 0, 0);
-    // Read, noise, put back
-    const imageData = ctx.getImageData(0, 0, shadow.width, shadow.height);
+    const imageData = _origGetImageData.call(ctx, 0, 0, shadow.width, shadow.height);
     _noiseImageData(imageData);
     ctx.putImageData(imageData, 0, 0);
     return shadow;
   }
 
   // --- getImageData override ---
+  const _origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
   overrideMethod(
     CanvasRenderingContext2D.prototype,
     "getImageData",
@@ -338,7 +337,7 @@
    * Captures the IP portion for replacement.
    */
   const _privateIPRegex =
-    /(\b(?:10|127|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b|::1|fe80:[^\s]*|fd[0-9a-f]{2}:[^\s]*)/gi;
+    /(\b(?:10|127|172\.(?:1[6-9]|2\d|3[01])|192\.168|169\.254|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}\b|::1|fe80:[^\s]*|[fF][cCdD][0-9a-f]{2}:[^\s]*)/gi;
 
   /**
    * Sanitizes an SDP string by replacing private IPs with an mDNS UUID.
@@ -525,12 +524,6 @@
   // Freeze critical prototypes to prevent post-injection re-patching
   // by adversarial page scripts attempting to detect or undo overrides.
   // ───────────────────────────────────────────────────────────────────
-
-  // Seal our toString override against further tampering
-  Object.defineProperty(Function.prototype, "toString", {
-    writable: false,
-    configurable: false,
-  });
 
   // Clean up config from global scope to avoid detection
   try {

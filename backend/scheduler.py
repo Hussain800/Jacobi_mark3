@@ -74,6 +74,7 @@ def get_active_schedules() -> list[dict]:
 
 async def run_scheduler_loop(
     probe_fn: Callable[[str, str], Coroutine[Any, Any, dict]],
+    session_store: Dict[str, Any] | None = None,
 ):
     logger.info("Scheduler background loop started (poll=%ds)", POLL_INTERVAL_S)
     while True:
@@ -91,7 +92,7 @@ async def run_scheduler_loop(
                     "Firing scheduled probe: id=%s target=%s name=%s",
                     sched.id, sched.target_url, sched.target_name,
                 )
-                asyncio.create_task(_execute_probe(sched, probe_fn))
+                asyncio.create_task(_execute_probe(sched, probe_fn, session_store))
 
         except Exception:
             logger.exception("Scheduler loop encountered an error")
@@ -101,18 +102,18 @@ async def run_scheduler_loop(
 async def _execute_probe(
     sched: SchedulerConfig,
     probe_fn: Callable[[str, str], Coroutine[Any, Any, dict]],
+    session_store: Dict[str, Any] | None = None,
 ):
     try:
         result = await probe_fn(sched.target_url, sched.target_name)
         result["scheduled"] = True
         result["schedule_id"] = sched.id
         sid = result.get("session_id")
-        if sid:
+        if sid and session_store is not None:
             try:
-                from main import SESSION_STORE
-                if sid in SESSION_STORE:
-                    SESSION_STORE[sid]["scheduled"] = True
-                    SESSION_STORE[sid]["schedule_id"] = sched.id
+                if sid in session_store:
+                    session_store[sid]["scheduled"] = True
+                    session_store[sid]["schedule_id"] = sched.id
             except Exception:
                 pass
         logger.info(

@@ -16,6 +16,7 @@ from typing import Optional
 from brightdata_config import PROJECT_ROOT  # noqa: F401
 
 _client = None
+_quota_lock = asyncio.Lock()
 
 
 def _free_monthly_limit() -> int:
@@ -146,17 +147,16 @@ async def increment_probe_count(user_id: str) -> None:
     if not client:
         return
 
-    def _go():
-        # Read-modify-write (no atomic increment in supabase-py 2.x without rpc).
-        # For a hackathon demo with single-digit concurrent users this is fine.
-        cur = client.table("profiles").select("probes_used_this_month").eq("id", user_id).execute()
-        used = (cur.data[0].get("probes_used_this_month") if cur.data else 0) or 0
-        client.table("profiles").update({"probes_used_this_month": used + 1}).eq("id", user_id).execute()
+    async with _quota_lock:
+        def _go():
+            cur = client.table("profiles").select("probes_used_this_month").eq("id", user_id).execute()
+            used = (cur.data[0].get("probes_used_this_month") if cur.data else 0) or 0
+            client.table("profiles").update({"probes_used_this_month": used + 1}).eq("id", user_id).execute()
 
-    try:
-        await asyncio.to_thread(_go)
-    except Exception as e:
-        print(f"[PROFILE] increment failed: {e}")
+        try:
+            await asyncio.to_thread(_go)
+        except Exception as e:
+            print(f"[PROFILE] increment failed: {e}")
 
 
 # ─── Subscription helpers (called from Stripe webhook) ────────────────────

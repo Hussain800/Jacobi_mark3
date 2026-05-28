@@ -50,6 +50,7 @@ MAX_RETRIES: int = 8          # after 8 failures the event is marked terminal
 POLL_INTERVAL: float = 2.0   # seconds between outbox scans
 DELIVERY_TIMEOUT: float = 10.0  # per-request timeout in seconds
 BATCH_SIZE: int = 50          # max rows claimed per poll cycle
+TIMESTAMP_TOLERANCE_SECONDS: float = 300.0  # 5-minute clock skew tolerance
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +154,30 @@ class WebhookDispatcher:
             message,
             hashlib.sha256,
         ).hexdigest()
+
+    @staticmethod
+    def verify_signature(
+        secret: str, timestamp: str, payload: str, signature: str
+    ) -> bool:
+        """
+        Verify a webhook signature with replay protection.
+
+        Checks that:
+        1. The timestamp is within ``TIMESTAMP_TOLERANCE_SECONDS`` of the
+           current clock — rejects both too-old and future-dated messages.
+        2. The HMAC-SHA256 digest matches *signature*.
+        """
+        now = time.time()
+        try:
+            ts = int(timestamp)
+        except (ValueError, TypeError):
+            return False
+
+        if abs(now - ts) > TIMESTAMP_TOLERANCE_SECONDS:
+            return False
+
+        expected = WebhookDispatcher._compute_signature(secret, timestamp, payload)
+        return hmac.compare_digest(expected, signature)
 
     # ------------------------------------------------------------------
     # SSRF Protection
@@ -395,28 +420,28 @@ class WebhookDispatcher:
                 BATCH_SIZE,
             )
 
-        if not rows:
-            return
+            if not rows:
+                return
 
-        logger.info("Polled %d actionable event(s) from outbox.", len(rows))
+            logger.info("Polled %d actionable event(s) from outbox.", len(rows))
 
-        tasks = []
-        for row in rows:
-            event = OutboxEvent(
-                id=row["id"],
-                aggregate_type=row["aggregate_type"],
-                aggregate_id=row["aggregate_id"],
-                event_type=row["event_type"],
-                payload=row["payload"],
-                status=row["status"],
-                retry_count=row["retry_count"],
-                next_retry_at=row["next_retry_at"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-            )
-            tasks.append(self.dispatch_event(event))
+            tasks = []
+            for row in rows:
+                event = OutboxEvent(
+                    id=row["id"],
+                    aggregate_type=row["aggregate_type"],
+                    aggregate_id=row["aggregate_id"],
+                    event_type=row["event_type"],
+                    payload=row["payload"],
+                    status=row["status"],
+                    retry_count=row["retry_count"],
+                    next_retry_at=row["next_retry_at"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                tasks.append(self.dispatch_event(event))
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     # ------------------------------------------------------------------
     # Run Loop

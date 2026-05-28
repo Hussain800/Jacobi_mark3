@@ -5,9 +5,12 @@ Priority: OpenCode Zen (DeepSeek V4 Flash Free) → Gemini → statistical fallb
 
 import hashlib
 import json
+import logging
 import os
 import time
 from typing import Dict, List, Optional
+
+logger = logging.getLogger("jacobi.gemini")
 
 import httpx
 from pydantic import BaseModel, Field
@@ -363,7 +366,7 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 _cache_set(ck, verdict)
                 return verdict
             except Exception as e:
-                print(f"[GEMINI] API call failed: {e}")
+                logger.warning(f"API call failed: {e}")
 
     # 3. Try OpenCode Zen (DeepSeek V4 Flash Free)
     verdict = _analyze_with_opencode(probed)

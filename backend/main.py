@@ -7,6 +7,7 @@ Zero infrastructure: in-memory dict, no Celery, no Redis, no SQL.
 
 import asyncio
 import json
+import logging
 import math
 import os
 import re
@@ -37,6 +38,17 @@ from ip_broker import IPReputationBroker
 from profile_store import can_run_probe, increment_probe_count
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("jacobi")
+
+import sentry_sdk
+if os.getenv("SENTRY_DSN"):
+    sentry_sdk.init(
+        dsn=os.getenv("SENTRY_DSN"),
+        traces_sample_rate=0.25,
+    )
+
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
 _concurrency_sem = AIMDSemaphore(initial=12, min_cap=4, max_cap=24)
 _ip_broker = IPReputationBroker()
@@ -1090,12 +1102,12 @@ async def launch_probe(
             # save_probe may not yet accept user_id on older deploys
             await save_probe(session)
         except Exception as db_err:
-            print(f"[MAIN] Supabase save skipped: {db_err}")
+            logger.warning(f"Supabase save skipped: {db_err}")
         if user and session.get("status") == "completed" and tier != "pro":
             try:
                 await increment_probe_count(user["id"])
             except Exception as e:
-                print(f"[MAIN] increment skipped: {e}")
+                logger.warning(f"Increment skipped: {e}")
         # Persist to Cognee memory (fire-and-forget, no-op if not configured)
         try:
             await remember_probe(session)
@@ -1253,7 +1265,7 @@ async def get_share_result(session_id: str):
         if db_result:
             return db_result
     except Exception as e:
-        print(f"[SHARE] Supabase lookup failed: {e}")
+        logger.warning(f"Supabase lookup failed: {e}")
 
     # Fallback to in-memory SESSION_STORE
     session = SESSION_STORE.get(session_id)

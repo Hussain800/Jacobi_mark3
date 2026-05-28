@@ -79,15 +79,17 @@ Sample probe data the redesign uses for demos: **UA182 / JFK → LHR**. 5 repres
 
 ## 6 · Current completed work
 
-Branch `feat/frontend-redesign` carries 4 commits on top of `main`:
+Branch `feat/frontend-redesign` carries 7 commits on top of `main`:
 
 ```
+89bfe90  fix(probe): trim duplicate cockpit nav, defer to global layout
+39887fa  feat(probe): redesign chat into pricing probe cockpit
+b984e29  feat(landing): refine immersive pricing probe hero
+86b308a  feat(landing): add immersive agent deployment hero  (handoff doc only)
 cdeec24  feat(landing): Phase 1.5 — cinematic hero scene
 65ab7ad  feat(landing): luxury forensic redesign — Phase 1
 59772e0  chore(frontend): add framer-motion + redesign handoff doc
 ```
-
-(plus 1 more, see git log section below)
 
 **Phase 1** (`65ab7ad`):
 - Added 9 new semantic Tailwind tokens **alongside** existing `surface`/`neon`/`accent` (additive only, zero renames). Note: `base` was renamed to `ink` to avoid colliding with Tailwind's built-in `text-base` font-size utility — see `tailwind.config.js`.
@@ -108,12 +110,36 @@ cdeec24  feat(landing): Phase 1.5 — cinematic hero scene
 - `useReducedMotion()` → jumps straight to result state.
 - Build verified clean. Landing first-load JS: 48.5 kB.
 
-**What hasn't started yet** (Phase 2+):
-- `/chat` redesign (cockpit) — explicitly **off-limits without approval**
-- Splitting `dashboard.tsx` (924 lines, kitchen-sink)
-- Restyling history / share / pricing pages to match the new system
-- Deleting `Tactical3DNetwork`, `MatricesCursor`, `DotMatrix`, etc.
-- Migrating `text-neon` callsites to the new `signal`/`primary` tokens
+**Phase 2** (`b984e29`):
+- Refined immersive pricing-probe hero. Verdict bracket moved inside the stage between cheapest ($498 IOWA, far-left tangent of Location cluster) and dearest ($640 NYC, far-right tangent) endpoint pills. Strands recolor on result (signal-green for cheapest, overcharge-rose for dearest, others dim). Pre-clustered idle posture (no flattened halo). Cluster-staggered deploy (Location → Device → Cookies → Referrer → Controls). Strand origin at bottom edge of URL input rather than stage center. Replaced pulsing-dot eyebrow with static `JACOBI · pricing forensics` masthead. Replaced "Try sample →" with a Replay-scene chip that appears only at `result`. Endpoint pills sized 1.5× the neutrals with a subtle scale punch on land. CTA softened during cinematic via Framer filter.
+- `frontend/app/page.tsx` trimmed: dropped `useRef`/`heroRef` scroll-into-view; CTA now focuses `#jacobi-probe-input` directly. Evidence-section verdict de-emphasised so it supports the hero bracket rather than competing.
+
+**Phase 3** (`39887fa` + `89bfe90`):
+- Split `dashboard.tsx` (924 → ~370 lines) into a thin orchestration shell that imports a new `frontend/components/cockpit/` module.
+- New cockpit components (9 files):
+  - `types.ts` — single source for `TopologyReport`/`Agent`/`Gradient`, `DEMO_REPORT`, `SAMPLES`, `INDEX_TO_AXIS`, helpers (`extractUrl`/`fmtDelta`/`buildHistogram`/`buildNetworkData`/`exportJSON`/`exportCSV`/`deriveScanPhase`/`cheapestProfile`/`dearestProfile`/`profileSummary`/`topologyHeadline`/`topologyClassColor`).
+  - `RadialAgentStage.tsx` — 24 nodes in 5 axis clusters (same vocabulary as `HeroScene`). Wave-driven deploy from real `successful_agents` count. On `isComplete`, the cheapest agent's strand turns signal-green + thickens; the dearest's turns overcharge-rose + thickens; others dim. Clickable nodes open `AgentDetailDrawer`.
+  - `AgentDetailDrawer.tsx` — right-side inspector that slides in on click. Bottom-sheet on mobile. Replaces the old centered modal.
+  - `ScanTimeline.tsx` — horizontal phase indicator: `queued → deploying → collecting → analyzing → verdict`. Active phase signal-green and pulses. Completed phases filled-dim. Progressive line fill between dots.
+  - `ProbeHeader.tsx` — slim status strip (target URL, status pill, demo toggle, cancel). Trimmed in `89bfe90` to NOT duplicate the global nav from `app/layout.tsx` (which already provides JACOBI/Probe/History/Pricing/auth on every page).
+  - `VerdictPanel.tsx` — cinematic result reveal: serif headline (`gemini.plain_english_summary` or `topologyHeadline`) → spread numeral → cheapest-identity card → action items.
+  - `Evidence.tsx` — restyled price-impact bars, variable comparison table, network fingerprint area chart, price histogram, agent roster (collapsible), exports/share/bookmark ribbon.
+  - `Leaderboard.tsx` — restyled.
+  - `EmptyState.tsx` — empty-cockpit command core matching landing aesthetic + sample chips + leaderboard.
+- `dashboard.tsx` still owns `Terminal` default export, runProbe flow (POST `/api/probe` → 1s poll `/api/result` → POST `/api/analyze`), demo mode (`useCache` + `/api/analyze-demo`), cancel, retry, `probe-conversations` localStorage write, Supabase auth display, `initialUrl` auto-run (600ms), `initialSession` restore, and a leaner `ResultCard` that composes the cockpit pieces. Still exports `ResultCard` (named, consumed by `frontend/app/share/[id]/share-client.tsx`) and `TopologyReport` (type, consumed by `frontend/app/share/[id]/page.tsx`).
+- Visual language fully migrated to the Phase-1 tokens: `bg-ink`, `bg-raised`, `border-line`, `text-primary/secondary/muted`, `signal`/`overcharge`/`warning`. Killed the `cx()` helper (glassmorphism wrappers), `FloatingOrbs`, and `DotMatrix` background on `/chat`.
+- Build verified clean: `/chat` 1.54 kB / 312 kB FLJ; `/share/[id]` 280 B / 311 kB FLJ; `/` 6.93 kB / 146 kB FLJ.
+
+**Known issue at end of Phase 3**: user reports `/chat` rendering unstyled in dev mode despite clean `next build`. Diagnosis: dev-server process is in a broken state (HTML serves but CSS chunks don't). Production output verified — 44 KB CSS chunk at `.next/static/css/*.css`. Recovery: see the "dev server cure" section.
+
+**What hasn't started yet** (Phase 4+):
+- Restyling `/history` / `/share/[id]` / `/pricing` pages to match the new cockpit/landing system
+- Migrating the global nav in `app/layout.tsx:25-44` from `bg-surface`/`text-white`/`bg-[#07080c]` to the new token system (`bg-ink`/`text-primary`/`border-line`)
+- Deleting `Tactical3DNetwork`, `MatricesCursor`, `DotMatrix`, `matrix-elements`, `ScrollReveal`, `TacticalCard`, `GeoHeatmap`, `jacobi-logo` — now fully unreferenced
+- Migrating any remaining `text-neon` callsites to the new `signal`/`primary` tokens
+- Code-split `Evidence.tsx`'s recharts modules behind a result event to drop `/chat` initial FLJ
+- Single persistent radial stage that morphs from live-deploy → result-with-endpoints in place (instead of two separate stages stacked)
+- Mobile cockpit hand-testing (drawer-becomes-bottom-sheet at <sm, cluster geometry under 400px width)
 
 ---
 

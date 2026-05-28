@@ -175,6 +175,23 @@ export default function PricingPage() {
         <p className="text-center text-white/30 text-[11px] font-mono mt-10">
           Cancel anytime from the customer portal. No commitment.
         </p>
+
+        <footer className="mt-16 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 rounded border border-emerald-400/30 flex items-center justify-center">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1.2">
+                <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
+                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium tracking-tight text-white/80">JACOBI</span>
+          </div>
+          <div className="flex items-center gap-5 text-[11px] font-mono">
+            <Link href="/chat" className="text-white/40 hover:text-white/80 transition-colors">Probe</Link>
+            <Link href="/about" className="text-white/40 hover:text-white/80 transition-colors">About</Link>
+            <Link href="/leaderboard" className="text-white/40 hover:text-white/80 transition-colors">Leaderboard</Link>
+          </div>
+        </footer>
       </div>
     </main>
   );

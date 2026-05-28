@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Send, Loader2, Globe, Smartphone, Cookie, ExternalLink,
   AlertTriangle, Network, ChevronDown, ChevronRight,
-  Shield, Download, Signal, Zap, X, Radio, Info, Share2, Star,
+  Shield, Download, Signal, Zap, X, Radio, Info, Share2, Star, Image,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
@@ -177,6 +177,84 @@ function dl(blob: Blob, name: string) {
 
 function exportJSON(r: TopologyReport) { dl(new Blob([JSON.stringify(r,null,2)],{type:"application/json"}), `probe-${r.session_id||"report"}.json`); }
 function exportCSV(r: TopologyReport) { dl(new Blob([["agent_id,label,status,price,network_tier,proxy_type,response_time_ms",...r.agents.map(a=>[a.agent_id,`"${a.label}"`,a.status,a.price??"",a.network_tier??"",a.proxy_type??"",a.response_time_ms??""].join(","))].join("\n")],{type:"text/csv"}), `probe-agents-${r.session_id||"report"}.csv`); }
+
+const TOPOLOGY_COLORS: Record<string, string> = {
+  uniform: "#00ff41",
+  selective: "#fbbf24",
+  progressive: "#fb923c",
+  aggressive: "#fb7185",
+};
+
+const TOPOLOGY_BG: Record<string, string> = {
+  uniform: "#00ff411a",
+  selective: "#fbbf241a",
+  progressive: "#fb923c1a",
+  aggressive: "#fb71851a",
+};
+
+const VAR_LABELS: Record<string, string> = {
+  location: "Location",
+  device: "Device",
+  cookie_profile: "Cookies",
+  referrer: "Referrer",
+};
+
+function generateBadgeSVG(r: TopologyReport): string {
+  const cls = r.topology_class || "uniform";
+  const color = TOPOLOGY_COLORS[cls] || "#c8c8c8";
+  const bgColor = TOPOLOGY_BG[cls] || "#ffffff1a";
+  const baseline = r.baseline_price ?? 0;
+  const spread = r.max_price_spread ?? 0;
+  const sigCount = r.gradients.filter(g => g.significant).length;
+  const di = r.discrimination_score ?? r.discrimination_index;
+
+  const bars = r.gradients.map(g => ({
+    label: VAR_LABELS[g.variable_name] || g.variable_name,
+    significant: g.significant,
+    width: g.significant ? Math.max(Math.min(Math.abs(g.delta_pct) * 3, 120), 16) : 0,
+    delta: g.delta,
+  }));
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="390" viewBox="0 0 280 390">
+  <defs>
+    <linearGradient id="jbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#050505"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+  </defs>
+  <rect width="280" height="390" rx="12" fill="url(#jbg)" stroke="${color}" stroke-width="1.5" stroke-opacity="0.25"/>
+  <text x="20" y="36" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#c8c8c8" letter-spacing="3">JACOBI</text>
+  <text x="20" y="50" font-family="'JetBrains Mono',monospace" font-size="6.5" fill="#686868" letter-spacing="1.5">PRICING DISCRIMINATION BADGE</text>
+  <line x1="20" y1="62" x2="260" y2="62" stroke="rgba(255,255,255,0.06)"/>
+  <rect x="20" y="74" width="${cls === "uniform" ? 78 : 100}" height="24" rx="12" fill="${bgColor}" stroke="${color}" stroke-opacity="0.2" stroke-width="1"/>
+  <circle cx="35" cy="86" r="4.5" fill="${color}"/>
+  <text x="46" y="90" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="600" fill="${color}" letter-spacing="1">${cls.toUpperCase()}</text>
+  <text x="130" y="80" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DISCRIMINATION</text>
+  <text x="130" y="100" font-family="'JetBrains Mono',monospace" font-size="20" font-weight="300" fill="#ffffff">${di.toFixed(0)}</text>
+  <text x="178" y="100" font-family="'JetBrains Mono',monospace" font-size="9" fill="#686868">/100</text>
+  <line x1="20" y1="114" x2="260" y2="114" stroke="rgba(255,255,255,0.04)"/>
+  <text x="20" y="138" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">PRICE SPREAD</text>
+  <text x="20" y="162" font-family="'JetBrains Mono',monospace" font-size="22" font-weight="300" fill="${color}">$${spread.toFixed(0)}</text>
+  <text x="95" y="162" font-family="'JetBrains Mono',monospace" font-size="10" fill="#686868">from $${baseline.toFixed(0)} base</text>
+  <line x1="20" y1="180" x2="260" y2="180" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="202" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DETECTION AXES</text>
+  ${bars.map(b => {
+    const y = 218 + bars.indexOf(b) * 32;
+    const barColor = b.significant ? color : "rgba(255,255,255,0.08)";
+    const textColor = b.significant ? "#ffffffb3" : "rgba(255,255,255,0.2)";
+    const deltaLabel = b.significant ? (b.delta >= 0 ? `+$${b.delta.toFixed(0)}` : `-$${Math.abs(b.delta).toFixed(0)}`) : "n/s";
+    const deltaColor = b.significant ? color : "rgba(255,255,255,0.15)";
+    return `
+  <text x="25" y="${y}" font-family="'JetBrains Mono',monospace" font-size="9" fill="${textColor}">${b.label}</text>
+  <rect x="110" y="${y - 6}" width="${b.width}" height="10" rx="4" fill="${barColor}" opacity="${b.significant ? "0.5" : "1"}"/>
+  <text x="${110 + Math.max(b.width, 0) + 8}" y="${y}" font-family="'JetBrains Mono',monospace" font-size="8" fill="${deltaColor}">${deltaLabel}</text>`;
+  }).join("")}
+  <line x1="20" y1="348" x2="260" y2="348" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868">${sigCount} significant variable${sigCount !== 1 ? "s" : ""}</text>
+  <text x="150" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868" text-anchor="end">${r.total_agents} agents</text>
+  <text x="20" y="384" font-family="'JetBrains Mono',monospace" font-size="6" fill="rgba(255,255,255,0.08)">jacobi.tech &middot; topology probe</text>
+</svg>`;
+}
 
 /* ─── Network Fingerprint ────────────────────────────────────────────── */
 
@@ -377,22 +455,59 @@ function AgentGrid({ report, scanStarted }: { report: TopologyReport; scanStarte
 
 /* ─── Leaderboard ────────────────────────────────────────────────────── */
 
+interface LeaderboardEntry {
+  target_url: string;
+  target_name: string;
+  topology_class: string;
+  discrimination_index: number;
+  max_price_spread: number;
+  baseline_price: number;
+  successful_agents: number;
+  total_agents: number;
+  timestamp: string;
+}
+
 function Leaderboard() {
-  const [entries, setEntries] = useState<{name:string;savings:number;url:string}[]>([]);
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  useEffect(() => { fetch(`${apiBase}/api/leaderboard`).then(r=>r.json()).then(d=>setEntries((d||[]).slice(0,10))).catch(()=>setEntries([])).finally(()=>setLoading(false)); }, [apiBase]);
+  const router = useRouter();
+  useEffect(() => {
+    fetch(`${apiBase}/api/leaderboard?limit=5&min_agents=5`)
+      .then(r => r.json())
+      .then(d => setEntries(d.entries || []))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [apiBase]);
   if (loading) return <div className="text-[10px] font-mono text-white/15 text-center py-4 font-light">Loading...</div>;
-  if (!entries.length) return null;
+  if (error || !entries.length) return null;
   return (
     <div className={cx("overflow-hidden")}>
-      <div className="px-5 py-3 border-b border-white/[0.06] text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">Highest Savings</div>
-      {entries.map((e,i) => (
-        <div key={i} className="px-5 py-2 border-b border-white/[0.03] flex items-center justify-between text-[11px] font-mono">
-          <span className="text-white/50 font-light">{i+1}. {e.name}</span>
-          <span className="text-neon font-light">-${e.savings.toFixed(0)}</span>
-        </div>
+      <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
+        <span className="text-[9px] font-mono text-neon/50 uppercase tracking-[0.1em] font-light">Leaderboard</span>
+        <button onClick={() => router.push("/leaderboard")} className="text-[8px] font-mono text-white/20 hover:text-white/50 transition-colors">View all &rarr;</button>
+      </div>
+      {entries.map((e, i) => (
+        <button key={i} onClick={() => router.push("/leaderboard")} className="w-full px-5 py-2 border-b border-white/[0.03] flex items-center justify-between text-[11px] font-mono hover:bg-white/[0.03] transition-colors text-left">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-white/20 w-4 text-right shrink-0">{i+1}.</span>
+            <span className="text-white/50 font-light truncate">{e.target_name || e.target_url}</span>
+            {e.topology_class && (
+              <span className={`text-[7px] font-mono px-1.5 py-0.5 rounded-full border shrink-0 ${clsBg(e.topology_class)} ${clsColor(e.topology_class)}`}>
+                {e.topology_class}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-white/30 text-[9px]">DI {e.discrimination_index.toFixed(1)}</span>
+            <span className="text-neon font-light text-[10px]">${e.max_price_spread.toFixed(0)}</span>
+          </div>
+        </button>
       ))}
+      <div className="px-5 py-2 text-[8px] font-mono text-white/10 text-center">
+        <button onClick={() => router.push("/leaderboard")} className="hover:text-white/30 transition-colors">Full leaderboard &rarr;</button>
+      </div>
     </div>
   );
 }
@@ -403,6 +518,7 @@ export function ResultCard({ report, onClose, isLatest = true }: { report: Topol
   const [showAgents, setShowAgents] = useState(false);
   const [showHistogram, setShowHistogram] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+  const [badgeToast, setBadgeToast] = useState(false);
   const [bookmarked, setBookmarked] = useState(() => {
     try {
       const bm = JSON.parse(localStorage.getItem("jacobi-bookmarks") || "[]");
@@ -431,6 +547,13 @@ export function ResultCard({ report, onClose, isLatest = true }: { report: Topol
       setTimeout(() => setCopyToast(false), 2000);
     }).catch(() => {});
   };
+  const copyBadge = useCallback(() => {
+    const svg = generateBadgeSVG(report);
+    navigator.clipboard.writeText(svg).then(() => {
+      setBadgeToast(true);
+      setTimeout(() => setBadgeToast(false), 2000);
+    }).catch(() => {});
+  }, [report]);
   const [showComparison, setShowComparison] = useState(false);
   const histData = buildHistogram(report.all_prices);
   const cls = clsColor(report.topology_class);
@@ -459,6 +582,10 @@ export function ResultCard({ report, onClose, isLatest = true }: { report: Topol
         <div className="flex items-center gap-1">
           <button onClick={()=>exportJSON(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="JSON"><Download className="w-3 h-3"/></button>
           <button onClick={()=>exportCSV(report)} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70 text-[8px] font-mono" title="CSV">CSV</button>
+          <div className="relative">
+            <button onClick={copyBadge} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Badge"><Image className="w-3 h-3"/></button>
+            {badgeToast && <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-[8px] font-mono bg-neon/10 text-neon/70 border border-neon/20 rounded px-2 py-0.5 whitespace-nowrap pointer-events-none">Badge copied!</span>}
+          </div>
           <button onClick={toggleBookmark} className={`p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors ${bookmarked ? "text-amber-400" : "text-white/15 hover:text-amber-400/60"}`} title={bookmarked ? "Remove bookmark" : "Bookmark"}><Star className={`w-3 h-3 ${bookmarked ? "fill-amber-400" : ""}`}/></button>
           <div className="relative">
             <button onClick={copyShareLink} className="p-1.5 rounded-xl hover:bg-white/[0.06] text-white/20 hover:text-neon/70" title="Copy share link"><Share2 className="w-3 h-3"/></button>

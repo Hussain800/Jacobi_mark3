@@ -19,7 +19,7 @@ from typing import Optional, Dict, List, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from pydantic import BaseModel, Field
 
 from dotenv import load_dotenv
@@ -1228,28 +1228,51 @@ async def get_demo_data():
 
 
 @app.get("/api/leaderboard")
-async def get_leaderboard(limit: int = 10):
-    """Return top N probes by savings (max_price_spread)."""
-    try:
-        from supabase_client import get_probe_history
-        probes = await get_probe_history(limit=20)
-        # Sort by max_price_spread descending, take top N
-        sorted_probes = sorted(
-            [p for p in probes if p.get("max_price_spread")],
-            key=lambda p: p["max_price_spread"],
-            reverse=True
-        )[:limit]
-        return [
-            {
-                "name": p.get("target_name", p.get("target_url", "Unknown"))[:30],
-                "savings": p["max_price_spread"],
-                "url": p.get("target_url", ""),
-            }
-            for p in sorted_probes
-        ]
-    except Exception as e:
-        # Return empty leaderboard on any error (backend might not have Supabase configured)
-        return []
+async def get_leaderboard(limit: int = 20, min_agents: int = 5):
+    """Return aggregated leaderboard from all completed probes, sorted by discrimination_index descending.
+
+    Aggregates from SESSION_STORE (in-memory completed probes) and supplements
+    with the hardcoded DEMO_RESULT when fewer than 5 entries exist, so the
+    leaderboard is never empty — even without Supabase configured.
+    """
+    entries = []
+
+    for sid, session in SESSION_STORE.items():
+        if session.get("status") in ("completed",) and session.get("discrimination_index", 0) > 0:
+            succ = session.get("successful_agents", 0)
+            if succ >= min_agents:
+                entries.append({
+                    "target_url": session.get("target_url", ""),
+                    "target_name": session.get("target_name", ""),
+                    "topology_class": session.get("topology_class", "unknown"),
+                    "discrimination_index": session.get("discrimination_index", 0),
+                    "max_price_spread": session.get("max_price_spread", 0),
+                    "baseline_price": session.get("baseline_price", 0),
+                    "successful_agents": succ,
+                    "total_agents": session.get("total_agents", 24),
+                    "timestamp": session.get("timestamp", ""),
+                })
+
+    if len(entries) < 5:
+        demo_succ = DEMO_RESULT.get("successful_agents", 22)
+        if demo_succ >= min_agents:
+            demo_entry = {k: DEMO_RESULT[k] for k in (
+                "target_url", "target_name", "topology_class",
+                "discrimination_index", "max_price_spread",
+                "baseline_price", "timestamp",
+            )}
+            demo_entry["successful_agents"] = demo_succ
+            demo_entry["total_agents"] = DEMO_RESULT.get("total_agents", 24)
+            if demo_entry not in entries:
+                entries.append(demo_entry)
+
+    entries.sort(key=lambda e: e["discrimination_index"], reverse=True)
+
+    return {
+        "entries": entries[:limit],
+        "total_probes": len(entries),
+        "last_updated": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.get("/api/history")
@@ -1376,6 +1399,114 @@ async def serve_next_static(rest: str):
     if os.path.isfile(file_path):
         return FileResponse(file_path)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+def _build_badge_svg(report: dict) -> str:
+    TOPOLOGY_COLORS = {
+        "uniform": "#00ff41",
+        "selective": "#fbbf24",
+        "progressive": "#fb923c",
+        "aggressive": "#fb7185",
+    }
+    TOPOLOGY_BG = {
+        "uniform": "#00ff411a",
+        "selective": "#fbbf241a",
+        "progressive": "#fb923c1a",
+        "aggressive": "#fb71851a",
+    }
+    VAR_LABELS = {
+        "location": "Location",
+        "device": "Device",
+        "cookie_profile": "Cookies",
+        "referrer": "Referrer",
+    }
+    cls = report.get("topology_class", "uniform")
+    color = TOPOLOGY_COLORS.get(cls, "#c8c8c8")
+    bg_color = TOPOLOGY_BG.get(cls, "#ffffff1a")
+    baseline = report.get("baseline_price") or 0
+    spread = report.get("max_price_spread") or 0
+    gradients = report.get("gradients", [])
+    sig_count = sum(1 for g in gradients if g.get("significant"))
+    di = report.get("discrimination_score") or report.get("discrimination_index") or 0
+    total_agents = report.get("total_agents", 24)
+
+    bars = []
+    for g in gradients:
+        dpct = abs(g.get("delta_pct", 0))
+        width = max(min(dpct * 3, 120), 16) if g.get("significant") else 0
+        bars.append({
+            "label": VAR_LABELS.get(g.get("variable_name", ""), g.get("variable_name", "")),
+            "significant": g.get("significant", False),
+            "width": width,
+            "delta": g.get("delta", 0),
+        })
+
+    class_width = 78 if cls == "uniform" else 100
+
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="280" height="390" viewBox="0 0 280 390">
+  <defs>
+    <linearGradient id="jbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#050505"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+  </defs>
+  <rect width="280" height="390" rx="12" fill="url(#jbg)" stroke="{color}" stroke-width="1.5" stroke-opacity="0.25"/>
+  <text x="20" y="36" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#c8c8c8" letter-spacing="3">JACOBI</text>
+  <text x="20" y="50" font-family="'JetBrains Mono',monospace" font-size="6.5" fill="#686868" letter-spacing="1.5">PRICING DISCRIMINATION BADGE</text>
+  <line x1="20" y1="62" x2="260" y2="62" stroke="rgba(255,255,255,0.06)"/>
+  <rect x="20" y="74" width="{class_width}" height="24" rx="12" fill="{bg_color}" stroke="{color}" stroke-opacity="0.2" stroke-width="1"/>
+  <circle cx="35" cy="86" r="4.5" fill="{color}"/>
+  <text x="46" y="90" font-family="'JetBrains Mono',monospace" font-size="10" font-weight="600" fill="{color}" letter-spacing="1">{cls.upper()}</text>
+  <text x="130" y="80" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DISCRIMINATION</text>
+  <text x="130" y="100" font-family="'JetBrains Mono',monospace" font-size="20" font-weight="300" fill="#ffffff">{di:.0f}</text>
+  <text x="178" y="100" font-family="'JetBrains Mono',monospace" font-size="9" fill="#686868">/100</text>
+  <line x1="20" y1="114" x2="260" y2="114" stroke="rgba(255,255,255,0.04)"/>
+  <text x="20" y="138" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">PRICE SPREAD</text>
+  <text x="20" y="162" font-family="'JetBrains Mono',monospace" font-size="22" font-weight="300" fill="{color}">${spread:.0f}</text>
+  <text x="95" y="162" font-family="'JetBrains Mono',monospace" font-size="10" fill="#686868">from ${baseline:.0f} base</text>
+  <line x1="20" y1="180" x2="260" y2="180" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="202" font-family="'JetBrains Mono',monospace" font-size="7" fill="#686868" letter-spacing="1">DETECTION AXES</text>'''
+    for i, b in enumerate(bars):
+        y = 218 + i * 32
+        bar_color = color if b["significant"] else "rgba(255,255,255,0.08)"
+        text_color = "#ffffffb3" if b["significant"] else "rgba(255,255,255,0.2)"
+        if b["significant"]:
+            delta_str = f"+${b['delta']:.0f}" if b["delta"] >= 0 else f"-${abs(b['delta']):.0f}"
+            delta_color = color
+        else:
+            delta_str = "n/s"
+            delta_color = "rgba(255,255,255,0.15)"
+        svg += f'''
+  <text x="25" y="{y}" font-family="'JetBrains Mono',monospace" font-size="9" fill="{text_color}">{b["label"]}</text>
+  <rect x="110" y="{y - 6}" width="{b['width']}" height="10" rx="4" fill="{bar_color}" opacity="{'0.5' if b['significant'] else '1'}"/>
+  <text x="{110 + max(b['width'], 0) + 8}" y="{y}" font-family="'JetBrains Mono',monospace" font-size="8" fill="{delta_color}">{delta_str}</text>'''
+    svg += f'''
+  <line x1="20" y1="348" x2="260" y2="348" stroke="rgba(255,255,255,0.06)"/>
+  <text x="20" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868">{sig_count} significant variable{'s' if sig_count != 1 else ''}</text>
+  <text x="150" y="368" font-family="'JetBrains Mono',monospace" font-size="8" fill="#686868" text-anchor="end">{total_agents} agents</text>
+  <text x="20" y="384" font-family="'JetBrains Mono',monospace" font-size="6" fill="rgba(255,255,255,0.08)">jacobi.tech &middot; topology probe</text>
+</svg>'''
+    return svg
+
+
+@app.get("/api/badge/{session_id}")
+async def get_badge(session_id: str):
+    if session_id == "demo_session_static":
+        report = DEMO_RESULT
+    else:
+        report = SESSION_STORE.get(session_id)
+        if not report:
+            try:
+                from supabase_client import get_probe_by_session_id
+                db_result = await get_probe_by_session_id(session_id)
+                if db_result:
+                    report = db_result
+            except Exception:
+                pass
+        if not report:
+            raise HTTPException(status_code=404, detail="Session not found")
+    svg = _build_badge_svg(report)
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @app.exception_handler(404)

@@ -30,7 +30,7 @@ from supabase_client import save_probe
 from cognee_memory import remember_probe, is_available as cognee_available
 from billing import router as billing_router
 from auth_user import get_optional_user
-from profile_store import can_run_probe, increment_probe_count, get_tier
+from triggerware import dispatch_probe_event as triggerware_dispatch
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
@@ -1041,6 +1041,11 @@ async def launch_probe(
         # Persist to Cognee memory (fire-and-forget, no-op if not configured)
         try:
             await remember_probe(session)
+        except Exception:
+            pass
+        # Dispatch to TriggerWare.ai workflow (fire-and-forget, no-op if not configured)
+        try:
+            await triggerware_dispatch(session)
         except Exception:
             pass
         return {"session_id": session["session_id"], "status": session["status"]}

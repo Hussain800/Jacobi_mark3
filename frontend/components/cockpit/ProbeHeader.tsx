@@ -1,19 +1,18 @@
 "use client";
 
 /**
- * ProbeHeader — fixed top bar for the cockpit.
+ * ProbeHeader — slim cockpit status strip that sits *under* the global
+ * top nav (which already provides brand + Probe/History/Pricing + auth).
  *
- * Shows the JACOBI mark, target URL when one is loaded, status pill,
- * demo toggle (real labeled switch, not the old micro toggle),
- * cancel/retry control, and Supabase auth.
+ * This file deliberately renders no JACOBI mark and no auth control —
+ * those live in app/layout.tsx's <nav>. We only own the live probe
+ * state: target URL, status pill, demo toggle, cancel.
  *
  * Pure presentational. All state owned by Terminal.
  */
 
-import Link from "next/link";
 import { XCircle } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
-import AuthButton from "../auth-button";
 
 interface Props {
   user: User | null;
@@ -25,7 +24,7 @@ interface Props {
 }
 
 export default function ProbeHeader({
-  user,
+  user: _user,
   targetLabel,
   status,
   useCache,
@@ -51,27 +50,18 @@ export default function ProbeHeader({
           : "Ready";
 
   return (
-    <header className="h-14 sm:h-16 border-b border-line bg-ink/85 backdrop-blur-xl shrink-0 relative z-30">
-      <div className="h-full px-5 sm:px-8 flex items-center gap-4">
-        {/* Brand mark — links back to landing */}
-        <Link
-          href="/"
-          className="font-mono text-[12px] uppercase tracking-[0.32em] text-primary hover:text-signal transition-colors shrink-0"
-          aria-label="JACOBI home"
-        >
-          JACOBI
-        </Link>
-        <span aria-hidden className="hidden sm:block h-3 w-px bg-line shrink-0" />
-        <span className="hidden sm:block font-mono text-[10px] uppercase tracking-[0.22em] text-muted shrink-0">
+    <div className="border-b border-line bg-ink/85 backdrop-blur-xl shrink-0 relative z-20">
+      <div className="h-11 px-5 sm:px-8 flex items-center gap-4">
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted shrink-0">
           Probe cockpit
         </span>
 
         {/* Target URL — compact, mono, truncates */}
         {targetLabel && (
           <>
-            <span aria-hidden className="hidden md:block h-3 w-px bg-line shrink-0" />
+            <span aria-hidden className="h-3 w-px bg-line shrink-0" />
             <span
-              className="hidden md:block font-mono text-[11px] text-secondary truncate"
+              className="font-mono text-[11px] text-secondary truncate min-w-0"
               title={targetLabel}
             >
               {targetLabel}
@@ -124,20 +114,8 @@ export default function ProbeHeader({
               />
             </button>
           </label>
-
-          <span aria-hidden className="hidden sm:block h-4 w-px bg-line" />
-
-          {/* Auth */}
-          <div className="hidden sm:flex items-center gap-2">
-            {user?.email && (
-              <span className="font-mono text-[10px] text-muted">
-                {user.email.split("@")[0]}
-              </span>
-            )}
-            <AuthButton />
-          </div>
         </div>
       </div>
-    </header>
+    </div>
   );
 }

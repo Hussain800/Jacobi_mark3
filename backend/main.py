@@ -160,15 +160,16 @@ CURRENCY_SYMBOL_MAP = {
 }
 
 PRICE_RANGES = {
-    "booking.com": {"min": 15, "max": 25000},
-    "expedia": {"min": 30, "max": 15000},
-    "hotels.com": {"min": 20, "max": 20000},
-    "flydubai": {"min": 10, "max": 5000},
-    "united": {"min": 30, "max": 5000},
-    "delta": {"min": 30, "max": 5000},
-    "emirates": {"min": 30, "max": 10000},
-    "amazon": {"min": 1, "max": 5000},
-    "default": {"min": 5, "max": 50000},
+    "booking.com": {"min": 5, "max": 250000},
+    "agoda.com": {"min": 5, "max": 250000},
+    "expedia": {"min": 5, "max": 50000},
+    "hotels.com": {"min": 5, "max": 50000},
+    "flydubai": {"min": 5, "max": 20000},
+    "united": {"min": 5, "max": 20000},
+    "delta": {"min": 5, "max": 20000},
+    "emirates": {"min": 5, "max": 50000},
+    "amazon": {"min": 1, "max": 50000},
+    "default": {"min": 1, "max": 500000},
 }
 
 # ─── Site-Specific Price Parser Registry ──────────────────────────────────
@@ -591,6 +592,41 @@ class BrightDataMCPClient:
         import httpx
         self._client = httpx.AsyncClient(timeout=65.0)
 
+    async def _direct_http_fetch(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
+        """Fallback: fetch the URL directly (no BrightData proxy)."""
+        import httpx
+        start_ts = time.time()
+        user_agent = identity.get("user_agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+        headers = {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            direct_client = httpx.AsyncClient(timeout=timeout_s, follow_redirects=True)
+            try:
+                response = await asyncio.wait_for(
+                    direct_client.get(url, headers=headers),
+                    timeout=timeout_s,
+                )
+                elapsed_ms = int((time.time() - start_ts) * 1000)
+                if response.status_code in (200, 201, 202, 301, 302, 304):
+                    return {"success": True, "text": response.text, "elapsed_ms": elapsed_ms,
+                            "_fallback": "direct_http"}
+                return {"success": False, "elapsed_ms": elapsed_ms,
+                        "error": f"Direct HTTP returned {response.status_code}",
+                        "_fallback": "direct_http"}
+            finally:
+                await direct_client.aclose()
+        except asyncio.TimeoutError:
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": "Direct HTTP timeout", "_fallback": "direct_http"}
+        except Exception as e:
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": f"Direct HTTP error: {str(e)[:150]}", "_fallback": "direct_http"}
+
     async def probe_url(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
         if not self._client:
             raise RuntimeError("Client not initialized")
@@ -615,16 +651,25 @@ class BrightDataMCPClient:
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if response.status_code != 200:
+                err_text = response.text[:200]
+                # If BrightData zone doesn't exist, fall back to direct HTTP
+                if "zone" in err_text.lower() and ("not found" in err_text.lower() or "does not exist" in err_text.lower()):
+                    return await self._direct_http_fetch(url, identity, timeout_s)
                 return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
+                        "error": f"BrightData returned {response.status_code}: {err_text}"}
             page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
+            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms,
+                    "_source": "brightdata"}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Timeout {timeout_s}s"}
+                    "error": f"BrightData timeout {timeout_s}s"}
         except Exception as e:
+            err_str = str(e)
+            # Connection errors may indicate BD is down — try direct
+            if "Connection" in err_str or "connect" in err_str.lower():
+                return await self._direct_http_fetch(url, identity, timeout_s)
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": str(e)}
+                    "error": f"BrightData error: {err_str[:150]}"}
 
     async def close(self):
         if self._client:
@@ -782,8 +827,15 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         if detected:
             s["status"] = "detected"; s["bot_detected"] = True; s["detection_signal"] = signal; return s
         prices = parse_page_prices(r.get("text", ""), url)
+        source_tag = r.get("_source", r.get("_fallback", "unknown"))
         if not prices:
-            s["status"] = "failed"; s["error_message"] = "No valid price found"; return s
+            s["status"] = "failed"
+            text_len = len(r.get("text", ""))
+            if text_len < 200:
+                s["error_message"] = f"No valid price found (page too small: {text_len}B, source={source_tag})"
+            else:
+                s["error_message"] = f"No valid price found in page ({text_len}B, source={source_tag})"
+            return s
         s["price"] = prices[len(prices) // 2]; s["status"] = "success"; return s
     except Exception as e:
         s["status"] = "failed"; s["error_message"] = str(e); return s
@@ -835,7 +887,31 @@ async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         if not valid:
-            session["status"] = "failed"; session["error"] = "No valid prices extracted."
+            session["status"] = "failed"
+            error_reasons: Dict[str, int] = {}
+            for a in session["agents"]:
+                err = a.get("error_message", "unknown")
+                if err not in error_reasons:
+                    error_reasons[err] = 0
+                error_reasons[err] += 1
+            best_reason = max(error_reasons, key=error_reasons.get) if error_reasons else "unknown"
+            bd_fails = sum(1 for a in session["agents"] if "BrightData" in a.get("error_message", ""))
+            zone_fails = sum(1 for a in session["agents"] if "zone" in a.get("error_message", "").lower())
+            direct_fails = sum(1 for a in session["agents"] if "Direct HTTP" in a.get("error_message", ""))
+            if zone_fails >= session["total_agents"] * 0.8:
+                session["error"] = (
+                    "BrightData zone 'mcp_unlocker' not found. "
+                    "To fix: go to https://brightdata.com/cp/zones, "
+                    "delete and recreate the 'mcp_unlocker' Web Unlocker zone, "
+                    "then update BRIGHTDATA_UNLOCKER_ZONE in .env.local. "
+                    "Meanwhile, demo mode is available for testing."
+                )
+            elif bd_fails >= session["total_agents"] * 0.5:
+                session["error"] = f"BrightData API failures ({bd_fails}/{session['total_agents']} agents). Check your API key and zone."
+            elif direct_fails >= session["total_agents"] * 0.5:
+                session["error"] = f"Direct fetch failed ({direct_fails}/{session['total_agents']} agents). The target may require JavaScript rendering."
+            else:
+                session["error"] = f"No valid prices extracted ({session['failed_agents']} agents failed: {best_reason})"
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         bp = statistics.median(valid)

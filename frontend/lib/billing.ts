@@ -5,8 +5,9 @@
  */
 import { createClient } from "./supabase/client";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getClientApiBase } from "./api-base";
+
+const API_BASE = getClientApiBase();
 
 export type Plan = {
   tier: "anon" | "free" | "pro";

@@ -41,6 +41,7 @@ import {
   extractUrl,
   deriveScanPhase,
 } from "./cockpit/types";
+import { getClientApiBase } from "../lib/api-base";
 
 export type { TopologyReport } from "./cockpit/types";
 
@@ -122,7 +123,7 @@ export default function Terminal({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastUrlRef = useRef("");
   const lastNameRef = useRef("");
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = getClientApiBase();
 
   /* Restore past probe from session ID — same behavior as before */
   useEffect(() => {

@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { getClientApiBase } from "@/lib/api-base";
 
 interface Entry {
   name: string;
@@ -16,7 +17,7 @@ interface Entry {
 export default function Leaderboard() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = getClientApiBase();
 
   useEffect(() => {
     let active = true;

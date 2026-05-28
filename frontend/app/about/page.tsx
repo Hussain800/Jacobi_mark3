@@ -245,6 +245,12 @@ export default function AboutPage() {
               About
             </Link>
             <Link
+              href="/leaderboard"
+              className="text-[#666] hover:text-white transition-colors"
+            >
+              Leaderboard
+            </Link>
+            <Link
               href="/pricing"
               className="text-[#666] hover:text-white transition-colors"
             >

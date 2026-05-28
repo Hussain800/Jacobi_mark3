@@ -36,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-5 text-[11px] font-mono">
             <Link href="/chat" className="text-white/40 hover:text-white/80 transition-colors">Probe</Link>
             <Link href="/history" className="text-white/40 hover:text-white/80 transition-colors">History</Link>
+            <Link href="/leaderboard" className="text-white/40 hover:text-white/80 transition-colors">Leaderboard</Link>
             <Link href="/pricing" className="text-white/40 hover:text-white/80 transition-colors">Pricing</Link>
           </div>
           <div className="ml-auto">

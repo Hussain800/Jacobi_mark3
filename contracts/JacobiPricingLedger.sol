@@ -7,7 +7,7 @@ pragma solidity 0.8.24;
 ///         price-audit batches and allows on-chain verification of individual
 ///         price records via Merkle inclusion proofs.
 /// @dev    All proof verification is performed in Yul assembly for minimal gas
-///         overhead. Leaf construction follows `keccak256(abi.encodePacked(...))`
+///         overhead. Leaf construction follows `keccak256(abi.encode(...))`
 ///         and proof hashing uses sorted-pair ordering (OpenZeppelin standard).
 contract JacobiPricingLedger {
     // ──────────────────────────────────────────────
@@ -16,6 +16,9 @@ contract JacobiPricingLedger {
 
     /// @notice Contract owner; the only address permitted to commit new roots.
     address public owner;
+
+    /// @notice Pending owner awaiting acceptance via `acceptOwnership`.
+    address public pendingOwner;
 
     /// @notice Maps a committed Merkle root to the block timestamp at which it
     ///         was recorded. A zero value indicates the root has never been committed.
@@ -53,6 +56,16 @@ contract JacobiPricingLedger {
         address indexed verifier
     );
 
+    /// @notice Emitted when a new owner is proposed via `transferOwnership`.
+    event OwnershipTransferStarted(
+        address indexed previousOwner, address indexed newOwner
+    );
+
+    /// @notice Emitted when the pending owner accepts via `acceptOwnership`.
+    event OwnershipTransferred(
+        address indexed previousOwner, address indexed newOwner
+    );
+
     // ──────────────────────────────────────────────
     //  Errors
     // ──────────────────────────────────────────────
@@ -72,6 +85,12 @@ contract JacobiPricingLedger {
     /// @dev Thrown when `transferOwnership` is called with the zero address.
     error ZeroAddress();
 
+    /// @dev Thrown when `commitRoot` is called with an already-committed root.
+    error RootAlreadyExists();
+
+    /// @dev Thrown when a non-pending-owner calls an `onlyPendingOwner` function.
+    error PendingOwnerOnly();
+
     // ──────────────────────────────────────────────
     //  Modifiers
     // ──────────────────────────────────────────────
@@ -79,6 +98,12 @@ contract JacobiPricingLedger {
     /// @dev Restricts access to the current `owner`.
     modifier onlyOwner() {
         if (msg.sender != owner) revert Unauthorized();
+        _;
+    }
+
+    /// @dev Restricts access to the `pendingOwner`.
+    modifier onlyPendingOwner() {
+        if (msg.sender != pendingOwner) revert PendingOwnerOnly();
         _;
     }
 
@@ -100,6 +125,7 @@ contract JacobiPricingLedger {
     /// @param root      The 32-byte Merkle root to store.
     /// @param batchSize The number of individual price records in this batch.
     function commitRoot(bytes32 root, uint256 batchSize) external onlyOwner {
+        if (roots[root] != 0) revert RootAlreadyExists();
         roots[root] = block.timestamp;
 
         // Safe from overflow for any practical root count.
@@ -142,7 +168,7 @@ contract JacobiPricingLedger {
 
         // 2. Reconstruct the leaf from the supplied price-record fields.
         bytes32 leaf = keccak256(
-            abi.encodePacked(sessionId, domain, priceCents, spreadCents, salt)
+            abi.encode(sessionId, domain, priceCents, spreadCents, salt)
         );
 
         // 3. Nullifier check — each leaf may only be consumed once.
@@ -163,11 +189,22 @@ contract JacobiPricingLedger {
     //  External — Ownership
     // ──────────────────────────────────────────────
 
-    /// @notice Transfers ownership of the contract to a new address.
-    /// @param newOwner The address of the new owner. Must not be the zero address.
+    /// @notice Initiates a 2-step ownership transfer. The new address must
+    ///         call `acceptOwnership` to finalize the transfer.
+    /// @param newOwner The address of the proposed new owner.
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert ZeroAddress();
-        owner = newOwner;
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /// @notice Finalizes a 2-step ownership transfer. Only callable by the
+    ///         address currently set as `pendingOwner`.
+    function acceptOwnership() external onlyPendingOwner {
+        address previousOwner = owner;
+        owner = pendingOwner;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previousOwner, owner);
     }
 
     // ──────────────────────────────────────────────
@@ -188,25 +225,16 @@ contract JacobiPricingLedger {
         bytes32[] calldata proof,
         bytes32 leaf
     ) internal pure returns (bool) {
+        bool isValid;
         assembly {
-            // `computedHash` starts as the leaf value and is iteratively
-            // hashed with each proof element up to the root.
             let computedHash := leaf
 
-            // Derive the calldata offset and length of the `proof` array.
-            // For a dynamic calldata array the first 32 bytes at the offset
-            // encode the length; elements follow immediately after.
             let proofLen := proof.length
             let proofOffset := proof.offset
 
-            // Iterate over each proof element.
             for { let i := 0 } lt(i, proofLen) { i := add(i, 1) } {
-                // Load the i-th sibling hash from calldata.
                 let sibling := calldataload(add(proofOffset, mul(i, 0x20)))
 
-                // --- Sorted-pair hashing (branch-free) ---
-                // Scratch space at memory 0x00–0x3f is used for keccak256.
-                // Place the smaller value at 0x00 and the larger at 0x20.
                 switch lt(computedHash, sibling)
                 case 1 {
                     mstore(0x00, computedHash)
@@ -217,13 +245,11 @@ contract JacobiPricingLedger {
                     mstore(0x20, computedHash)
                 }
 
-                // Hash the 64-byte pair in scratch space.
                 computedHash := keccak256(0x00, 0x40)
             }
 
-            // The proof is valid iff the computed root equals the expected root.
-            mstore(0x00, eq(computedHash, root))
-            return(0x00, 0x20)
+            isValid := eq(computedHash, root)
         }
+        return isValid;
     }
 }

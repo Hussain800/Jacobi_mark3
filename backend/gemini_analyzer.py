@@ -5,11 +5,37 @@ Priority: OpenCode Zen (DeepSeek V4 Flash Free) → Gemini → statistical fallb
 
 import hashlib
 import json
+import logging
 import os
-from typing import List, Optional
+import time
+from typing import Dict, List, Optional
+
+logger = logging.getLogger("jacobi.gemini")
 
 import httpx
 from pydantic import BaseModel, Field
+
+# ─── Sync / Async HTTP helpers ────────────────────────────────────────
+
+
+def _call_llm_sync(
+    url: str,
+    payload: dict,
+    headers: Dict[str, str],
+    timeout: float = 30.0,
+) -> httpx.Response:
+    return httpx.post(url, json=payload, headers=headers, timeout=timeout)
+
+
+async def _call_llm_async(
+    url: str,
+    payload: dict,
+    headers: Dict[str, str],
+    timeout: float = 30.0,
+) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        return await client.post(url, json=payload, headers=headers)
+
 
 # ─── Gemini SDK (fallback provider) ────────────────────────────────────
 try:
@@ -67,7 +93,30 @@ class GeminiVerdict(BaseModel):
 
 # ─── Cache ────────────────────────────────────────────────────────────
 
-_analysis_cache: dict = {}  # In-memory cache: hash(probe_data) -> verdict
+_analysis_cache: dict = {}  # In-memory cache: hash(probe_data) -> {"verdict": ..., "timestamp": ...}
+_cache_order: list = []  # Insertion order for eviction (oldest first)
+MAX_CACHE_SIZE = 100
+CACHE_TTL_SECONDS = 3600
+
+
+def _cache_get(key: str):
+    entry = _analysis_cache.get(key)
+    if entry is None:
+        return None
+    if time.time() - entry["timestamp"] > CACHE_TTL_SECONDS:
+        _analysis_cache.pop(key, None)
+        if key in _cache_order:
+            _cache_order.remove(key)
+        return None
+    return entry["verdict"]
+
+
+def _cache_set(key: str, verdict):
+    _analysis_cache[key] = {"verdict": verdict, "timestamp": time.time()}
+    _cache_order.append(key)
+    if len(_analysis_cache) > MAX_CACHE_SIZE and len(_cache_order) > 1:
+        oldest = _cache_order.pop(0)
+        _analysis_cache.pop(oldest, None)
 
 
 def _cache_key(probe_data: dict) -> str:
@@ -208,13 +257,13 @@ def _analyze_with_opencode(probe_data: dict) -> Optional[GeminiVerdict]:
 
     messages = _build_opencode_messages(probe_data)
     try:
-        response = httpx.post(
+        response = _call_llm_sync(
             OPENCODE_API_URL,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
+            payload={
                 "model": OPENCODE_MODEL,
                 "messages": messages,
                 "temperature": 0.2,
@@ -249,8 +298,9 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
     probed = probe_data.copy() if probe_data else {}
 
     ck = _cache_key(probed)
-    if ck in _analysis_cache:
-        return _analysis_cache[ck]
+    cached = _cache_get(ck)
+    if cached is not None:
+        return cached
 
     # 1. Try AI/ML API (partner provider, primary)
     aiml_key = os.getenv("AIMLAPI_KEY")
@@ -258,19 +308,24 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         try:
             aiml_model = os.getenv("AIMLAPI_MODEL", "gpt-4o")
             context = _build_probe_context(probed)
+            schema_prompt = (
+                "You MUST respond with valid JSON matching this exact schema:\n"
+                f"{_VERDICT_SCHEMA_JSON}\n\n"
+                "Return ONLY the JSON object. No markdown, no code fences, no extra text."
+            )
             payload = {
                 "model": aiml_model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
+                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format.\n\n{schema_prompt}"},
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
                 "max_tokens": 2048,
             }
-            resp = httpx.post(
+            resp = _call_llm_sync(
                 "https://api.aimlapi.com/v1/chat/completions",
-                json=payload,
+                payload=payload,
                 headers={"Authorization": f"Bearer {aiml_key}", "Content-Type": "application/json"},
                 timeout=30.0,
             )
@@ -279,7 +334,7 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 verdict = GeminiVerdict.model_validate_json(content)
                 verdict.analysis_timestamp = probed.get("timestamp", "")
                 verdict.model_used = f"aimlapi/{aiml_model}"
-                _analysis_cache[ck] = verdict
+                _cache_set(ck, verdict)
                 return verdict
             else:
                 print(f"[AIMLAPI] API returned {resp.status_code}: {resp.text[:200]}")
@@ -308,15 +363,15 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 verdict = GeminiVerdict.model_validate_json(response.text)
                 verdict.analysis_timestamp = probed.get("timestamp", "")
                 verdict.model_used = model_name
-                _analysis_cache[ck] = verdict
+                _cache_set(ck, verdict)
                 return verdict
             except Exception as e:
-                print(f"[GEMINI] API call failed: {e}")
+                logger.warning(f"API call failed: {e}")
 
     # 3. Try OpenCode Zen (DeepSeek V4 Flash Free)
     verdict = _analyze_with_opencode(probed)
     if verdict is not None:
-        _analysis_cache[ck] = verdict
+        _cache_set(ck, verdict)
         return verdict
 
     # 4. Try Groq
@@ -325,19 +380,24 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         try:
             groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
             context = _build_probe_context(probed)
+            schema_prompt = (
+                "You MUST respond with valid JSON matching this exact schema:\n"
+                f"{_VERDICT_SCHEMA_JSON}\n\n"
+                "Return ONLY the JSON object. No markdown, no code fences, no extra text."
+            )
             payload = {
                 "model": groq_model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
+                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format.\n\n{schema_prompt}"},
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
                 "max_tokens": 2048,
             }
-            resp = httpx.post(
+            resp = _call_llm_sync(
                 "https://api.groq.com/openai/v1/chat/completions",
-                json=payload,
+                payload=payload,
                 headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
                 timeout=30.0,
             )
@@ -346,7 +406,7 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
                 verdict = GeminiVerdict.model_validate_json(content)
                 verdict.analysis_timestamp = probed.get("timestamp", "")
                 verdict.model_used = f"groq/{groq_model}"
-                _analysis_cache[ck] = verdict
+                _cache_set(ck, verdict)
                 return verdict
             else:
                 print(f"[GROQ] API returned {resp.status_code}: {resp.text[:200]}")
@@ -355,74 +415,7 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
 
     # 5. Heuristic fallback (always works)
     verdict = _fallback_verdict(probed)
-    _analysis_cache[ck] = verdict
-    return verdict
-
-    # 2. Try AI/ML API (partner provider, OpenAI-compatible)
-    aiml_key = os.getenv("AIMLAPI_KEY")
-    if aiml_key:
-        try:
-            import httpx
-            aiml_model = os.getenv("AIMLAPI_MODEL", "gpt-4o")
-            context = _build_probe_context(probed)
-            payload = {
-                "model": aiml_model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.2,
-                "max_tokens": 2048,
-            }
-            resp = httpx.post(
-                "https://api.aimlapi.com/v1/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {aiml_key}", "Content-Type": "application/json"},
-                timeout=30.0,
-            )
-            if resp.status_code == 200:
-                content = resp.json()["choices"][0]["message"]["content"]
-                verdict = GeminiVerdict.model_validate_json(content)
-                verdict.analysis_timestamp = probed.get("timestamp", "")
-                verdict.model_used = f"aimlapi/{aiml_model}"
-                _analysis_cache[ck] = verdict
-                return verdict
-            else:
-                print(f"[AIMLAPI] API returned {resp.status_code}: {resp.text[:200]}")
-        except Exception as e:
-            print(f"[AIMLAPI] API call failed: {e}")
-
-    # 3. Try Gemini (fallback provider)
-    if Client is not None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-            try:
-                client = Client(api_key=api_key)
-                context = _build_probe_context(probed)
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=f"{SYSTEM_PROMPT}\n\n{context}\n\nAnalyze these results and provide your verdict in JSON format.",
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GeminiVerdict,
-                        temperature=0.2,
-                        top_p=0.95,
-                        max_output_tokens=2048,
-                    )
-                )
-                verdict = GeminiVerdict.model_validate_json(response.text)
-                verdict.analysis_timestamp = probed.get("timestamp", "")
-                verdict.model_used = model_name
-                _analysis_cache[ck] = verdict
-                return verdict
-            except Exception as e:
-                print(f"[GEMINI] API call failed: {e}")
-
-    # 3. Heuristic fallback (always works)
-    verdict = _fallback_verdict(probed)
-    _analysis_cache[ck] = verdict
+    _cache_set(ck, verdict)
     return verdict
 
 
@@ -438,8 +431,9 @@ async def analyze_probe_results(probe_data: dict) -> GeminiVerdict:
     """
     # Check cache
     ck = _cache_key(probe_data)
-    if ck in _analysis_cache:
-        return _analysis_cache[ck]
+    cached = _cache_get(ck)
+    if cached is not None:
+        return cached
 
     # Check if Gemini SDK is available
     if Client is None:
@@ -475,7 +469,7 @@ async def analyze_probe_results(probe_data: dict) -> GeminiVerdict:
         verdict.model_used = model_name
 
         # Cache the result
-        _analysis_cache[ck] = verdict
+        _cache_set(ck, verdict)
 
         return verdict
 

@@ -122,7 +122,7 @@ def compute_savings_verdict(probe_data: dict) -> dict:
         "cheapest_achievable_price": round(cheapest["price"], 2) if cheapest else 0,
         "most_expensive_price": round(most_expensive["price"], 2) if most_expensive else 0,
         "baseline_price": round(baseline, 2),
-        "cheapest_label": cheapest["label"] if cheapest else "Unknown",
+        "cheapest_label": cheapest.get("label", "Unknown") if cheapest else "Unknown",
         "is_discriminating": is_discriminating,
         "severity": severity,
         "opportunities": opportunities,

@@ -62,9 +62,9 @@ async def remember_probe(report: dict) -> None:
     memory_text = (
         f"JACOBI probe completed for {target_name} ({target_url}). "
         f"Topology: {topology}. "
-        f"Baseline price: ${baseline:.2f}. "
-        f"Price spread: ${spread:.2f}. "
-        f"Discrimination index: {di:.1f}. "
+        f"Baseline price: ${baseline:.2f if baseline is not None else 'N/A'}. "
+        f"Price spread: ${spread:.2f if spread is not None else 'N/A'}. "
+        f"Discrimination index: {di:.1f if di is not None else 'N/A'}. "
         f"Significant variables: {len(sig_gradients)}. "
         f"Summary: {summary}"
     )

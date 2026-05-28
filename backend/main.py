@@ -13,11 +13,11 @@ import re
 import statistics
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -27,13 +27,9 @@ from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
-from cognee_memory import remember_probe, is_available as cognee_available
-from billing import router as billing_router
-from auth_user import get_optional_user
-from profile_store import can_run_probe, increment_probe_count, get_tier
 
 load_dotenv()
-BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
+BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
 
 
 class TargetProbeInput(BaseModel):
@@ -69,7 +65,6 @@ class ProbeAgentStatus(BaseModel):
     variables: Dict[str, str] = Field(default_factory=dict)
     network_tier: Optional[int] = None
     proxy_type: Optional[str] = None
-    retried: bool = False
 
 
 class TopologyReport(BaseModel):
@@ -160,207 +155,16 @@ CURRENCY_SYMBOL_MAP = {
 }
 
 PRICE_RANGES = {
-    "booking.com": {"min": 5, "max": 250000},
-    "agoda.com": {"min": 5, "max": 250000},
-    "expedia": {"min": 5, "max": 50000},
-    "hotels.com": {"min": 5, "max": 50000},
-    "flydubai": {"min": 5, "max": 20000},
-    "united": {"min": 5, "max": 20000},
-    "delta": {"min": 5, "max": 20000},
-    "emirates": {"min": 5, "max": 50000},
-    "amazon": {"min": 1, "max": 50000},
-    "default": {"min": 1, "max": 500000},
+    "booking.com": {"min": 15, "max": 25000},
+    "expedia": {"min": 30, "max": 15000},
+    "hotels.com": {"min": 20, "max": 20000},
+    "flydubai": {"min": 10, "max": 5000},
+    "united": {"min": 30, "max": 5000},
+    "delta": {"min": 30, "max": 5000},
+    "emirates": {"min": 30, "max": 10000},
+    "amazon": {"min": 1, "max": 5000},
+    "default": {"min": 5, "max": 50000},
 }
-
-# ─── Site-Specific Price Parser Registry ──────────────────────────────────
-# Allows registering custom parsers for domains where the generic
-# CSS-selector approach fails (e.g. Google Flights, Expedia, Shopify sites).
-
-_SITE_PARSERS: Dict[str, callable] = {}
-
-
-def register_site_parser(domain: str, parser_func: callable):
-    """Register a custom price-parsing function for a specific domain.
-
-    The parser receives (html: str, url: str) and must return List[float].
-    When `parse_page_prices` is called, registered parsers are checked
-    first (by substring match against the URL) before the default logic.
-    """
-    _SITE_PARSERS[domain] = parser_func
-
-
-# ─── Built-in Site Parsers ───────────────────────────────────────────────
-
-def _parse_google_flights(html: str, url: str) -> List[float]:
-    """Extract flight prices from Google Flights result pages.
-
-    Relies on regex patterns for currency amounts near
-    'total', 'price', and 'fare' keywords in visible text.
-    """
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "lxml")
-    results: List[float] = []
-    visible = soup.get_text()
-    currency_code, rate = _detect_currency(html, url)
-    pr = PRICE_RANGES["default"]
-
-    # Look for price amounts close to flight-related keyword anchors
-    for kw in ["total", "price", "fare", "round trip", "one way", "per person"]:
-        idx = 0
-        while True:
-            idx = visible.lower().find(kw, idx)
-            if idx == -1:
-                break
-            # Search a 120-char window around the keyword
-            window = visible[max(0, idx - 20):idx + len(kw) + 100]
-            for m in re.finditer(r'\$\s*(\d{2,4}(?:,\d{3})*(?:\.\d{2})?)', window):
-                try:
-                    v = float(m.group(1).replace(",", ""))
-                    if pr["min"] <= v <= pr["max"]:
-                        results.append(round(v * rate, 2))
-                except ValueError:
-                    continue
-            idx += len(kw)
-
-    return sorted(set(results))
-
-
-def _parse_expedia(html: str, url: str) -> List[float]:
-    """Extract hotel/flight prices from Expedia pages.
-
-    Targets data-testid price attributes and JSON-LD structured data
-    which Expedia renders reliably across its geo-variants.
-    """
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "lxml")
-    results: List[float] = []
-    currency_code, rate = _detect_currency(html, url)
-    pr = PRICE_RANGES["expedia"]
-
-    # data-testid price elements (Expedia's primary price rendering)
-    for sel in [
-        '[data-testid="price-summary"]',
-        '[data-testid*="price"]',
-        '[data-testid*="total"]',
-        '[data-stid*="price"]',
-        'span[class*="uitk-lockup-price"]',
-        'div[class*="uitk-price"]',
-        '[data-testid*="offer-card"] [class*="price"]',
-    ]:
-        for el in soup.select(sel):
-            t = el.get_text(strip=True)
-            if t and len(t) < 80:
-                n = _parse_number(t)
-                if n and pr["min"] <= n <= pr["max"]:
-                    results.append(round(n * rate, 2))
-
-    # JSON-LD structured data
-    for script in soup.select('script[type="application/ld+json"]'):
-        try:
-            data = json.loads(script.string)
-            items = [data] if isinstance(data, dict) else data if isinstance(data, list) else []
-            for item in items:
-                if isinstance(item, dict):
-                    for key in ["price", "lowPrice", "highPrice", "totalPrice"]:
-                        v = _parse_number(str(item.get(key, "0")))
-                        if v and v > 5:
-                            cur = str(item.get("priceCurrency", currency_code))
-                            r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-                            results.append(round(v * r, 2))
-        except Exception:
-            pass
-
-    return sorted(set(results))
-
-
-def _parse_generic_ecommerce(html: str, url: str) -> List[float]:
-    """Extract prices from generic e-commerce pages via meta tags and JSON-LD.
-
-    Many Shopify/WooCommerce/BigCommerce sites expose prices through
-    og:price:amount / product:price:amount meta tags and JSON-LD Product
-    schemas. This parser targets those before falling back to CSS selectors.
-    """
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "lxml")
-    results: List[float] = []
-    currency_code, rate = _detect_currency(html, url)
-    pr = PRICE_RANGES["default"]
-
-    # Meta tag price hints (og:price:amount, product:price:amount, etc.)
-    for meta in soup.find_all("meta"):
-        prop = (meta.get("property", "") or meta.get("name", "")).lower()
-        content = meta.get("content", "")
-        if not content:
-            continue
-        if any(kw in prop for kw in ["price:amount", "product:price:amount",
-                                       "sale_price:amount", "og:price:amount"]):
-            n = _parse_number(content)
-            if n and n > 0.5:
-                # Check for currency in sibling meta
-                cur = "USD"
-                for sibling in soup.find_all("meta"):
-                    sprop = (sibling.get("property", "") or sibling.get("name", "")).lower()
-                    if sprop.replace(":amount", ":currency") == prop.replace(":amount", ":currency"):
-                        cur = sibling.get("content", "USD").upper()
-                        break
-                r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-                if pr["min"] <= (n * r) <= pr["max"]:
-                    results.append(round(n * r, 2))
-
-    # JSON-LD Product/Offer structured data
-    for script in soup.select('script[type="application/ld+json"]'):
-        try:
-            data = json.loads(script.string)
-            items = [data] if isinstance(data, dict) else data if isinstance(data, list) else []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                # Direct price on Product
-                for key in ["price", "lowPrice", "highPrice"]:
-                    v = _parse_number(str(item.get(key, "0")))
-                    if v and v > 0.5:
-                        cur = str(item.get("priceCurrency", "USD"))
-                        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-                        if pr["min"] <= (v * r) <= pr["max"]:
-                            results.append(round(v * r, 2))
-                # Nested offers
-                offers = item.get("offers", item)
-                if isinstance(offers, dict):
-                    p = _parse_number(str(offers.get("price", "0")))
-                    if p and p > 0.5:
-                        cur = str(offers.get("priceCurrency", "USD"))
-                        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-                        if pr["min"] <= (p * r) <= pr["max"]:
-                            results.append(round(p * r, 2))
-                elif isinstance(offers, list):
-                    for offer in offers:
-                        if isinstance(offer, dict):
-                            p = _parse_number(str(offer.get("price", "0")))
-                            if p and p > 0.5:
-                                cur = str(offer.get("priceCurrency", "USD"))
-                                r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-                                if pr["min"] <= (p * r) <= pr["max"]:
-                                    results.append(round(p * r, 2))
-        except Exception:
-            pass
-
-    return sorted(set(results))
-
-
-# Register the built-in site-specific parsers
-register_site_parser("google.com/travel/flights", _parse_google_flights)
-register_site_parser("google.travel", _parse_google_flights)
-register_site_parser("expedia.", _parse_expedia)
-register_site_parser("hotels.com", _parse_expedia)  # Expedia-owned, same markup
-register_site_parser("vrbo.com", _parse_expedia)      # Expedia-owned
-register_site_parser("orbitz.com", _parse_expedia)    # Expedia-owned
-register_site_parser("travelocity.com", _parse_expedia)
-for ecom_domain in ["shopify.com", "myshopify.com", "bigcommerce.com",
-                     "woocommerce", "etsy.com", "ebay.com", "walmart.com",
-                     "target.com", "bestbuy.com", "homedepot.com",
-                     "costco.com", "wayfair.com", "aliexpress.com",
-                     "alibaba.com", "rakuten.com", "newegg.com"]:
-    register_site_parser(ecom_domain, _parse_generic_ecommerce)
 
 
 def _parse_number(text: str) -> Optional[float]:
@@ -387,22 +191,8 @@ def _detect_currency(text: str, url: str) -> tuple[str, float]:
 
 
 def parse_page_prices(html: str, url: str) -> List[float]:
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "lxml")
-    url_lower = url.lower()
     results: List[float] = []
-
-    # Check site-specific parser registry first — registered parsers take
-    # precedence over the generic CSS-selector fallback below.
-    for domain_fragment, parser_func in _SITE_PARSERS.items():
-        if domain_fragment in url_lower:
-            try:
-                site_results = parser_func(html, url)
-                if site_results:
-                    return sorted(set(round(p, 2) for p in site_results))
-            except Exception:
-                pass  # parser failed — fall through to default logic
-
+    url_lower = url.lower()
     currency_code, rate = _detect_currency(html, url)
     pr = PRICE_RANGES["default"]
     for domain, r in PRICE_RANGES.items():
@@ -416,141 +206,166 @@ def parse_page_prices(html: str, url: str) -> List[float]:
         if pr["min"] <= conv <= pr["max"]:
             results.append(conv)
 
-    def parse_price_text(el) -> Optional[str]:
-        if not el:
-            return None
-        t = el.get_text(strip=True)
-        return t if t else None
+    # Try parsing with BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
 
-    # Always try JSON-LD structured data first — most reliable across sites
-    for script in soup.select('script[type="application/ld+json"]'):
-        try:
-            data = json.loads(script.string)
-            if isinstance(data, dict):
-                for key in ['price', 'lowPrice', 'highPrice']:
-                    v = _parse_number(str(data.get(key, '0')))
-                    if v and v > 5:
-                        store(v, str(data.get('priceCurrency', currency_code)))
-                offers = data.get('offers', data)
-                if isinstance(offers, dict):
-                    p = _parse_number(str(offers.get('price', '0')))
-                    if p and p > 5:
-                        store(p, str(offers.get('priceCurrency', currency_code)))
-                    for sub in ['lowPrice', 'highPrice']:
-                        v = _parse_number(str(offers.get(sub, '0')))
-                        if v and v > 5:
-                            store(v, str(offers.get('priceCurrency', currency_code)))
-            elif isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        p = _parse_number(str(item.get('price', '0')))
-                        if p and p > 5:
-                            store(p, str(item.get('priceCurrency', currency_code)))
-        except Exception:
-            pass
+        def parse_price_text(el) -> Optional[str]:
+            if not el: return None
+            t = el.get_text(strip=True)
+            return t if t else None
 
-    if "booking.com" in url_lower:
-        for sel in [
-            '[data-testid="price-and-discounted-price"]',
-            '[data-testid="price-for-x-nights"]',
-            '[data-testid*="rate"]',
-            '[data-testid*="room"] span',
-            'div[data-testid="hprt-table"] span[class*="price"]',
-            'span[class*="bui-price"]',
-            '[data-price-currency]',
-        ]:
-            els = soup.select(sel)
-            for el in els:
-                t = parse_price_text(el)
-                if t and len(t) < 80:
-                    n = _parse_number(t)
-                    if n and pr["min"] <= n <= pr["max"]:
-                        detected_cur = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected_cur = c
-                                break
-                        store(n, detected_cur)
+        # JSON-LD structured data
+        for script in soup.select('script[type="application/ld+json"]'):
+            try:
+                data = json.loads(script.string)
+                items = []
+                if isinstance(data, dict):
+                    items.append(data)
+                    if "offers" in data:
+                        items.append(data["offers"])
+                    if "itemListElement" in data:
+                        items.extend(data["itemListElement"])
+                elif isinstance(data, list):
+                    items.extend(data)
+                for item in items:
+                    if not isinstance(item, dict): continue
+                    for key in ["price", "lowPrice", "highPrice", "priceSpecification"]:
+                        val = item.get(key, item if key == "priceSpecification" else None)
+                        if isinstance(val, dict):
+                            p = _parse_number(str(val.get("price", "0")))
+                            if p and p > 5:
+                                store(p, str(val.get("priceCurrency", currency_code)))
+                        elif val is not None:
+                            p = _parse_number(str(val))
+                            if p and p > 5:
+                                store(p, str(item.get("priceCurrency", currency_code)))
+            except Exception:
+                pass
 
-    elif "amazon" in url_lower:
-        for sel in [
-            'span.a-price[data-a-size] span.a-offscreen',
-            'span.a-price-whole',
-            '.a-price .a-offscreen',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t:
-                    n = _parse_number(t)
-                    if n:
-                        store(n, "USD")
+        # Domain-specific CSS selectors
+        if "booking.com" in url_lower:
+            for sel in [
+                '[data-testid="price-and-discounted-price"]',
+                '[data-testid="price-for-x-nights"]',
+                '[data-testid*="rate"]',
+                '[data-testid*="room"]',
+                '[data-testid*="price"]',
+                'div[data-testid="hprt-table"]',
+                '[class*="bui-price"]',
+                '[data-price-currency]',
+                '[class*="prco-"]',
+                '[class*="-price-"]',
+                '[itemprop="price"]',
+                '.bui-price-display__value',
+                '.sr_gs_price',
+                '.avble',
+                '.hotel_price',
+                '.price_link',
+                'span[class*="price"]',
+                'div[class*="price"]',
+            ]:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t and len(t) < 100:
+                        n = _parse_number(t)
+                        if n and pr["min"] <= n <= pr["max"] * 2:
+                            detected = currency_code
+                            for sym, c in CURRENCY_SYMBOL_MAP.items():
+                                if sym in t: detected = c; break
+                            store(n, detected)
 
-    elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
-        for sel in [
-            'span[class*="fare"]', 'span[class*="price"]', 'div[class*="price"]',
-            '[data-testid*="price"]', '.total-amount', '.amount',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t:
-                    n = _parse_number(t)
-                    if n and n > 10:
-                        detected = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected = c
-                                break
-                        store(n, detected)
+        elif "amazon" in url_lower:
+            for sel in ['span.a-price span.a-offscreen', 'span.a-price-whole', '.a-price .a-offscreen', '.a-color-base']:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t:
+                        n = _parse_number(t)
+                        if n: store(n, "USD")
 
-    else:
-        for sel in [
-            '[data-price]', '[itemprop="price"]', '.price', '.amount',
-            '.product-price', '.sale-price', '[class*="price"]',
-            '[data-testid*="price"]', '.total',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t and len(t) < 60:
-                    n = _parse_number(t)
-                    if n and n > 5:
-                        detected = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected = c
-                                break
-                        store(n, detected)
+        elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
+            for sel in ['[class*="fare"]', '[class*="price"]', '[data-testid*="price"]', '.total-amount', '.amount']:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t:
+                        n = _parse_number(t)
+                        if n and n > 10: store(n, currency_code)
 
-    # Deduplicate and validate
+        else:
+            for sel in [
+                '[data-price]', '[itemprop="price"]', '.price', '.amount',
+                '.product-price', '.sale-price', '[class*="price"]',
+                '[data-testid*="price"]', '.total', '[class*="ProductPrice"]',
+                '[class*="product-price"]', '[class*="sale-price"]',
+            ]:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t and len(t) < 60:
+                        n = _parse_number(t)
+                        if n and n > 5: store(n, currency_code)
+    except Exception:
+        pass
+
+    # Deduplicate
     results = sorted(set(round(p, 2) for p in results))
 
-    # If we have enough structured/selector results, clean outliers
+    # Trim outliers if enough results
     if len(results) >= 6:
-        results.sort()
         cut = max(1, len(results) // 10)
         results = results[cut:-cut]
 
-    # Fallback: regex on visible text when BS finds nothing
+    # Aggressive regex fallback when BS finds too few
     if len(results) < 2:
         visible = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
         visible = re.sub(r'<style[^>]*>.*?</style>', '', visible, flags=re.DOTALL | re.IGNORECASE)
-        # INR prices (common for Indian hotels like Leela Palace)
-        for m in re.finditer(r'(?:₹|INR)\s*(\d[\d,]*)', visible):
-            try:
-                v = float(m.group(1).replace(",", ""))
-                if 500 <= v <= 200000:
-                    results.append(round(v * 0.012, 2))
-            except ValueError:
-                continue
-        # USD and major currency prices
-        for pat in [
-            r'\$\s*(\d{2,6}(?:\.\d{2})?)',
-            r'(?:USD|AED|EUR|GBP|QAR|SAR)\s*(\d{2,6}(?:\.\d{2})?)',
-        ]:
+
+        # All currency patterns with symbols and codes
+        currency_patterns = [
+            (r'(?:₹|INR)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.012, 500, 200000),
+            (r'\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.0, 5, 50000),
+            (r'(?:USD)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.0, 5, 50000),
+            (r'(?:AED|د\.إ|د.إ)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2723, 20, 100000),
+            (r'(?:EUR|€)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.085, 5, 50000),
+            (r'(?:GBP|£)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.270, 5, 50000),
+            (r'(?:QAR|ر.ق)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2745, 20, 100000),
+            (r'(?:SAR|﷼)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2666, 20, 100000),
+            (r'¥\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.0067, 500, 10000000),
+            (r'€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.085, 5, 50000),
+            (r'£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.270, 5, 50000),
+        ]
+
+        for pat, conv_rate, min_val, max_val in currency_patterns:
             for m in re.finditer(pat, visible):
+                try:
+                    v = float(m.group(1).replace(",", ""))
+                    usd = v * conv_rate
+                    if min_val <= v <= max_val and pr["min"] <= usd <= pr["max"]:
+                        results.append(round(usd, 2))
+                except ValueError:
+                    continue
+
+        # Last resort: find any reasonable number near currency context
+        if len(results) < 2:
+            for m in re.finditer(r'(?:price|total|fare|amount|cost|rate|night|room|person)\s*:?\s*\$?\s*(\d{2,5}(?:\.\d{2})?)', visible, re.IGNORECASE):
                 try:
                     v = float(m.group(1).replace(",", ""))
                     if pr["min"] <= v <= pr["max"]:
                         results.append(round(v, 2))
+                except ValueError:
+                    continue
+
+        # If nothing found at all, try parsing numbers from any visible text as last resort
+        if len(results) < 1:
+            currency_code_names = "|".join(CURRENCY_RATES.keys())
+            for m in re.finditer(rf'(?:{currency_code_names})\s*(\d{{2,6}}(?:\.\d{{2}})?)', visible, re.IGNORECASE):
+                try:
+                    code = m.group(0).split()[0]
+                    v = float(m.group(1).replace(",", ""))
+                    rate_c = CURRENCY_RATES.get(code.upper(), 1.0)
+                    usd = v * rate_c
+                    if pr["min"] <= usd <= pr["max"]:
+                        results.append(round(usd, 2))
                 except ValueError:
                     continue
 
@@ -590,44 +405,9 @@ class BrightDataMCPClient:
 
     async def start(self):
         import httpx
-        self._client = httpx.AsyncClient(timeout=65.0)
+        self._client = httpx.AsyncClient(timeout=30.0)
 
-    async def _direct_http_fetch(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
-        """Fallback: fetch the URL directly (no BrightData proxy)."""
-        import httpx
-        start_ts = time.time()
-        user_agent = identity.get("user_agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-        headers = {
-            "User-Agent": user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        try:
-            direct_client = httpx.AsyncClient(timeout=timeout_s, follow_redirects=True)
-            try:
-                response = await asyncio.wait_for(
-                    direct_client.get(url, headers=headers),
-                    timeout=timeout_s,
-                )
-                elapsed_ms = int((time.time() - start_ts) * 1000)
-                if response.status_code in (200, 201, 202, 301, 302, 304):
-                    return {"success": True, "text": response.text, "elapsed_ms": elapsed_ms,
-                            "_fallback": "direct_http"}
-                return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"Direct HTTP returned {response.status_code}",
-                        "_fallback": "direct_http"}
-            finally:
-                await direct_client.aclose()
-        except asyncio.TimeoutError:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": "Direct HTTP timeout", "_fallback": "direct_http"}
-        except Exception as e:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Direct HTTP error: {str(e)[:150]}", "_fallback": "direct_http"}
-
-    async def probe_url(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
+    async def probe_url(self, url: str, identity: dict, timeout_s: float = 30.0) -> dict:
         if not self._client:
             raise RuntimeError("Client not initialized")
         start_ts = time.time()
@@ -639,6 +419,8 @@ class BrightDataMCPClient:
                 "zone": "mcp_unlocker",
                 "url": url,
                 "format": "raw",
+                "render": True,
+                "proxy_type": proxy_type,
                 "country": country,
             }
             response = await asyncio.wait_for(
@@ -651,25 +433,16 @@ class BrightDataMCPClient:
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if response.status_code != 200:
-                err_text = response.text[:200]
-                # If BrightData zone doesn't exist, fall back to direct HTTP
-                if "zone" in err_text.lower() and ("not found" in err_text.lower() or "does not exist" in err_text.lower()):
-                    return await self._direct_http_fetch(url, identity, timeout_s)
                 return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"BrightData returned {response.status_code}: {err_text}"}
+                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
             page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms,
-                    "_source": "brightdata"}
+            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"BrightData timeout {timeout_s}s"}
+                    "error": f"Timeout {timeout_s}s"}
         except Exception as e:
-            err_str = str(e)
-            # Connection errors may indicate BD is down — try direct
-            if "Connection" in err_str or "connect" in err_str.lower():
-                return await self._direct_http_fetch(url, identity, timeout_s)
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"BrightData error: {err_str[:150]}"}
+                    "error": str(e)}
 
     async def close(self):
         if self._client:
@@ -691,41 +464,10 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         price_range=None, max_price_spread=None, max_price_spread_pct=None, gradients=[],
         discrimination_index=0.0, topology_class="unknown", summary="",
         max_discrimination_scenario="", min_discrimination_scenario="", agents=[], error=None,
-        discrimination_score=0.0, _created_at=time.time())
+        discrimination_score=0.0)
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
     return session_id, session
-
-
-MAX_SESSION_AGE_SECONDS = 1800
-MAX_SESSION_ENTRIES = 100
-CLEANUP_INTERVAL_SECONDS = 300
-
-
-async def cleanup_expired_sessions():
-    while True:
-        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
-        try:
-            now = time.time()
-            expired = [
-                sid for sid, s in SESSION_STORE.items()
-                if now - s.get("_created_at", now) > MAX_SESSION_AGE_SECONDS
-                and s.get("status") != "running"
-            ]
-            for sid in expired:
-                SESSION_STORE.pop(sid, None)
-
-            overflow = len(SESSION_STORE) - MAX_SESSION_ENTRIES
-            if overflow > 0:
-                sorted_ids = sorted(
-                    SESSION_STORE.keys(),
-                    key=lambda sid: SESSION_STORE[sid].get("_created_at", now),
-                )
-                for sid in sorted_ids[:overflow]:
-                    if SESSION_STORE.get(sid, {}).get("status") != "running":
-                        SESSION_STORE.pop(sid, None)
-        except Exception:
-            pass  # swallow to keep the background loop alive
 
 
 def compute_gradients(session: dict) -> List[dict]:
@@ -748,39 +490,21 @@ def compute_gradients(session: dict) -> List[dict]:
         vl = statistics.variance(low) if nl > 1 else 0.0
         ps = math.sqrt(vh / nh + vl / nl) if (vh + vl) > 0 else 0.0
         t = delta / ps if ps > 0 else 0.0
-        # Use effect size + delta percentage for significance with small samples
-        # Cohen's d > 0.5 OR delta_pct > 5% = significant
-        effect_size = abs(delta) / (math.sqrt((vh + vl) / 2) + 0.01) if (vh + vl) > 0 else 0.0
-        significant = abs(t) > 1.5 or abs(dpct) > 5.0 or effect_size > 0.5
         labels_high = {"location": "High Income Area", "device": "Premium Device", "cookie_profile": "Aged Profile", "referrer": "Aggregator"}
         labels_low = {"location": "Low Income Area", "device": "Budget Device", "cookie_profile": "Fresh Profile", "referrer": "Direct"}
         results.append(dict(variable_name=var_name, state_high=labels_high.get(var_name, "High"),
             state_low=labels_low.get(var_name, "Low"), mean_price_high=round(mh, 2), mean_price_low=round(ml, 2),
             delta=round(delta, 2), delta_pct=round(dpct, 2), pooled_std=round(ps, 4),
-            t_statistic=round(t, 4), significant=significant, n_high=nh, n_low=nl))
-    for a in agents:
-        if a.get("price") is None: continue
-        p = a["price"]
-        if abs(p - baseline) / baseline > 0.08 and baseline > 0:
-            v = a.get("delta_variable")
-            if v and not any(r["variable_name"] == v + "_outlier" for r in results):
-                results.append(dict(
-                    variable_name=v + "_outlier", state_high=str(a.get("delta_direction", "?")),
-                    state_low="baseline", mean_price_high=round(p, 2),
-                    mean_price_low=round(baseline, 2), delta=round(p - baseline, 2),
-                    delta_pct=round((p - baseline) / baseline * 100, 2),
-                    pooled_std=0.0, t_statistic=0.0, significant=True,
-                    n_high=1, n_low=sum(1 for x in agents if x.get("price") == baseline)))
+            t_statistic=round(t, 4), significant=abs(t) > 2.0, n_high=nh, n_low=nl))
     return results
 
 
 def classify_topology(gradients: List[dict], di: float, baseline: float) -> str:
     sig = sum(1 for g in gradients if g["significant"])
     di_pct = (di / baseline * 100) if baseline else 0
-    max_dpct = max((abs(g.get("delta_pct", 0)) for g in gradients), default=0)
-    if sig == 0 or max_dpct < 3: return "uniform"
-    if sig <= 2 and max_dpct < 12: return "selective"
-    if sig <= 3 and max_dpct < 25: return "progressive"
+    if sig == 0: return "uniform"
+    if sig <= 2 and di_pct < 10: return "selective"
+    if sig <= 3 and di_pct < 25: return "progressive"
     return "aggressive"
 
 
@@ -802,57 +526,33 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
-        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"),
-        retried=False)
+        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
     try:
-        r = await bd.probe_url(url, cfg, 60.0)
+        r = await bd.probe_url(url, cfg, 30.0)
         if not r["success"]:
-            err = r.get("error", "Unknown")
-            elapsed = r.get("elapsed_ms", 0)
-            geo = cfg.get("geo", "")
-            # Non-US agents that timed out get one retry with a datacenter proxy at 15s
-            if "Timeout" in err and not geo.startswith("US"):
-                retry_cfg = dict(cfg)
-                retry_cfg["proxy_type"] = "datacenter"
-                s["retried"] = True
-                s["proxy_type"] = "datacenter"
-                r = await bd.probe_url(url, retry_cfg, 15.0)
-                if not r["success"]:
-                    s["status"] = "failed"; s["error_message"] = err; s["response_time_ms"] = elapsed; return s
-                # Retry succeeded — fall through to success handling below
-            else:
-                s["status"] = "failed"; s["error_message"] = err; s["response_time_ms"] = elapsed; return s
+            s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
         s["response_time_ms"] = r.get("elapsed_ms", 0)
         detected, signal = check_bot_detection(r.get("text", ""))
         if detected:
             s["status"] = "detected"; s["bot_detected"] = True; s["detection_signal"] = signal; return s
         prices = parse_page_prices(r.get("text", ""), url)
-        source_tag = r.get("_source", r.get("_fallback", "unknown"))
         if not prices:
-            s["status"] = "failed"
-            text_len = len(r.get("text", ""))
-            if text_len < 200:
-                s["error_message"] = f"No valid price found (page too small: {text_len}B, source={source_tag})"
-            else:
-                s["error_message"] = f"No valid price found in page ({text_len}B, source={source_tag})"
-            return s
+            s["status"] = "failed"; s["error_message"] = "No valid price found"; return s
         s["price"] = prices[len(prices) // 2]; s["status"] = "success"; return s
     except Exception as e:
         s["status"] = "failed"; s["error_message"] = str(e); return s
 
 
-async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
+async def run_full_probe(url: str, name: str) -> dict:
     sid, session = create_session(url, name)
-    session["tier"] = tier
     overall_start = time.time()
     bd = BrightDataMCPClient()
     await bd.start()
     try:
-        if tier == "pro":
-            # Pro: single concurrent wave (no inter-wave stagger). Targets the
-            # original PRD's <15s execution window. All 24 agents fire at once.
-            all_configs = [c for wi in range(3) for c in WAVE_CONFIGS.get(wi, [])]
-            tasks = [launch_single_agent(bd, url, c) for c in all_configs]
+        for wi in range(3):
+            configs = WAVE_CONFIGS.get(wi, [])
+            if not configs: continue
+            tasks = [launch_single_agent(bd, url, c) for c in configs]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
                 if isinstance(r, Exception): session["failed_agents"] += 1; continue
@@ -860,19 +560,7 @@ async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
                 if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
                 elif r.get("bot_detected"): session["detected_agents"] += 1
                 else: session["failed_agents"] += 1
-        else:
-            for wi in range(3):
-                configs = WAVE_CONFIGS.get(wi, [])
-                if not configs: continue
-                tasks = [launch_single_agent(bd, url, c) for c in configs]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for r in results:
-                    if isinstance(r, Exception): session["failed_agents"] += 1; continue
-                    session["agents"].append(r)
-                    if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
-                    elif r.get("bot_detected"): session["detected_agents"] += 1
-                    else: session["failed_agents"] += 1
-                if wi < 2: await asyncio.sleep(WAVE_STAGGER_S)
+            if wi < 2: await asyncio.sleep(WAVE_STAGGER_S)
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
         if session["detected_agents"] > 12:
@@ -887,31 +575,7 @@ async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         if not valid:
-            session["status"] = "failed"
-            error_reasons: Dict[str, int] = {}
-            for a in session["agents"]:
-                err = a.get("error_message", "unknown")
-                if err not in error_reasons:
-                    error_reasons[err] = 0
-                error_reasons[err] += 1
-            best_reason = max(error_reasons, key=error_reasons.get) if error_reasons else "unknown"
-            bd_fails = sum(1 for a in session["agents"] if "BrightData" in a.get("error_message", ""))
-            zone_fails = sum(1 for a in session["agents"] if "zone" in a.get("error_message", "").lower())
-            direct_fails = sum(1 for a in session["agents"] if "Direct HTTP" in a.get("error_message", ""))
-            if zone_fails >= session["total_agents"] * 0.8:
-                session["error"] = (
-                    "BrightData zone 'mcp_unlocker' not found. "
-                    "To fix: go to https://brightdata.com/cp/zones, "
-                    "delete and recreate the 'mcp_unlocker' Web Unlocker zone, "
-                    "then update BRIGHTDATA_UNLOCKER_ZONE in .env.local. "
-                    "Meanwhile, demo mode is available for testing."
-                )
-            elif bd_fails >= session["total_agents"] * 0.5:
-                session["error"] = f"BrightData API failures ({bd_fails}/{session['total_agents']} agents). Check your API key and zone."
-            elif direct_fails >= session["total_agents"] * 0.5:
-                session["error"] = f"Direct fetch failed ({direct_fails}/{session['total_agents']} agents). The target may require JavaScript rendering."
-            else:
-                session["error"] = f"No valid prices extracted ({session['failed_agents']} agents failed: {best_reason})"
+            session["status"] = "failed"; session["error"] = "No valid prices extracted."
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         bp = statistics.median(valid)
@@ -1004,48 +668,7 @@ DEMO_RESULT: dict = {
 }
 
 
-# ─── In-Memory Rate Limiter ───────────────────────────────────────────────
-# Limits POST /api/probe to _RATE_MAX requests per _RATE_WINDOW seconds per IP.
-# Tracks timestamps per IP in a deque; evicts stale entries on each check.
-# No external deps — runs in-process with uvicorn (single-worker async).
-
-_RATE_MAX: int = 5
-_RATE_WINDOW: float = 60.0
-
-_rate_store: defaultdict[str, deque[float]] = defaultdict(deque)
-_rate_lock = asyncio.Lock()
-
-
-async def check_rate_limit(request: Request) -> None:
-    """FastAPI dependency: enforce per-IP rate limit on /api/probe."""
-    ip = request.client.host if request.client else "unknown"
-    now = time.time()
-
-    async with _rate_lock:
-        timestamps = _rate_store[ip]
-        cutoff = now - _RATE_WINDOW
-        while timestamps and timestamps[0] < cutoff:
-            timestamps.popleft()
-
-        if len(timestamps) >= _RATE_MAX:
-            retry_after = int(timestamps[0] + _RATE_WINDOW - now) + 1
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
-                headers={"Retry-After": str(retry_after)},
-            )
-
-        timestamps.append(now)
-
-
 app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.0.0")
-
-
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(cleanup_expired_sessions())
-
-
 # CORS: allow Vercel frontend + local dev
 VERCEL_FRONTEND = os.environ.get("VERCEL_FRONTEND_URL", "https://jacobi.vercel.app")
 app.add_middleware(
@@ -1056,7 +679,6 @@ app.add_middleware(
 )
 
 app.include_router(export_router)
-app.include_router(billing_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None
@@ -1068,57 +690,17 @@ async def health():
 
 
 @app.post("/api/probe")
-async def launch_probe(
-    input: TargetProbeInput,
-    _: None = Depends(check_rate_limit),
-    user=Depends(get_optional_user),
-):
-    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails.
-
-    Tier gating:
-      - Anonymous: allowed (frontend enforces a soft localStorage cap)
-      - Free signed-in: capped at FREE_MONTHLY_PROBES per calendar month
-      - Pro signed-in: unlimited, runs single-wave concurrent
-    """
+async def launch_probe(input: TargetProbeInput):
+    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}
-
-    tier = "free"
-    if user:
-        allowed, info = await can_run_probe(user["id"])
-        if not allowed:
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": "quota_exceeded",
-                    "tier": info["tier"],
-                    "used": info["used"],
-                    "limit": info["limit"],
-                    "message": f"You've used {info['used']}/{info['limit']} free probes this month. Upgrade to Pro for unlimited.",
-                },
-            )
-        tier = info["tier"]
-
     try:
-        session = await run_full_probe(input.target_url, input.target_name, tier=tier)
-        # Persist to Supabase (and bump the user's monthly counter on success)
+        session = await run_full_probe(input.target_url, input.target_name)
+        # Persist to Supabase
         try:
-            await save_probe(session, user_id=user["id"] if user else None)
-        except TypeError:
-            # save_probe may not yet accept user_id on older deploys
             await save_probe(session)
         except Exception as db_err:
             print(f"[MAIN] Supabase save skipped: {db_err}")
-        if user and session.get("status") == "completed" and tier != "pro":
-            try:
-                await increment_probe_count(user["id"])
-            except Exception as e:
-                print(f"[MAIN] increment skipped: {e}")
-        # Persist to Cognee memory (fire-and-forget, no-op if not configured)
-        try:
-            await remember_probe(session)
-        except Exception:
-            pass
         return {"session_id": session["session_id"], "status": session["status"]}
     except Exception as e:
         # On MCP connection failure, return demo data with a warning
@@ -1142,7 +724,7 @@ def build_agent_list(session: dict) -> list:
             error_message=a.get("error_message"), variables=a.get("variables",{}),
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
             is_control=a.get("is_control", False), network_tier=a.get("network_tier"),
-            proxy_type=a.get("proxy_type"), retried=a.get("retried", False),
+            proxy_type=a.get("proxy_type"),
         ))
     return agents
 
@@ -1173,48 +755,37 @@ async def get_result(session_id: str):
     )
 
 
-@app.get("/api/share/{session_id}")
-async def get_share_result(session_id: str):
-    """Retrieve a probe result for sharing. Tries Supabase first, falls back to in-memory."""
-    # Demo static
-    if session_id == "demo_session_static":
-        return DEMO_RESULT
-
-    # Try Supabase
-    try:
-        from supabase_client import get_probe_by_session_id
-        db_result = await get_probe_by_session_id(session_id)
-        if db_result:
-            return db_result
-    except Exception as e:
-        print(f"[SHARE] Supabase lookup failed: {e}")
-
-    # Fallback to in-memory SESSION_STORE
-    session = SESSION_STORE.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Share link expired or not found")
-    agents = build_agent_list(session)
-    return dict(
-        session_id=session["session_id"], target_url=session["target_url"],
-        target_name=session["target_name"], timestamp=session["timestamp"],
-        status=session["status"], total_agents=session["total_agents"],
-        successful_agents=session["successful_agents"], failed_agents=session["failed_agents"],
-        detected_agents=session["detected_agents"], elapsed_seconds=session["elapsed_seconds"],
-        control_stability=session["control_stability"], baseline_price=session["baseline_price"],
-        mean_price=session["mean_price"], all_prices=session["all_prices"],
-        price_range=session["price_range"], max_price_spread=session["max_price_spread"],
-        max_price_spread_pct=session["max_price_spread_pct"], gradients=session["gradients"],
-        discrimination_index=session["discrimination_index"], topology_class=session["topology_class"],
-        summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
-        min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
-        discrimination_score=session.get("discrimination_score", 0),
-        error=session.get("error"),
-    )
-
-
 @app.get("/api/demo")
 async def get_demo_data():
     return DEMO_RESULT
+
+
+@app.post("/api/debug-probe")
+async def debug_probe(input: TargetProbeInput):
+    """Debug endpoint: fetch a URL via BrightData and show raw price extraction results."""
+    bd = BrightDataMCPClient()
+    await bd.start()
+    try:
+        result = await bd.probe_url(input.target_url, {"geo": "US", "proxy_type": "residential"}, timeout_s=30.0)
+        if not result["success"]:
+            return {"error": f"BrightData API error: {result.get('error')}", "success": False}
+        text = result["text"]
+        detected, signal = check_bot_detection(text)
+        prices = parse_page_prices(text, input.target_url)
+        return {
+            "success": True,
+            "html_length": len(text),
+            "html_preview": text[:2000],
+            "bot_detected": detected,
+            "detection_signal": signal,
+            "prices_found": prices,
+            "count": len(prices),
+            "elapsed_ms": result.get("elapsed_ms"),
+        }
+    except Exception as e:
+        return {"error": str(e), "success": False}
+    finally:
+        await bd.close()
 
 
 @app.get("/api/leaderboard")
@@ -1351,3 +922,9 @@ async def spa_fallback(request: Request, exc):
     if FRONTEND_INDEX and os.path.isfile(FRONTEND_INDEX):
         return FileResponse(FRONTEND_INDEX)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

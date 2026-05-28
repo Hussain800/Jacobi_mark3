@@ -133,9 +133,13 @@ class AIMDSemaphore:
     async def acquire(self) -> None:
         """Acquire a semaphore permit, blocking until one is available."""
         await self._semaphore.acquire()
+        try:
+            avail = self._semaphore._value  # noqa: SLF001
+        except AttributeError:
+            avail = 0
         logger.debug(
             "Permit acquired — active≈%d/%d",
-            self._capacity - self._semaphore._value,  # noqa: SLF001
+            self._capacity - avail,
             self._capacity,
         )
 
@@ -217,7 +221,7 @@ class AIMDSemaphore:
                 if acquired:
                     try:
                         self._semaphore.acquire_nowait()
-                    except ValueError:
+                    except (RuntimeError, ValueError):
                         break
 
     def __repr__(self) -> str:

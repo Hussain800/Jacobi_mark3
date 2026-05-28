@@ -191,10 +191,8 @@ def _detect_currency(text: str, url: str) -> tuple[str, float]:
 
 
 def parse_page_prices(html: str, url: str) -> List[float]:
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "lxml")
-    url_lower = url.lower()
     results: List[float] = []
+    url_lower = url.lower()
     currency_code, rate = _detect_currency(html, url)
     pr = PRICE_RANGES["default"]
     for domain, r in PRICE_RANGES.items():
@@ -208,141 +206,166 @@ def parse_page_prices(html: str, url: str) -> List[float]:
         if pr["min"] <= conv <= pr["max"]:
             results.append(conv)
 
-    def parse_price_text(el) -> Optional[str]:
-        if not el:
-            return None
-        t = el.get_text(strip=True)
-        return t if t else None
+    # Try parsing with BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
 
-    # Always try JSON-LD structured data first — most reliable across sites
-    for script in soup.select('script[type="application/ld+json"]'):
-        try:
-            data = json.loads(script.string)
-            if isinstance(data, dict):
-                for key in ['price', 'lowPrice', 'highPrice']:
-                    v = _parse_number(str(data.get(key, '0')))
-                    if v and v > 5:
-                        store(v, str(data.get('priceCurrency', currency_code)))
-                offers = data.get('offers', data)
-                if isinstance(offers, dict):
-                    p = _parse_number(str(offers.get('price', '0')))
-                    if p and p > 5:
-                        store(p, str(offers.get('priceCurrency', currency_code)))
-                    for sub in ['lowPrice', 'highPrice']:
-                        v = _parse_number(str(offers.get(sub, '0')))
-                        if v and v > 5:
-                            store(v, str(offers.get('priceCurrency', currency_code)))
-            elif isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        p = _parse_number(str(item.get('price', '0')))
-                        if p and p > 5:
-                            store(p, str(item.get('priceCurrency', currency_code)))
-        except Exception:
-            pass
+        def parse_price_text(el) -> Optional[str]:
+            if not el: return None
+            t = el.get_text(strip=True)
+            return t if t else None
 
-    if "booking.com" in url_lower:
-        for sel in [
-            '[data-testid="price-and-discounted-price"]',
-            '[data-testid="price-for-x-nights"]',
-            '[data-testid*="rate"]',
-            '[data-testid*="room"] span',
-            'div[data-testid="hprt-table"] span[class*="price"]',
-            'span[class*="bui-price"]',
-            '[data-price-currency]',
-        ]:
-            els = soup.select(sel)
-            for el in els:
-                t = parse_price_text(el)
-                if t and len(t) < 80:
-                    n = _parse_number(t)
-                    if n and pr["min"] <= n <= pr["max"]:
-                        detected_cur = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected_cur = c
-                                break
-                        store(n, detected_cur)
+        # JSON-LD structured data
+        for script in soup.select('script[type="application/ld+json"]'):
+            try:
+                data = json.loads(script.string)
+                items = []
+                if isinstance(data, dict):
+                    items.append(data)
+                    if "offers" in data:
+                        items.append(data["offers"])
+                    if "itemListElement" in data:
+                        items.extend(data["itemListElement"])
+                elif isinstance(data, list):
+                    items.extend(data)
+                for item in items:
+                    if not isinstance(item, dict): continue
+                    for key in ["price", "lowPrice", "highPrice", "priceSpecification"]:
+                        val = item.get(key, item if key == "priceSpecification" else None)
+                        if isinstance(val, dict):
+                            p = _parse_number(str(val.get("price", "0")))
+                            if p and p > 5:
+                                store(p, str(val.get("priceCurrency", currency_code)))
+                        elif val is not None:
+                            p = _parse_number(str(val))
+                            if p and p > 5:
+                                store(p, str(item.get("priceCurrency", currency_code)))
+            except Exception:
+                pass
 
-    elif "amazon" in url_lower:
-        for sel in [
-            'span.a-price[data-a-size] span.a-offscreen',
-            'span.a-price-whole',
-            '.a-price .a-offscreen',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t:
-                    n = _parse_number(t)
-                    if n:
-                        store(n, "USD")
+        # Domain-specific CSS selectors
+        if "booking.com" in url_lower:
+            for sel in [
+                '[data-testid="price-and-discounted-price"]',
+                '[data-testid="price-for-x-nights"]',
+                '[data-testid*="rate"]',
+                '[data-testid*="room"]',
+                '[data-testid*="price"]',
+                'div[data-testid="hprt-table"]',
+                '[class*="bui-price"]',
+                '[data-price-currency]',
+                '[class*="prco-"]',
+                '[class*="-price-"]',
+                '[itemprop="price"]',
+                '.bui-price-display__value',
+                '.sr_gs_price',
+                '.avble',
+                '.hotel_price',
+                '.price_link',
+                'span[class*="price"]',
+                'div[class*="price"]',
+            ]:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t and len(t) < 100:
+                        n = _parse_number(t)
+                        if n and pr["min"] <= n <= pr["max"] * 2:
+                            detected = currency_code
+                            for sym, c in CURRENCY_SYMBOL_MAP.items():
+                                if sym in t: detected = c; break
+                            store(n, detected)
 
-    elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
-        for sel in [
-            'span[class*="fare"]', 'span[class*="price"]', 'div[class*="price"]',
-            '[data-testid*="price"]', '.total-amount', '.amount',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t:
-                    n = _parse_number(t)
-                    if n and n > 10:
-                        detected = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected = c
-                                break
-                        store(n, detected)
+        elif "amazon" in url_lower:
+            for sel in ['span.a-price span.a-offscreen', 'span.a-price-whole', '.a-price .a-offscreen', '.a-color-base']:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t:
+                        n = _parse_number(t)
+                        if n: store(n, "USD")
 
-    else:
-        for sel in [
-            '[data-price]', '[itemprop="price"]', '.price', '.amount',
-            '.product-price', '.sale-price', '[class*="price"]',
-            '[data-testid*="price"]', '.total',
-        ]:
-            for el in soup.select(sel):
-                t = parse_price_text(el)
-                if t and len(t) < 60:
-                    n = _parse_number(t)
-                    if n and n > 5:
-                        detected = currency_code
-                        for sym, c in CURRENCY_SYMBOL_MAP.items():
-                            if sym in t:
-                                detected = c
-                                break
-                        store(n, detected)
+        elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
+            for sel in ['[class*="fare"]', '[class*="price"]', '[data-testid*="price"]', '.total-amount', '.amount']:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t:
+                        n = _parse_number(t)
+                        if n and n > 10: store(n, currency_code)
 
-    # Deduplicate and validate
+        else:
+            for sel in [
+                '[data-price]', '[itemprop="price"]', '.price', '.amount',
+                '.product-price', '.sale-price', '[class*="price"]',
+                '[data-testid*="price"]', '.total', '[class*="ProductPrice"]',
+                '[class*="product-price"]', '[class*="sale-price"]',
+            ]:
+                for el in soup.select(sel):
+                    t = parse_price_text(el)
+                    if t and len(t) < 60:
+                        n = _parse_number(t)
+                        if n and n > 5: store(n, currency_code)
+    except Exception:
+        pass
+
+    # Deduplicate
     results = sorted(set(round(p, 2) for p in results))
 
-    # If we have enough structured/selector results, clean outliers
+    # Trim outliers if enough results
     if len(results) >= 6:
-        results.sort()
         cut = max(1, len(results) // 10)
         results = results[cut:-cut]
 
-    # Fallback: regex on visible text when BS finds nothing
+    # Aggressive regex fallback when BS finds too few
     if len(results) < 2:
         visible = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
         visible = re.sub(r'<style[^>]*>.*?</style>', '', visible, flags=re.DOTALL | re.IGNORECASE)
-        # INR prices (common for Indian hotels like Leela Palace)
-        for m in re.finditer(r'(?:₹|INR)\s*(\d[\d,]*)', visible):
-            try:
-                v = float(m.group(1).replace(",", ""))
-                if 500 <= v <= 200000:
-                    results.append(round(v * 0.012, 2))
-            except ValueError:
-                continue
-        # USD and major currency prices
-        for pat in [
-            r'\$\s*(\d{2,6}(?:\.\d{2})?)',
-            r'(?:USD|AED|EUR|GBP|QAR|SAR)\s*(\d{2,6}(?:\.\d{2})?)',
-        ]:
+
+        # All currency patterns with symbols and codes
+        currency_patterns = [
+            (r'(?:₹|INR)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.012, 500, 200000),
+            (r'\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.0, 5, 50000),
+            (r'(?:USD)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.0, 5, 50000),
+            (r'(?:AED|د\.إ|د.إ)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2723, 20, 100000),
+            (r'(?:EUR|€)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.085, 5, 50000),
+            (r'(?:GBP|£)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.270, 5, 50000),
+            (r'(?:QAR|ر.ق)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2745, 20, 100000),
+            (r'(?:SAR|﷼)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.2666, 20, 100000),
+            (r'¥\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 0.0067, 500, 10000000),
+            (r'€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.085, 5, 50000),
+            (r'£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.270, 5, 50000),
+        ]
+
+        for pat, conv_rate, min_val, max_val in currency_patterns:
             for m in re.finditer(pat, visible):
+                try:
+                    v = float(m.group(1).replace(",", ""))
+                    usd = v * conv_rate
+                    if min_val <= v <= max_val and pr["min"] <= usd <= pr["max"]:
+                        results.append(round(usd, 2))
+                except ValueError:
+                    continue
+
+        # Last resort: find any reasonable number near currency context
+        if len(results) < 2:
+            for m in re.finditer(r'(?:price|total|fare|amount|cost|rate|night|room|person)\s*:?\s*\$?\s*(\d{2,5}(?:\.\d{2})?)', visible, re.IGNORECASE):
                 try:
                     v = float(m.group(1).replace(",", ""))
                     if pr["min"] <= v <= pr["max"]:
                         results.append(round(v, 2))
+                except ValueError:
+                    continue
+
+        # If nothing found at all, try parsing numbers from any visible text as last resort
+        if len(results) < 1:
+            currency_code_names = "|".join(CURRENCY_RATES.keys())
+            for m in re.finditer(rf'(?:{currency_code_names})\s*(\d{{2,6}}(?:\.\d{{2}})?)', visible, re.IGNORECASE):
+                try:
+                    code = m.group(0).split()[0]
+                    v = float(m.group(1).replace(",", ""))
+                    rate_c = CURRENCY_RATES.get(code.upper(), 1.0)
+                    usd = v * rate_c
+                    if pr["min"] <= usd <= pr["max"]:
+                        results.append(round(usd, 2))
                 except ValueError:
                     continue
 
@@ -737,6 +760,34 @@ async def get_demo_data():
     return DEMO_RESULT
 
 
+@app.post("/api/debug-probe")
+async def debug_probe(input: TargetProbeInput):
+    """Debug endpoint: fetch a URL via BrightData and show raw price extraction results."""
+    bd = BrightDataMCPClient()
+    await bd.start()
+    try:
+        result = await bd.probe_url(input.target_url, {"geo": "US", "proxy_type": "residential"}, timeout_s=30.0)
+        if not result["success"]:
+            return {"error": f"BrightData API error: {result.get('error')}", "success": False}
+        text = result["text"]
+        detected, signal = check_bot_detection(text)
+        prices = parse_page_prices(text, input.target_url)
+        return {
+            "success": True,
+            "html_length": len(text),
+            "html_preview": text[:2000],
+            "bot_detected": detected,
+            "detection_signal": signal,
+            "prices_found": prices,
+            "count": len(prices),
+            "elapsed_ms": result.get("elapsed_ms"),
+        }
+    except Exception as e:
+        return {"error": str(e), "success": False}
+    finally:
+        await bd.close()
+
+
 @app.get("/api/leaderboard")
 async def get_leaderboard(limit: int = 10):
     """Return top N probes by savings (max_price_spread)."""
@@ -871,3 +922,9 @@ async def spa_fallback(request: Request, exc):
     if FRONTEND_INDEX and os.path.isfile(FRONTEND_INDEX):
         return FileResponse(FRONTEND_INDEX)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

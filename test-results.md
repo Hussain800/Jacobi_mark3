@@ -337,3 +337,44 @@
 - Groq (llama-3.3-70b) — fallback 3: FAIL
 - Statistical heuristic — final fallback: PASS
 - Response schema validation: PASS
+## AI Provider Tests (run: 2026-05-28 09:09:11 UTC)
+- **Overall**: ❌ FAIL
+- **Active provider**: deepseek-v4-flash-free (OpenCode)
+- **Provider chain**: analyze-demo: deepseek-v4-flash-free (OpenCode), analyze-post: deepseek-v4-flash-free (OpenCode)
+- AI/ML API verdict: FAIL (fell through)
+- Gemini fallback: FAIL (fell through)
+- Heuristic fallback: NOT_TESTED (opencode succeeded)
+- Response schema validation: PASS
+- Notes:
+  - OpenCode Zen handled the request (AI/ML API and Gemini both failed)
+## AI Provider Tests (run: 2026-05-28 09:10:25 UTC)
+- **Overall**: ❌ FAIL
+- **Active provider**: deepseek-v4-flash-free (OpenCode)
+- **Provider chain**: analyze-demo: deepseek-v4-flash-free (OpenCode), analyze-post: deepseek-v4-flash-free (OpenCode)
+- AI/ML API verdict: FAIL (fell through)
+- Gemini fallback: FAIL (fell through)
+- Heuristic fallback: NOT_TESTED (opencode succeeded)
+- Response schema validation: PASS
+- Notes:
+  - OpenCode Zen handled the request (AI/ML API and Gemini both failed)
+## AI Provider Tests (run: 2026-05-28 09:12:06 UTC)
+- **Overall**: FAIL
+- **Active provider**: 
+- **Provider chain**: 
+- AI/ML API verdict: UNTESTED
+- Gemini fallback: UNTESTED
+- Heuristic fallback: UNTESTED
+- Response schema validation: FAIL
+- Notes:
+  - analyze-demo exception: Expected 200, got 500: Internal Server Error
+  - analyze-post exception: 
+  - Fallback test exception: All connection attempts failed
+## AI Provider Tests (run: 2026-05-28 09:12:20 UTC)
+- **Overall**: PASS
+- **Active provider**: aimlapi/gpt-4o
+- **Provider chain**: analyze-demo: aimlapi/gpt-4o, analyze-post: aimlapi/gpt-4o
+- AI/ML API verdict: PASS
+- Gemini fallback: NOT_TESTED (primary succeeded)
+- Heuristic fallback: NOT_TESTED (primary succeeded)
+- Response schema validation: PASS
+- Notes: (none)

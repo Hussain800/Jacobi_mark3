@@ -12,7 +12,7 @@ import os
 import sys
 import time
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add backend dir to path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -240,7 +240,7 @@ def print_summary():
     print("\n=== SUMMARY ===")
     for key in ["aiml_api_verdict", "gemini_fallback", "heuristic_fallback", "schema_validation"]:
         status = results.get(key, "UNTESTED")
-        icon = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⏭️"
+        icon = "[PASS]" if status == "PASS" else "[FAIL]" if status == "FAIL" else "[SKIP]"
         print(f"{icon} {key}: {status}")
     print(f"   Provider used: {results['model_used']}")
     if results.get("notes"):
@@ -248,7 +248,7 @@ def print_summary():
 
 
 async def write_results():
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     
     # Determine overall status
     all_pass = all(
@@ -258,7 +258,7 @@ async def write_results():
                                          "NOT_TESTED (groq succeeded)")
         for k in ["aiml_api_verdict", "gemini_fallback", "heuristic_fallback", "schema_validation"]
     )
-    overall = "✅ PASS" if all_pass else "❌ FAIL"
+    overall = "PASS" if all_pass else "FAIL"
     
     lines = [
         f"## AI Provider Tests (run: {timestamp})",

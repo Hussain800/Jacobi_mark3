@@ -6,6 +6,7 @@ Priority: OpenCode Zen (DeepSeek V4 Flash Free) → Gemini → statistical fallb
 import hashlib
 import json
 import os
+import time
 from typing import Dict, List, Optional
 
 import httpx
@@ -304,11 +305,16 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         try:
             aiml_model = os.getenv("AIMLAPI_MODEL", "gpt-4o")
             context = _build_probe_context(probed)
+            schema_prompt = (
+                "You MUST respond with valid JSON matching this exact schema:\n"
+                f"{_VERDICT_SCHEMA_JSON}\n\n"
+                "Return ONLY the JSON object. No markdown, no code fences, no extra text."
+            )
             payload = {
                 "model": aiml_model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
+                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format.\n\n{schema_prompt}"},
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
@@ -371,11 +377,16 @@ def analyze_report(probe_data: dict) -> Optional[GeminiVerdict]:
         try:
             groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
             context = _build_probe_context(probed)
+            schema_prompt = (
+                "You MUST respond with valid JSON matching this exact schema:\n"
+                f"{_VERDICT_SCHEMA_JSON}\n\n"
+                "Return ONLY the JSON object. No markdown, no code fences, no extra text."
+            )
             payload = {
                 "model": groq_model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format."},
+                    {"role": "user", "content": f"{context}\n\nAnalyze these results and provide your verdict in JSON format.\n\n{schema_prompt}"},
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,

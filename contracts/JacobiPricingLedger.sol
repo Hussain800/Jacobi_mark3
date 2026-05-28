@@ -188,25 +188,16 @@ contract JacobiPricingLedger {
         bytes32[] calldata proof,
         bytes32 leaf
     ) internal pure returns (bool) {
+        bool isValid;
         assembly {
-            // `computedHash` starts as the leaf value and is iteratively
-            // hashed with each proof element up to the root.
             let computedHash := leaf
 
-            // Derive the calldata offset and length of the `proof` array.
-            // For a dynamic calldata array the first 32 bytes at the offset
-            // encode the length; elements follow immediately after.
             let proofLen := proof.length
             let proofOffset := proof.offset
 
-            // Iterate over each proof element.
             for { let i := 0 } lt(i, proofLen) { i := add(i, 1) } {
-                // Load the i-th sibling hash from calldata.
                 let sibling := calldataload(add(proofOffset, mul(i, 0x20)))
 
-                // --- Sorted-pair hashing (branch-free) ---
-                // Scratch space at memory 0x00–0x3f is used for keccak256.
-                // Place the smaller value at 0x00 and the larger at 0x20.
                 switch lt(computedHash, sibling)
                 case 1 {
                     mstore(0x00, computedHash)
@@ -217,13 +208,11 @@ contract JacobiPricingLedger {
                     mstore(0x20, computedHash)
                 }
 
-                // Hash the 64-byte pair in scratch space.
                 computedHash := keccak256(0x00, 0x40)
             }
 
-            // The proof is valid iff the computed root equals the expected root.
-            mstore(0x00, eq(computedHash, root))
-            return(0x00, 0x20)
+            isValid := eq(computedHash, root)
         }
+        return isValid;
     }
 }

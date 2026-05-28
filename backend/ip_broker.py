@@ -280,6 +280,17 @@ class IPReputationBroker:
         )
         return usable
 
+    def get_best_ip(self) -> Optional[str]:
+        now = time.time()
+        best_ip = None
+        best_score = -1.0
+        for ip, record in self._registry.items():
+            score = self._apply_recovery(record, now)
+            if not record.blacklisted and score >= self._usability_threshold and score > best_score:
+                best_ip = ip
+                best_score = score
+        return best_ip
+
     def record_result(
         self,
         ip: str,

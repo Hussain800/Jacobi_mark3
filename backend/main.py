@@ -32,9 +32,13 @@ from billing import router as billing_router
 from auth_user import get_optional_user
 from triggerware import dispatch_probe_event as triggerware_dispatch
 from scheduler import ScheduleRequest, create_schedule, get_active_schedules, run_scheduler_loop
+from concurrency import AIMDSemaphore
+from ip_broker import IPReputationBroker
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
+_concurrency_sem = AIMDSemaphore(initial=12, min_concurrent=4, max_concurrent=24)
+_ip_broker = IPReputationBroker()
 
 
 class TargetProbeInput(BaseModel):
@@ -595,6 +599,7 @@ class BrightDataMCPClient:
     async def probe_url(self, url: str, identity: dict, timeout_s: float = 60.0) -> dict:
         if not self._client:
             raise RuntimeError("Client not initialized")
+        await _concurrency_sem.acquire()
         start_ts = time.time()
         geo = identity.get("geo", "US")
         country = geo.split("-")[0].lower()
@@ -615,17 +620,51 @@ class BrightDataMCPClient:
                 timeout=timeout_s,
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
+            exit_ip = None
+            try:
+                exit_ip = response.headers.get("x-brd-ip") or response.headers.get("x-brd-customer-ip") or None
+            except Exception:
+                pass
             if response.status_code != 200:
+                try:
+                    await _concurrency_sem.handle_failure()
+                except Exception:
+                    pass
+                try:
+                    if exit_ip:
+                        ft = "http_429" if response.status_code == 429 else "http_403_captcha" if response.status_code in (403, 401) else "http_5xx"
+                        _ip_broker.record_result(exit_ip, success=False, failure_type=ft)
+                except Exception:
+                    pass
                 return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
+                        "error": f"API returned {response.status_code}: {response.text[:200]}", "exit_ip": exit_ip}
             page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
+            try:
+                await _concurrency_sem.handle_success()
+            except Exception:
+                pass
+            try:
+                if exit_ip:
+                    _ip_broker.record_result(exit_ip, success=True)
+            except Exception:
+                pass
+            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms, "exit_ip": exit_ip}
         except asyncio.TimeoutError:
+            try:
+                await _concurrency_sem.handle_failure()
+            except Exception:
+                pass
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
                     "error": f"Timeout {timeout_s}s"}
         except Exception as e:
+            try:
+                await _concurrency_sem.handle_failure()
+            except Exception:
+                pass
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
                     "error": str(e)}
+        finally:
+            _concurrency_sem.release()
 
     async def close(self):
         if self._client:
@@ -761,6 +800,12 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
         network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"),
         retried=False)
     try:
+        try:
+            preferred = _ip_broker.get_best_ip()
+            if preferred:
+                cfg = {**cfg, "preferred_ip": preferred}
+        except Exception:
+            pass
         r = await bd.probe_url(url, cfg, 60.0)
         if not r["success"]:
             err = r.get("error", "Unknown")

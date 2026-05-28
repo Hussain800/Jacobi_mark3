@@ -34,10 +34,11 @@ from triggerware import dispatch_probe_event as triggerware_dispatch
 from scheduler import ScheduleRequest, create_schedule, get_active_schedules, run_scheduler_loop
 from concurrency import AIMDSemaphore
 from ip_broker import IPReputationBroker
+from profile_store import can_run_probe, increment_probe_count
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
-_concurrency_sem = AIMDSemaphore(initial=12, min_concurrent=4, max_concurrent=24)
+_concurrency_sem = AIMDSemaphore(initial=12, min_cap=4, max_cap=24)
 _ip_broker = IPReputationBroker()
 
 

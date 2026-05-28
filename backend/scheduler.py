@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Coroutine, Any, Dict
 
 from pydantic import BaseModel, Field
@@ -64,8 +64,8 @@ def get_active_schedules() -> list[dict]:
             "target_url": s.target_url,
             "target_name": s.target_name,
             "interval_minutes": s.interval_minutes,
-            "next_run_at": datetime.fromtimestamp(s.next_run_at).isoformat(),
-            "created_at": datetime.fromtimestamp(s.created_at).isoformat(),
+            "next_run_at": datetime.fromtimestamp(s.next_run_at, tz=timezone.utc).isoformat(),
+            "created_at": datetime.fromtimestamp(s.created_at, tz=timezone.utc).isoformat(),
             "paused": s.paused,
         }
         for s in SCHEDULES.values()

@@ -174,6 +174,48 @@ User                Frontend              Backend               BrightData
 
 ---
 
+## 🤝 Technology Partners
+
+JACOBI was built on top of an incredible stack of partner technologies. Each one played a critical role in making this project possible, and we're genuinely grateful for the access, credits, and support.
+
+### 🎯 Kiro — AI-Powered Development Platform
+
+We built JACOBI end-to-end using **Kiro**, an AI-assisted development platform on AWS that turns ideas into working software faster than anything we've used before. The entire codebase — from the FastAPI backend orchestration to the Next.js frontend with real-time agent grid animations — was developed with Kiro's AI-assisted coding workflows. What would have taken a team of three a full week was prototyped in hours. Kiro's ability to understand project context across files, suggest idiomatic patterns, and generate production-ready TypeScript and Python code made the difference between a hackathon MVP and a shippable product. The platform's tight integration with the AWS ecosystem meant we never had to pause for infrastructure setup — we focused entirely on the pricing discrimination problem.
+
+**Feedback**: Kiro's multi-file refactoring support is genuinely impressive — it understands dependency graphs across your entire project, not just the file you're editing. The one area where we'd love to see improvement is deeper framework-specific knowledge (e.g., Next.js 14 App Router conventions or FastAPI dependency injection patterns) to reduce post-generation cleanup. But for rapid prototyping and hackathon development, it's the best tool we've used.
+
+### ☁️ BrightData — Web Data Infrastructure
+
+JACOBI would not exist without **BrightData's** Unlocker API and proxy infrastructure. Running 24 parallel agents across 3 staggered waves with different geo-locations, devices, cookies, and referrers requires enterprise-grade proxy infrastructure — and BrightData delivered. The Unlocker API handled CAPTCHA bypass, JavaScript rendering, and geo-targeting seamlessly. Every agent identity in our 24-agent matrix maps to a distinct BrightData proxy configuration, and the ability to route through residential, datacenter, and mobile IPs from the same API was critical to our multi-fingerprint approach.
+
+**Feedback**: The MCP Server integration is a game-changer for AI agent workflows. Our only friction point was that non-US proxy zones occasionally had higher latency — we implemented automatic retry with datacenter fallback for international timeouts, which solved it cleanly. The $250 credits per participant made it possible to iterate aggressively during development without worrying about costs.
+
+### 🧠 AI/ML API — Unified AI Provider
+
+**AI/ML API** serves as the primary intelligence layer in JACOBI's 4-provider AI cascade. We route all probe analysis through their OpenAI-compatible endpoint using GPT-4o, with automatic fallback to Gemini, DeepSeek (OpenCode), and Groq. The unified API surface meant we could write one integration and switch models with a single environment variable — critical for a hackathon where we needed to iterate fast. Their response consistency and uptime during heavy testing (24 parallel probe results analyzed at once with structured JSON schemas) was rock solid.
+
+**Feedback**: The simplicity of the integration is the standout feature — one API key, one endpoint, drop-in replacement for any OpenAI-compatible workflow. We'd love to see per-model latency metrics exposed in the dashboard so teams can make informed cost-vs-speed tradeoffs at runtime.
+
+### 🧠 Cognee — Agent Memory Layer
+
+**Cognee** provides JACOBI with persistent, cross-session memory via its knowledge graph engine. Every probe result — topology classification, gradient breakdown, pricing spread — is stored as a structured graph node with embeddings. This means JACOBI can answer questions across sessions: "What did we find when we probed United Airlines last week?" Using Cognee's `GRAPH_COMPLETION` search type, we retrieve semantically related probes and surface historical context alongside fresh results. The open-source Python SDK integrated with our FastAPI backend in minutes.
+
+**Feedback**: The `remember()`/`recall()` API design is elegant for agent memory workflows. The highlight is the graph-based retrieval — vector search alone can't capture entity relationships across multiple probe sessions the way Cognee's graph completion does. We'd recommend expanding the Python SDK documentation with more real-world agent memory patterns beyond the quickstart examples.
+
+### ⚡ TriggerWare.ai — Workflow Automation
+
+**TriggerWare.ai** handles event-driven workflows in JACOBI's post-probe pipeline. When a probe completes and detects pricing discrimination, TriggerWare.ai receives a structured webhook event containing the topology classification, gradient breakdown, and savings verdict. This can trigger downstream actions — Slack alerts to stakeholders, email summaries, dashboard updates, or even automated re-probes on a schedule. The webhook-first design meant we integrated it as a fire-and-forget dispatch in 30 lines of Python, with zero changes to our core probe pipeline.
+
+**Feedback**: The declarative webhook configuration is the killer feature — no SDK needed, no complex state machine to manage. We'd love to see native support for payload transformation templates so downstream consumers get exactly the fields they need without writing transformation logic.
+
+### 💬 Groq — Fast LLM Inference
+
+**Groq** serves as the fourth tier in JACOBI's AI provider cascade with `llama-3.3-70b-versatile`. When higher-priority providers fail, Groq delivers sub-second inference that keeps our probe-to-verdict pipeline under 5 seconds. The OpenAI-compatible endpoint meant zero integration friction, and the generation speed at 70B parameters is genuinely impressive.
+
+**Feedback**: Groq's inference speed at 70B scale is unmatched — it's genuinely faster than some 8B models we've tested on other providers. Expanding the model catalog to include more fine-tuned variants for structured JSON extraction would make it an even stronger option for agentic workflows.
+
+---
+
 ## 🌐 API Reference
 
 | Endpoint | Method | Description | Rate Limited |

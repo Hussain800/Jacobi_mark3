@@ -12,7 +12,6 @@
  * now lives inside the hero where it tells a story instead of decorating.
  */
 
-import { useRef } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
@@ -32,7 +31,6 @@ const DEMO_PROFILES = [
 
 export default function LandingPage() {
   const reducedMotion = useReducedMotion();
-  const heroRef = useRef<HTMLDivElement>(null);
 
   const fadeIn = reducedMotion
     ? {}
@@ -51,12 +49,10 @@ export default function LandingPage() {
   return (
     <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20">
       {/* ═════════════ HERO (cinematic scene) ═════════════ */}
-      <div ref={heroRef}>
-        <HeroScene />
-      </div>
+      <HeroScene />
 
       {/* ═════════════ MECHANISM ═════════════ */}
-      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+      <section className="px-5 sm:px-8 py-20 sm:py-28 border-t border-line">
         <div className="max-w-5xl mx-auto">
           <motion.span
             {...fadeIn}
@@ -116,13 +112,13 @@ export default function LandingPage() {
       </section>
 
       {/* ═════════════ EVIDENCE / sample probe ═════════════ */}
-      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+      <section className="px-5 sm:px-8 py-20 sm:py-28 border-t border-line">
         <div className="max-w-5xl mx-auto">
           <motion.span
             {...fadeIn}
             className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-3"
           >
-            Evidence &middot; sample probe
+            Evidence &middot; full readout
           </motion.span>
           <motion.h2
             {...fadeIn}
@@ -144,7 +140,7 @@ export default function LandingPage() {
             }}
             className="text-[12px] font-mono text-muted mb-12 tracking-wide"
           >
-            Same flight. Same seat. Same date. Five different identities.
+            Five identities. Five prices. The full row of evidence behind the verdict above.
           </motion.p>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-10 lg:gap-16 items-center">
@@ -229,9 +225,9 @@ export default function LandingPage() {
               className="lg:border-l lg:border-line lg:pl-12 text-center lg:text-left"
             >
               <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-overcharge mb-3">
-                Hidden premium
+                Spread
               </div>
-              <div className="font-serif text-7xl sm:text-8xl text-primary leading-none mb-3 tabular-nums">
+              <div className="font-serif text-5xl sm:text-6xl text-primary leading-none mb-3 tabular-nums">
                 +${spread}
               </div>
               <div className="font-mono text-[11px] text-muted tracking-wide mb-6">
@@ -249,7 +245,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═════════════ CTA ═════════════ */}
-      <section className="px-5 sm:px-8 py-24 sm:py-32 border-t border-line">
+      <section className="px-5 sm:px-8 py-20 sm:py-28 border-t border-line">
         <div className="max-w-2xl mx-auto text-center">
           <motion.h2
             {...fadeIn}
@@ -278,10 +274,14 @@ export default function LandingPage() {
               ease: [0.22, 1, 0.36, 1],
             }}
             onClick={() => {
-              heroRef.current?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              });
+              const hero = document.getElementById("jacobi-hero");
+              hero?.scrollIntoView({ behavior: "smooth", block: "start" });
+              // focus the command core once the scroll settles
+              window.setTimeout(() => {
+                document
+                  .getElementById("jacobi-probe-input")
+                  ?.focus({ preventScroll: true });
+              }, 520);
             }}
             className="inline-flex items-center gap-3 px-7 py-4 rounded-md bg-signal text-ink font-mono text-[12px] font-semibold uppercase tracking-[0.14em] hover:brightness-110 active:scale-[0.98] transition-all"
           >

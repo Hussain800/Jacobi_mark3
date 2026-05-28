@@ -1,29 +1,41 @@
 "use client";
 
 /**
- * Terminal — the probe cockpit orchestration shell.
+ * Terminal — the probe cockpit orchestration shell (Phase 4).
  *
- * This file owns:
- *   - Top-level state machine: empty → running → complete | error
- *   - The runProbe flow (POST /api/probe → poll /api/result → POST /api/analyze)
+ * Continuity change vs Phase 3:
+ *   ONE persistent RadialAgentStage spans the scan → result transition.
+ *   It mounts when the first message arrives and switches mode rather
+ *   than re-mounting. No more jarring unmount/remount on result.
+ *
+ * State machine: empty → running → complete | error
+ * Owns:
+ *   - runProbe flow (POST /api/probe → poll /api/result → POST /api/analyze)
  *   - Demo mode (useCache) — uses DEMO_REPORT + /api/analyze-demo
  *   - Cancel + retry
  *   - localStorage writes: probe-conversations
  *   - Supabase auth display
  *   - initialUrl auto-run (after 600ms) and initialSession restore
- *   - Re-exports `ResultCard` (consumed by /share/[id]/share-client.tsx)
- *   - Re-exports `TopologyReport` type
  *
- * Everything visual lives in components/cockpit/*.
+ * Re-exports `ResultCard` (consumed by /share/[id]/share-client.tsx)
+ * and `TopologyReport` type (consumed by /share/[id]/page.tsx).
  *
  * NOTE: API endpoints, payload shapes, polling cadence, timeout, demo
- *       semantics, and localStorage keys are intentionally identical
- *       to the pre-Phase-3 dashboard. Only the UI shell changed.
+ *       semantics, and localStorage keys are intentionally identical to
+ *       Phase 3 / pre-redesign. Only the UI shell changes.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+} from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { RotateCcw, AlertTriangle } from "lucide-react";
+import { RotateCcw, AlertTriangle, XCircle, Clock } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../lib/supabase/client";
 
@@ -31,7 +43,6 @@ import ProbeHeader from "./cockpit/ProbeHeader";
 import RadialAgentStage from "./cockpit/RadialAgentStage";
 import ScanTimeline from "./cockpit/ScanTimeline";
 import VerdictPanel from "./cockpit/VerdictPanel";
-import Evidence from "./cockpit/Evidence";
 import EmptyState from "./cockpit/EmptyState";
 import {
   TopologyReport,
@@ -41,23 +52,30 @@ import {
   extractUrl,
   deriveScanPhase,
 } from "./cockpit/types";
-import { getClientApiBase } from "../lib/api-base";
+
+/* Evidence panels are heavy (recharts). Lazy-load them so they only
+ * enter the bundle once a probe is actually viewed. */
+const Evidence = lazy(() => import("./cockpit/Evidence"));
 
 export type { TopologyReport } from "./cockpit/types";
 
 /* ─── ResultCard ───────────────────────────────────────────────────────
  *
- * Composes the verdict + evidence panels into a single result block.
- * Exported so /share/[id]/share-client.tsx can render historical
- * sessions without going through the Terminal shell.
+ * Used in two contexts:
+ *   1. The live cockpit (Terminal) — composed with the persistent
+ *      RadialAgentStage shown ABOVE this card. So ResultCard here is
+ *      VerdictPanel + Evidence only.
+ *   2. /share/[id] (server-rendered shared report) — no persistent stage
+ *      exists there, so we render a self-contained stage inside the
+ *      result card via `embedStage`.
  */
 
 export function ResultCard({
   report,
-  onClose,
+  embedStage = false,
 }: {
   report: TopologyReport;
-  onClose?: () => void;
+  embedStage?: boolean;
 }) {
   const isDemo = !!(report as any)._demo;
 
@@ -65,24 +83,24 @@ export function ResultCard({
     <div className="relative border border-line rounded-lg bg-ink overflow-hidden">
       <VerdictPanel report={report} isDemo={isDemo} />
 
-      {/* Stage recap — show the radial swarm with priced endpoints highlighted */}
-      <div className="px-5 sm:px-8 py-10 border-b border-line">
-        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-4">
-          Agent stage · all 24 returns
+      {embedStage && (
+        <div className="px-5 sm:px-8 py-10 border-b border-line">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-4">
+            Agent stage · all 24 returns
+          </div>
+          <RadialAgentStage report={report} mode="result" showLabels compact />
         </div>
-        <RadialAgentStage report={report} isComplete showLabels />
-      </div>
-
-      <Evidence report={report} />
-
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 font-mono text-[10px] uppercase tracking-[0.16em] text-muted hover:text-primary"
-        >
-          close
-        </button>
       )}
+
+      <Suspense
+        fallback={
+          <div className="px-5 sm:px-8 py-12 text-center font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+            Loading evidence panels…
+          </div>
+        }
+      >
+        <Evidence report={report} />
+      </Suspense>
     </div>
   );
 }
@@ -123,9 +141,9 @@ export default function Terminal({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastUrlRef = useRef("");
   const lastNameRef = useRef("");
-  const apiBase = getClientApiBase();
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-  /* Restore past probe from session ID — same behavior as before */
+  /* Restore past probe from session ID */
   useEffect(() => {
     if (!initialSession) return;
     fetch(`${apiBase}/api/result/${initialSession}`)
@@ -214,7 +232,7 @@ export default function Terminal({
         startedAt: Date.now(),
       });
 
-      /* Demo mode — same scripted sequence as before */
+      /* Demo mode */
       if (useCache) {
         await new Promise((r) => setTimeout(r, 500));
         updateLast({
@@ -349,11 +367,9 @@ export default function Terminal({
             } else {
               const succ = data.successful_agents;
               const wave =
-                succ < 8
-                  ? "Wave 1/3 — Datacenter"
-                  : succ < 16
-                    ? "Wave 2/3 — Residential"
-                    : "Wave 3/3 — Mobile";
+                succ < 8 ? "Wave 1/3 — Datacenter"
+                : succ < 16 ? "Wave 2/3 — Residential"
+                : "Wave 3/3 — Mobile";
               const elapsed = data.elapsed_seconds
                 ? `${data.elapsed_seconds.toFixed(0)}s`
                 : "";
@@ -378,8 +394,8 @@ export default function Terminal({
             clearInterval(pollRef.current);
             updateLast({
               status: "error",
-              error: "Timed out",
-              content: "Timed out after 3m.",
+              error: "timeout",
+              content: "Probe timed out after 3 minutes.",
             });
             setRunning(false);
           }
@@ -423,7 +439,7 @@ export default function Terminal({
       role: "assistant",
       content: "Probe cancelled",
       status: "error",
-      error: "Cancelled",
+      error: "cancelled",
     });
   }, [addMsg]);
 
@@ -473,6 +489,9 @@ export default function Terminal({
   const isComplete = lastMsg?.status === "complete";
   const isError = lastMsg?.status === "error";
   const isScanning = lastMsg?.status === "scanning";
+  const isCancelled = isError && lastMsg?.error === "cancelled";
+  const isTimeout = isError && lastMsg?.error === "timeout";
+  const stageMode: "live" | "result" = isComplete ? "result" : "live";
 
   return (
     <div className="min-h-screen flex flex-col bg-ink text-primary font-sans selection:bg-signal/20">
@@ -501,70 +520,164 @@ export default function Terminal({
         ) : (
           <div className="px-5 sm:px-8 py-8 sm:py-10">
             <div className="max-w-5xl mx-auto space-y-8">
-              {/* Live scan timeline */}
-              <ScanTimeline
-                phase={phase}
-                successful={lastReport?.successful_agents ?? 0}
-                total={lastReport?.total_agents ?? 24}
-              />
+              {/* Scan timeline — collapses on complete into a quiet badge */}
+              <AnimatePresence mode="wait">
+                {!isComplete && !isCancelled ? (
+                  <motion.div
+                    key="timeline"
+                    initial={false}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <ScanTimeline
+                      phase={phase}
+                      successful={lastReport?.successful_agents ?? 0}
+                      total={lastReport?.total_agents ?? 24}
+                    />
+                  </motion.div>
+                ) : isComplete ? (
+                  <motion.div
+                    key="complete-badge"
+                    initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex items-center justify-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-secondary"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-signal" />
+                      Probe complete
+                    </span>
+                    {lastReport?.elapsed_seconds && (
+                      <span className="text-muted">
+                        · {lastReport.elapsed_seconds.toFixed(1)}s
+                      </span>
+                    )}
+                    {lastReport && (
+                      <span className="text-muted">
+                        · {lastReport.successful_agents}/{lastReport.total_agents} agents
+                      </span>
+                    )}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
 
-              {/* Status line */}
-              {(isScanning || isError) && (
+              {/* Cancel / timeout — quiet, not catastrophic */}
+              {isCancelled && (
                 <motion.div
                   initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="text-center"
+                  transition={{ duration: 0.4 }}
+                  className="max-w-xl mx-auto border border-line rounded-md px-5 py-4 flex items-center gap-3"
                 >
-                  {isScanning && (
-                    <div className="font-mono text-[11px] text-secondary">
-                      {lastMsg?.content}
-                    </div>
-                  )}
-                  {isError && (
-                    <div className="border border-overcharge/30 bg-overcharge/5 rounded-md px-5 py-4 max-w-xl mx-auto">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-4 h-4 mt-0.5 text-overcharge shrink-0" />
-                        <div className="flex-1 text-left">
-                          <p className="font-mono text-[12px] text-overcharge">
-                            {lastMsg?.error || lastMsg?.content}
-                          </p>
-                          {lastUrlRef.current && (
-                            <button
-                              onClick={handleRetry}
-                              className="mt-3 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-signal border border-signal/40 hover:border-signal hover:bg-signal/10 rounded-md px-3 py-1.5 transition-colors"
-                            >
-                              <RotateCcw className="w-3 h-3" />
-                              Retry probe
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                  <XCircle className="w-4 h-4 text-muted shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-mono text-[11px] text-secondary">
+                      Probe cancelled
+                    </p>
+                    <p className="font-mono text-[10px] text-muted mt-0.5">
+                      Stopped before reaching a verdict.
+                    </p>
+                  </div>
+                  {lastUrlRef.current && (
+                    <button
+                      onClick={handleRetry}
+                      className="font-mono text-[10px] uppercase tracking-[0.16em] text-signal hover:bg-signal/10 border border-signal/40 rounded-md px-3 py-1.5 transition-colors shrink-0"
+                    >
+                      Retry
+                    </button>
                   )}
                 </motion.div>
               )}
 
-              {/* Live stage — visible during scan and error (so user sees
-                  whatever returned). On complete, the ResultCard owns its
-                  own stage with endpoints highlighted. */}
-              {(isScanning || isError) && (
+              {isTimeout && (
+                <motion.div
+                  initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="max-w-xl mx-auto border border-warning/30 bg-warning/5 rounded-md px-5 py-4 flex items-start gap-3"
+                >
+                  <Clock className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-mono text-[11px] text-warning">
+                      Probe timed out after 3 minutes
+                    </p>
+                    <p className="font-mono text-[10px] text-muted mt-1">
+                      The target page may be slow to respond, behind heavy
+                      bot detection, or temporarily unreachable.
+                    </p>
+                    {lastUrlRef.current && (
+                      <button
+                        onClick={handleRetry}
+                        className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-signal hover:bg-signal/10 border border-signal/40 rounded-md px-3 py-1.5 transition-colors inline-flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Retry probe
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {isError && !isCancelled && !isTimeout && (
+                <motion.div
+                  initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="max-w-xl mx-auto border border-overcharge/30 bg-overcharge/5 rounded-md px-5 py-4 flex items-start gap-3"
+                >
+                  <AlertTriangle className="w-4 h-4 text-overcharge mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-mono text-[11px] text-overcharge">
+                      {lastMsg?.error || lastMsg?.content}
+                    </p>
+                    {lastUrlRef.current && (
+                      <button
+                        onClick={handleRetry}
+                        className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-signal hover:bg-signal/10 border border-signal/40 rounded-md px-3 py-1.5 transition-colors inline-flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Retry probe
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Live scan status line */}
+              {isScanning && (
+                <motion.div
+                  initial={reducedMotion ? false : { opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.4 }}
+                  className="text-center font-mono text-[11px] text-secondary"
+                >
+                  {lastMsg?.content}
+                </motion.div>
+              )}
+
+              {/* THE PERSISTENT STAGE — lives across scan and result phases.
+                  Switches mode rather than unmounting. */}
+              {(isScanning || isComplete || isError) && (
                 <RadialAgentStage
                   report={lastReport ?? null}
                   scanStarted={lastMsg?.startedAt ?? 0}
-                  isComplete={false}
+                  mode={stageMode}
                   showLabels
                 />
               )}
 
-              {/* Result card */}
+              {/* Result card — verdict + evidence. Mounted only on complete.
+                  The stage above already shows agent placement; this card
+                  is purely interpretation + dense panels. */}
               <AnimatePresence>
                 {isComplete && lastReport && (
                   <motion.div
                     key={lastMsg!.id}
-                    initial={reducedMotion ? false : { opacity: 0, y: 16 }}
+                    initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{
+                      duration: 0.8,
+                      delay: 0.2,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
                   >
                     {lastReport.error ? (
                       <div className="border border-warning/30 bg-warning/5 rounded-md px-5 py-4 max-w-xl mx-auto">

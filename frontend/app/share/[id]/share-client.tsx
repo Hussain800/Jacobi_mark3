@@ -7,5 +7,7 @@ interface ShareResultClientProps {
 }
 
 export function ShareResultClient({ data }: ShareResultClientProps) {
-  return <ResultCard report={data} />;
+  // Share pages don't have the cockpit's persistent stage above, so the
+  // result card embeds its own agent visualization.
+  return <ResultCard report={data} embedStage />;
 }

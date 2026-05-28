@@ -22,22 +22,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@200;300;400;500&family=Inter:wght@200;300;400;500&family=Space+Grotesk:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
       </head>
-      <body className="bg-surface text-white antialiased font-body">
-        <nav className="fixed top-0 left-0 right-0 h-12 z-50 flex items-center px-5 border-b border-white/[0.08] bg-[#07080c]/90 backdrop-blur-md">
-          <Link href="/" className="flex items-center gap-2 mr-8">
-            <div className="w-5 h-5 rounded border border-accent-emerald/30 flex items-center justify-center">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1.2">
+      <body className="bg-ink text-primary antialiased font-sans">
+        <nav className="fixed top-0 left-0 right-0 h-12 z-50 flex items-center px-5 sm:px-8 border-b border-line bg-ink/85 backdrop-blur-md">
+          <Link href="/" className="flex items-center gap-2.5 mr-6 sm:mr-8 group">
+            <div className="w-5 h-5 rounded border border-signal/30 group-hover:border-signal/60 flex items-center justify-center transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" className="text-signal">
                 <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
+                <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.7" />
               </svg>
             </div>
-            <span className="text-sm font-medium tracking-tight text-white/90">JACOBI</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">JACOBI</span>
           </Link>
-          <div className="flex items-center gap-5 text-[11px] font-mono">
-            <Link href="/chat" className="text-white/40 hover:text-white/80 transition-colors">Probe</Link>
-            <Link href="/history" className="text-white/40 hover:text-white/80 transition-colors">History</Link>
-            <Link href="/leaderboard" className="text-white/40 hover:text-white/80 transition-colors">Leaderboard</Link>
-            <Link href="/pricing" className="text-white/40 hover:text-white/80 transition-colors">Pricing</Link>
+          <div className="flex items-center gap-4 sm:gap-5 font-mono text-[10px] uppercase tracking-[0.18em]">
+            <Link href="/chat"        className="text-muted hover:text-primary transition-colors">Probe</Link>
+            <Link href="/history"     className="text-muted hover:text-primary transition-colors">History</Link>
+            <Link href="/leaderboard" className="text-muted hover:text-primary transition-colors hidden sm:inline">Board</Link>
+            <Link href="/pricing"     className="text-muted hover:text-primary transition-colors">Pricing</Link>
           </div>
           <div className="ml-auto">
             <NavAuth />

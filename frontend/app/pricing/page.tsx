@@ -1,8 +1,17 @@
 "use client";
 
+/**
+ * Pricing — aligned with the cockpit token system.
+ *
+ * No billing behavior changes. Only typography, colors, and chrome were
+ * touched. Stripe checkout, customer portal, and self-heal sync paths
+ * are identical to the pre-Phase-4 version.
+ */
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Zap, Shield, BarChart3, Download, Clock, Crown } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Check, Zap, Shield, BarChart3, Download, Clock, ArrowRight } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
 import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
 
@@ -10,6 +19,7 @@ const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
 
 export default function PricingPage() {
+  const reducedMotion = useReducedMotion();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,8 +28,6 @@ export default function PricingPage() {
   useEffect(() => {
     const sb = createClient();
     sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
-    // Self-heal: pull from Stripe in case a previous checkout never had
-    // its webhook delivered. Cheap idempotent call.
     (async () => {
       try {
         const sync = await syncSubscription();
@@ -65,87 +73,114 @@ export default function PricingPage() {
 
   const isPro = plan?.tier === "pro";
 
+  const reveal = reducedMotion
+    ? {}
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as const },
+      };
+
   return (
-    <main className="min-h-screen bg-[#050505] text-white py-16 px-4">
-      <div className="max-w-5xl mx-auto">
+    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20 py-16 sm:py-20 px-5 sm:px-8">
+      <div className="max-w-4xl mx-auto">
         {STRIPE_TEST_MODE && (
-          <div className="mb-8 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-[11px] font-mono text-amber-300/90">
-            <span className="font-semibold">Stripe Test Mode</span> · Use card{" "}
-            <code className="px-1.5 py-0.5 rounded bg-amber-400/10">4242 4242 4242 4242</code>{" "}
+          <div className="mb-8 rounded-md border border-warning/30 bg-warning/5 px-4 py-3 font-mono text-[11px] text-warning leading-relaxed">
+            <span className="uppercase tracking-[0.18em]">Stripe test mode</span> · Use card{" "}
+            <code className="px-1.5 py-0.5 rounded bg-warning/10">4242 4242 4242 4242</code>{" "}
             with any future expiry and any 3-digit CVC. No real charges.
           </div>
         )}
 
-        <header className="text-center mb-12">
-          <h1 className="text-4xl sm:text-5xl font-light tracking-tight mb-3">Pricing</h1>
-          <p className="text-white/50 text-sm font-mono max-w-xl mx-auto">
-            Run probes to reveal hidden pricing discrimination. Start free, upgrade when you need more.
+        <motion.header {...reveal} className="text-center mb-14">
+          <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-4">
+            Plans
+          </div>
+          <h1 className="font-serif text-4xl sm:text-5xl tracking-tight text-primary mb-4">
+            Forensic pricing access
+          </h1>
+          <p className="font-mono text-[12px] text-secondary max-w-xl mx-auto leading-relaxed">
+            Start free. Upgrade when you need unlimited probes, priority
+            execution, and exports.
           </p>
-        </header>
+        </motion.header>
 
-        <div className="grid md:grid-cols-2 gap-5">
+        <div className="grid md:grid-cols-2 gap-5 sm:gap-6">
           {/* FREE */}
-          <article className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-7 flex flex-col">
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-xs font-mono uppercase tracking-widest text-white/40">Free</span>
+          <motion.article
+            {...reveal}
+            transition={{ duration: 0.7, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+            className="rounded-lg border border-line bg-raised p-7 flex flex-col"
+          >
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+                Free
+              </span>
               {plan?.tier === "free" && (
-                <span className="text-[10px] font-mono text-emerald-300/80 border border-emerald-400/30 rounded-full px-2 py-0.5">
+                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-signal border border-signal/40 bg-signal/10 rounded-full px-2 py-0.5">
                   current
                 </span>
               )}
             </div>
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-5xl font-light">$0</span>
-              <span className="text-white/40 text-sm">/forever</span>
+            <div className="flex items-baseline gap-1 mb-7">
+              <span className="font-serif text-5xl text-primary tabular-nums">$0</span>
+              <span className="font-mono text-[11px] text-muted">/forever</span>
             </div>
-            <ul className="space-y-3 text-sm text-white/70 mb-8 flex-1">
+            <ul className="space-y-3 font-mono text-[12px] text-secondary mb-8 flex-1">
               <Bullet>15 probes per month</Bullet>
-              <Bullet>24-agent probe (3 staggered waves, ~60–90s)</Bullet>
+              <Bullet>24-agent probe · 3 staggered waves · ~60–90s</Bullet>
               <Bullet>Topline discrimination index + spread</Bullet>
               <Bullet>7-day history retention</Bullet>
-              <Bullet muted>No exports · No per-agent breakdown</Bullet>
+              <Bullet muted>No exports · no per-agent breakdown</Bullet>
             </ul>
             <Link
               href="/chat"
-              className="block text-center rounded-full border border-white/[0.12] hover:border-white/30 text-sm font-mono py-2.5 transition-colors"
+              className="block text-center rounded-md border border-line hover:border-secondary/50 hover:text-primary font-mono text-[11px] uppercase tracking-[0.16em] text-secondary py-3 transition-colors"
             >
-              {plan?.tier === "free" ? "Open the probe" : "Start free"}
+              {plan?.tier === "free" ? "Open the cockpit" : "Start free"}
             </Link>
-          </article>
+          </motion.article>
 
           {/* PRO */}
-          <article className="relative rounded-3xl border border-emerald-400/30 bg-gradient-to-b from-emerald-400/5 to-transparent p-7 flex flex-col">
+          <motion.article
+            {...reveal}
+            transition={{ duration: 0.7, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="relative rounded-lg border border-signal/40 bg-raised p-7 flex flex-col shadow-[0_0_40px_rgba(0,217,122,0.08)]"
+          >
             <div className="absolute -top-3 left-7">
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-emerald-300 bg-[#050505] border border-emerald-400/40 rounded-full px-2.5 py-1">
-                <Crown className="w-3 h-3" /> Pro
+              <span className="inline-flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.22em] text-signal bg-ink border border-signal/40 rounded-full px-2.5 py-1">
+                <span className="w-1 h-1 rounded-full bg-signal" />
+                Pro
               </span>
             </div>
-            <div className="flex items-baseline gap-2 mb-1 mt-2">
-              <span className="text-xs font-mono uppercase tracking-widest text-emerald-300/80">Pro</span>
+            <div className="flex items-baseline gap-2 mb-2 mt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-signal">
+                Pro
+              </span>
               {isPro && (
-                <span className="text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5">
+                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-signal border border-signal/40 bg-signal/10 rounded-full px-2 py-0.5">
                   active
                 </span>
               )}
             </div>
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-5xl font-light">$29</span>
-              <span className="text-white/40 text-sm">/month</span>
+            <div className="flex items-baseline gap-1 mb-7">
+              <span className="font-serif text-5xl text-primary tabular-nums">$29</span>
+              <span className="font-mono text-[11px] text-muted">/month</span>
             </div>
-            <ul className="space-y-3 text-sm text-white/80 mb-8 flex-1">
-              <Bullet icon={<Zap className="w-3.5 h-3.5 text-emerald-300" />}>
-                <span className="text-white">Unlimited probes</span>
+            <ul className="space-y-3 font-mono text-[12px] text-secondary mb-8 flex-1">
+              <Bullet icon={<Zap className="w-3.5 h-3.5 text-signal" />}>
+                <span className="text-primary">Unlimited probes</span>
               </Bullet>
-              <Bullet icon={<Clock className="w-3.5 h-3.5 text-emerald-300" />}>
-                Priority probing — single-wave concurrent <span className="text-white/50">(~15s)</span>
+              <Bullet icon={<Clock className="w-3.5 h-3.5 text-signal" />}>
+                Priority probing — single-wave concurrent <span className="text-muted">(~15s)</span>
               </Bullet>
-              <Bullet icon={<BarChart3 className="w-3.5 h-3.5 text-emerald-300" />}>
+              <Bullet icon={<BarChart3 className="w-3.5 h-3.5 text-signal" />}>
                 Full per-agent fingerprint breakdown
               </Bullet>
-              <Bullet icon={<Download className="w-3.5 h-3.5 text-emerald-300" />}>
+              <Bullet icon={<Download className="w-3.5 h-3.5 text-signal" />}>
                 PDF, CSV, and JSON exports
               </Bullet>
-              <Bullet icon={<Shield className="w-3.5 h-3.5 text-emerald-300" />}>
+              <Bullet icon={<Shield className="w-3.5 h-3.5 text-signal" />}>
                 Unlimited probe history
               </Bullet>
             </ul>
@@ -153,7 +188,7 @@ export default function PricingPage() {
               <button
                 onClick={onManage}
                 disabled={busy}
-                className="block text-center rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.12] text-sm font-mono py-2.5 transition-colors disabled:opacity-50"
+                className="block text-center rounded-md bg-raised hover:bg-line border border-secondary/40 hover:border-secondary font-mono text-[11px] uppercase tracking-[0.16em] text-primary py-3 transition-colors disabled:opacity-50"
               >
                 {busy ? "Opening…" : "Manage billing"}
               </button>
@@ -161,37 +196,21 @@ export default function PricingPage() {
               <button
                 onClick={onSubscribe}
                 disabled={busy}
-                className="block text-center rounded-full bg-emerald-400 hover:bg-emerald-300 text-black text-sm font-mono font-semibold py-2.5 transition-colors disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-signal hover:brightness-110 active:scale-[0.98] font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-ink py-3 transition-all disabled:opacity-50"
               >
-                {busy ? "Loading…" : signedIn ? "Subscribe — $29 / mo" : "Sign in to subscribe"}
+                {busy ? "Loading…" : signedIn ? "Subscribe · $29 / mo" : "Sign in to subscribe"}
+                {!busy && <ArrowRight className="w-3.5 h-3.5" />}
               </button>
             )}
             {error && (
-              <p className="text-rose-400 text-[11px] font-mono mt-3 text-center">{error}</p>
+              <p className="text-overcharge font-mono text-[11px] mt-3 text-center">{error}</p>
             )}
-          </article>
+          </motion.article>
         </div>
 
-        <p className="text-center text-white/30 text-[11px] font-mono mt-10">
-          Cancel anytime from the customer portal. No commitment.
+        <p className="text-center font-mono text-[10px] uppercase tracking-[0.22em] text-muted mt-10">
+          Cancel anytime · no commitment
         </p>
-
-        <footer className="mt-16 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-5 h-5 rounded border border-emerald-400/30 flex items-center justify-center">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1.2">
-                <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
-              </svg>
-            </div>
-            <span className="text-sm font-medium tracking-tight text-white/80">JACOBI</span>
-          </div>
-          <div className="flex items-center gap-5 text-[11px] font-mono">
-            <Link href="/chat" className="text-white/40 hover:text-white/80 transition-colors">Probe</Link>
-            <Link href="/about" className="text-white/40 hover:text-white/80 transition-colors">About</Link>
-            <Link href="/leaderboard" className="text-white/40 hover:text-white/80 transition-colors">Leaderboard</Link>
-          </div>
-        </footer>
       </div>
     </main>
   );
@@ -207,9 +226,9 @@ function Bullet({
   muted?: boolean;
 }) {
   return (
-    <li className={`flex items-start gap-2.5 ${muted ? "text-white/35" : ""}`}>
-      <span className="mt-1 shrink-0">
-        {icon ?? <Check className="w-3.5 h-3.5 text-white/40" />}
+    <li className={`flex items-start gap-2.5 ${muted ? "text-muted" : ""}`}>
+      <span className="mt-0.5 shrink-0">
+        {icon ?? <Check className="w-3.5 h-3.5 text-muted" />}
       </span>
       <span>{children}</span>
     </li>

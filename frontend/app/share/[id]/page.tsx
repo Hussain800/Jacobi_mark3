@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +24,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const data = await fetchProbe(id);
-  if (!data) {
-    return { title: "Probe Not Found — JACOBI" };
-  }
+  if (!data) return { title: "Probe Not Found — JACOBI" };
   const target = data.target_name || data.target_url || "Probe";
   return {
     title: `${target} — JACOBI Probe`,
@@ -46,24 +46,26 @@ export default async function SharePage({
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-[#050505] flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-4">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#34d399" strokeWidth="1.5">
-              <path d="M10 2 L16 8 L10 14 L4 8 Z" fill="none" />
-              <circle cx="10" cy="8" r="2" fill="#34d399" opacity="0.4" />
-            </svg>
+      <main className="min-h-screen bg-ink text-primary font-sans flex items-center justify-center px-5">
+        <div className="text-center max-w-sm">
+          <div className="w-12 h-12 rounded-full border border-line bg-raised flex items-center justify-center mx-auto mb-6" />
+          <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-3">
+            404
           </div>
-          <h1 className="text-xl font-thin text-white/80 mb-2">Probe Not Found</h1>
-          <p className="text-xs font-mono text-white/20">
-            This share link has expired or the probe result is no longer available.
+          <h1 className="font-serif text-2xl text-primary mb-3">
+            Probe not found
+          </h1>
+          <p className="font-mono text-[11px] text-secondary leading-relaxed mb-8">
+            This share link has expired or the probe result is no longer
+            available.
           </p>
-          <a
+          <Link
             href="/"
-            className="inline-block mt-6 text-[10px] font-mono text-neon/50 hover:text-neon/80 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
           >
-            &larr; Back to JACOBI
-          </a>
+            Back to JACOBI
+            <ArrowRight className="w-3 h-3" />
+          </Link>
         </div>
       </main>
     );
@@ -79,32 +81,43 @@ interface ShareResultProps {
   data: TopologyReport;
 }
 
+function formatDate(ts: string) {
+  try {
+    return new Date(ts).toLocaleDateString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
 function ShareResult({ data }: ShareResultProps) {
   return (
-    <main className="min-h-screen bg-[#050505] py-8 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 rounded-lg border border-neon/20 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#34d399" strokeWidth="1.2">
-              <path d="M8 2 L12 8 L8 14 L4 8 Z" fill="none" />
-              <circle cx="8" cy="8" r="1.5" fill="#34d399" opacity="0.6" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-sm font-mono text-white/80 font-light">
+    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20 py-10 sm:py-14 px-5 sm:px-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Banner — establishes this is a shared public report */}
+        <div className="mb-6 border border-line rounded-lg bg-raised px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
+          <div className="flex-1 min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-1">
+              Shared probe · public report
+            </div>
+            <div className="font-mono text-[12px] text-secondary truncate">
               {data.target_name || data.target_url}
-            </h1>
-            <p className="text-[8px] font-mono text-white/15 font-light">
-              Shared probe result — {data.timestamp || "unknown date"}
-            </p>
+            </div>
+            <div className="font-mono text-[10px] text-muted mt-1">
+              {formatDate(data.timestamp || "")}
+            </div>
           </div>
-          <a
+          <Link
             href="/chat"
-            className="ml-auto text-[9px] font-mono text-neon/40 hover:text-neon/70 transition-colors"
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
           >
-            New probe &rarr;
-          </a>
+            Run your own probe
+            <ArrowRight className="w-3 h-3" />
+          </Link>
         </div>
+
         <ShareResultClient data={data} />
       </div>
     </main>

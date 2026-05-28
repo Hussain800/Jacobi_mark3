@@ -1,19 +1,27 @@
 "use client";
 
 /**
- * RadialAgentStage — primary live visualization on /chat.
+ * RadialAgentStage — Phase 4: the persistent investigation stage.
  *
- * 24 nodes arranged in 5 axis clusters around a center anchor. As
- * agents return from the backend (driven by report.agents), their
- * status visualization upgrades: pending → in-flight (pulsing) →
- * success (filled tier color) → priced result (price chip). On
- * result phase, the cheapest + dearest agents are highlighted as
- * endpoints with signal/overcharge tinting and slightly larger pills.
+ * Two modes, same component:
  *
- * Clicking a returned node opens AgentDetailDrawer.
+ *   mode = "live"   →  perpetual slow rotation (0.04° / 50 ms ≈ 30s full turn),
+ *                      per-node organic breath, curved bezier strands that
+ *                      draw in as agents return. Designed to feel like a
+ *                      living organism rather than static dots.
  *
- * Visual vocabulary deliberately mirrors the landing HeroScene so
- * /chat feels like the same product, not a separate dashboard.
+ *   mode = "result" →  rotation frozen, breath dampened, strands stable.
+ *                      The two endpoint pills (cheapest signal-green,
+ *                      dearest overcharge-rose) carry the spread.
+ *                      Entrance animations skipped so the result reveal
+ *                      is calm, not noisy.
+ *
+ * The component is designed to be MOUNTED ONCE and switched between modes
+ * via the `mode` prop — Phase 3's jarring "scan stage unmounts, result
+ * stage remounts" pattern is eliminated.
+ *
+ * Visual vocabulary mirrors the landing HeroScene so /chat feels like the
+ * same product.
  */
 
 import {
@@ -57,9 +65,20 @@ interface StagePos {
   y: number;
 }
 
-function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }): StagePos {
-  const anchorAngle = CLUSTER_ANGLE[axis];
-  const anchorR = Math.min(stage.w * 0.36, stage.h * 0.42);
+/**
+ * Cluster position math.
+ *
+ * `rotationOffset` is added uniformly to all cluster anchor angles so the
+ * whole swarm can rotate as one organism in live mode.
+ */
+function clusterPos(
+  idx: number,
+  axis: Axis,
+  stage: { w: number; h: number },
+  rotationOffset = 0,
+): StagePos {
+  const anchorAngle = CLUSTER_ANGLE[axis] + rotationOffset;
+  const anchorR = Math.min(stage.w * 0.34, stage.h * 0.40);
   const ax = Math.cos(anchorAngle) * anchorR;
   const ay = Math.sin(anchorAngle) * anchorR * 0.82;
 
@@ -72,12 +91,38 @@ function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }): S
     n === 1
       ? 0
       : ((idxInCluster - (n - 1) / 2) / Math.max(1, (n - 1) / 2)) *
-        Math.min(stage.w * 0.16, 120);
+        Math.min(stage.w * 0.14, 110);
 
   return {
     x: ax + Math.cos(tangentAngle) * spread,
     y: ay + Math.sin(tangentAngle) * spread * 0.85,
   };
+}
+
+/**
+ * Build a quadratic-bezier path from the center to a target with a
+ * controlled curve so strands feel organic instead of straight rays.
+ */
+function strandPath(target: StagePos): string {
+  // Perpendicular offset for the control point — gives each strand a
+  // gentle bow. The sign alternates with target angle so adjacent strands
+  // curve in opposite directions, avoiding parallel "tracks".
+  const angle = Math.atan2(target.y, target.x);
+  const length = Math.hypot(target.x, target.y);
+  const perp = angle + Math.PI / 2;
+  const bow = Math.min(length * 0.12, 32);
+  const midX = target.x * 0.5 + Math.cos(perp) * bow;
+  const midY = target.y * 0.5 + Math.sin(perp) * bow;
+  return `M 0 0 Q ${midX} ${midY} ${target.x} ${target.y}`;
+}
+
+/**
+ * Depth-opacity — gives an illusion of 3D rotation. Nodes whose angle
+ * puts them on the "back" of the orbital plane fade slightly.
+ */
+function depthOpacity(target: StagePos): number {
+  const angle = Math.atan2(target.y, target.x);
+  return 0.65 + 0.35 * ((1 + Math.sin(angle)) / 2);
 }
 
 type NodeStatus = "pending" | "in_flight" | "success" | "detected" | "failed";
@@ -95,28 +140,44 @@ interface NodeState {
 interface Props {
   report: TopologyReport | null;
   scanStarted?: number;
-  isComplete: boolean;
+  mode: "live" | "result";
   showLabels?: boolean;
+  compact?: boolean;
 }
 
 export default function RadialAgentStage({
   report,
   scanStarted = 0,
-  isComplete,
+  mode,
   showLabels = true,
+  compact = false,
 }: Props) {
   const reducedMotion = useReducedMotion();
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ w: 800, h: 520 });
   const [selected, setSelected] = useState<Agent | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [rotationOffset, setRotationOffset] = useState(0);
 
-  /* Live tick while scanning so the in-flight estimate stays current */
+  const isComplete = mode === "result";
+
+  /* Live tick during scan so in-flight estimate updates */
   useEffect(() => {
     if (isComplete || scanStarted === 0) return;
     const id = setInterval(() => setNow(Date.now()), 300);
     return () => clearInterval(id);
   }, [isComplete, scanStarted]);
+
+  /* Perpetual gentle rotation in live mode — the heartbeat of the swarm.
+     ~30 seconds for a full revolution. Off in result and reduced-motion. */
+  useEffect(() => {
+    if (isComplete || reducedMotion) return;
+    const id = setInterval(() => {
+      setRotationOffset((prev) => (prev + 0.0007) % (Math.PI * 2));
+    }, 50);
+    return () => clearInterval(id);
+  }, [isComplete, reducedMotion]);
 
   useLayoutEffect(() => {
     if (!stageRef.current) return;
@@ -134,7 +195,7 @@ export default function RadialAgentStage({
     return () => ro.disconnect();
   }, []);
 
-  /* Resolve which 24 nodes exist and what their current visual state is */
+  /* Resolve current 24-node state from the live report */
   const nodes: NodeState[] = useMemo(() => {
     const agentsById = new Map<number, Agent>();
     (report?.agents || []).forEach((a) => agentsById.set(agentIndex(a.agent_id), a));
@@ -149,14 +210,8 @@ export default function RadialAgentStage({
         if (!cheapest || a.price < cheapest.price!) cheapest = a;
         if (!dearest || a.price > dearest.price!) dearest = a;
       });
-      if (cheapest !== null) {
-        const c = cheapest as Agent;
-        cheapestIdx = agentIndex(c.agent_id);
-      }
-      if (dearest !== null) {
-        const d = dearest as Agent;
-        dearestIdx = agentIndex(d.agent_id);
-      }
+      if (cheapest !== null) cheapestIdx = agentIndex((cheapest as Agent).agent_id);
+      if (dearest !== null)  dearestIdx  = agentIndex((dearest  as Agent).agent_id);
     }
 
     return Array.from({ length: 24 }, (_, i) => {
@@ -178,20 +233,22 @@ export default function RadialAgentStage({
         price: a?.price ?? null,
         agent: a,
         isCheapest: i === cheapestIdx,
-        isDearest: i === dearestIdx,
+        isDearest:  i === dearestIdx,
       };
     });
   }, [report, scanStarted, isComplete, now]);
 
-  /* Pre-compute pixel positions for each cluster member */
+  /* Pre-compute positions; rotationOffset feeds into every cluster */
   const positions = useMemo(
-    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage)),
-    [nodes, stage],
+    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage, rotationOffset)),
+    [nodes, stage, rotationOffset],
   );
 
   const cx = stage.w / 2;
   const cy = stage.h / 2;
-  const totalDone = nodes.filter((n) => n.status === "success" || n.status === "detected" || n.status === "failed").length;
+  const totalDone = nodes.filter(
+    (n) => n.status === "success" || n.status === "detected" || n.status === "failed",
+  ).length;
 
   const onNodeClick = useCallback((n: NodeState) => {
     if (!n.agent) return;
@@ -199,32 +256,49 @@ export default function RadialAgentStage({
     setSelected(n.agent);
   }, []);
 
+  // Cluster label positions (rotation-aware)
+  const clusterLabels = useMemo(() => {
+    if (!stage.w) return [];
+    const r = Math.min(stage.w * 0.34, stage.h * 0.40) + 40;
+    return (Object.keys(CLUSTER_ANGLE) as Axis[]).map((axis) => {
+      const angle = CLUSTER_ANGLE[axis] + rotationOffset;
+      return {
+        axis,
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r * 0.82,
+      };
+    });
+  }, [stage, cx, cy, rotationOffset]);
+
+  const height = compact
+    ? "h-[48vh] min-h-[360px] sm:min-h-[420px]"
+    : "h-[58vh] min-h-[440px] sm:min-h-[500px]";
+
   return (
     <div className="relative">
-      <div
-        ref={stageRef}
-        className="relative mx-auto w-full max-w-[860px] h-[58vh] min-h-[420px] sm:min-h-[480px]"
-      >
-        {/* Faint center pulse — represents the URL anchor */}
+      <div ref={stageRef} className={`relative mx-auto w-full max-w-[920px] ${height}`}>
+        {/* Center anchor — represents the URL command core */}
         <motion.div
           aria-hidden
           initial={false}
           animate={{
-            opacity: isComplete ? 0.4 : 0.7,
-            scale: isComplete ? 1 : [1, 1.08, 1],
+            opacity: isComplete ? 0.55 : 0.85,
+            scale: isComplete ? 1 : [1, 1.12, 1],
           }}
           transition={{
-            scale: { duration: 2.6, repeat: Infinity, ease: "easeInOut" },
+            scale:   { duration: 2.4, repeat: Infinity, ease: "easeInOut" },
             opacity: { duration: 0.6 },
           }}
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-signal pointer-events-none"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-signal pointer-events-none z-20"
         />
         <div
           aria-hidden
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full blur-2xl bg-signal/10 pointer-events-none"
+          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full blur-2xl bg-signal/10 pointer-events-none ${
+            isComplete ? "w-32 h-32" : "w-44 h-44"
+          }`}
         />
 
-        {/* SVG strand layer */}
+        {/* SVG strand layer — curved bezier paths */}
         <svg
           className="absolute inset-0 pointer-events-none"
           width="100%"
@@ -235,51 +309,58 @@ export default function RadialAgentStage({
         >
           {nodes.map((n, i) => {
             const target = positions[i];
+            const path = strandPath(target);
             const visible =
               n.status === "in_flight" ||
               n.status === "success" ||
               n.status === "detected" ||
               n.status === "failed";
+
+            // Strand styling by state
             let stroke = "rgba(155, 161, 173, 0.18)";
-            let strokeWidth = 0.5;
-            let op = 0.4;
+            let strokeWidth = 0.6;
+            let opacity = 0.45;
+
             if (isComplete) {
               if (n.isCheapest) {
                 stroke = "rgba(0, 217, 122, 0.85)";
-                strokeWidth = 1.4;
-                op = 1;
+                strokeWidth = 1.6;
+                opacity = 1;
               } else if (n.isDearest) {
                 stroke = "rgba(255, 93, 108, 0.85)";
-                strokeWidth = 1.4;
-                op = 1;
+                strokeWidth = 1.6;
+                opacity = 1;
               } else if (n.status === "detected" || n.status === "failed") {
-                stroke = "rgba(255, 93, 108, 0.22)";
-                op = 0.5;
+                stroke = "rgba(255, 93, 108, 0.20)";
+                opacity = 0.4;
               } else {
                 stroke = "rgba(155, 161, 173, 0.12)";
-                op = 0.4;
+                opacity = 0.35;
               }
+            } else if (hoveredIdx === n.idx) {
+              stroke = "rgba(0, 217, 122, 0.6)";
+              strokeWidth = 1.2;
+              opacity = 0.9;
             }
+
             return (
-              <motion.line
+              <motion.path
                 key={n.idx}
-                x1={0}
-                y1={0}
-                x2={target.x}
-                y2={target.y}
+                d={path}
+                fill="none"
+                strokeLinecap="round"
                 initial={{ pathLength: 0, opacity: 0 }}
                 animate={
                   visible
-                    ? { pathLength: 1, opacity: op }
+                    ? { pathLength: 1, opacity }
                     : { pathLength: 0, opacity: 0 }
                 }
                 transition={{
                   pathLength: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
-                  opacity: { duration: 0.4 },
+                  opacity:    { duration: 0.5 },
                 }}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
-                strokeLinecap="round"
               />
             );
           })}
@@ -287,28 +368,21 @@ export default function RadialAgentStage({
 
         {/* Cluster labels */}
         {showLabels &&
-          stage.w > 0 &&
-          (Object.keys(CLUSTER_ANGLE) as Axis[]).map((axis) => {
-            const angle = CLUSTER_ANGLE[axis];
-            const r = Math.min(stage.w * 0.36, stage.h * 0.42) + 34;
-            const lx = cx + Math.cos(angle) * r;
-            const ly = cy + Math.sin(angle) * r * 0.82;
-            return (
-              <div
-                key={axis}
-                style={{
-                  position: "absolute",
-                  left: lx,
-                  top: ly,
-                  transform: "translate(-50%, -50%)",
-                }}
-                className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-secondary/85 whitespace-nowrap pointer-events-none"
-              >
-                <span className="w-1 h-1 rounded-full bg-secondary/55" />
-                {AXIS_LABEL[axis]}
-              </div>
-            );
-          })}
+          clusterLabels.map((l) => (
+            <div
+              key={l.axis}
+              style={{
+                position: "absolute",
+                left: l.x,
+                top: l.y,
+                transform: "translate(-50%, -50%)",
+              }}
+              className="hidden md:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-secondary/85 whitespace-nowrap pointer-events-none"
+            >
+              <span className="w-1 h-1 rounded-full bg-secondary/55" />
+              {AXIS_LABEL[l.axis]}
+            </div>
+          ))}
 
         {/* Agent nodes */}
         {nodes.map((n, i) => {
@@ -321,13 +395,16 @@ export default function RadialAgentStage({
               cx={cx}
               cy={cy}
               reducedMotion={!!reducedMotion}
-              isComplete={isComplete}
+              mode={mode}
+              depthOp={depthOpacity(pos)}
+              isHovered={hoveredIdx === n.idx}
               onClick={() => onNodeClick(n)}
+              onHover={(h) => setHoveredIdx(h ? n.idx : (cur) => (cur === n.idx ? null : cur))}
             />
           );
         })}
 
-        {/* Live counter — sits center-bottom of the stage */}
+        {/* Status badge — sits center-bottom of stage */}
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-center pointer-events-none">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
             {isComplete ? "Probe complete" : "Live deployment"}
@@ -337,6 +414,11 @@ export default function RadialAgentStage({
             {scanStarted > 0 && !isComplete && (
               <span className="ml-3 text-muted">
                 {((now - scanStarted) / 1000).toFixed(1)}s
+              </span>
+            )}
+            {isComplete && report?.elapsed_seconds && (
+              <span className="ml-3 text-muted">
+                {report.elapsed_seconds.toFixed(1)}s
               </span>
             )}
           </div>
@@ -363,17 +445,24 @@ function AgentNode({
   cx,
   cy,
   reducedMotion,
-  isComplete,
+  mode,
+  depthOp,
+  isHovered,
   onClick,
+  onHover,
 }: {
   node: NodeState;
   pos: StagePos;
   cx: number;
   cy: number;
   reducedMotion: boolean;
-  isComplete: boolean;
+  mode: "live" | "result";
+  depthOp: number;
+  isHovered: boolean;
   onClick: () => void;
+  onHover: (h: boolean) => void;
 }) {
+  const isComplete = mode === "result";
   const isEndpoint = isComplete && (node.isCheapest || node.isDearest);
   const showPrice =
     isComplete && node.price !== null && node.status === "success";
@@ -383,73 +472,100 @@ function AgentNode({
       node.status === "detected" ||
       node.status === "failed");
 
+  /* Bubble styling */
   let bubble = "bg-secondary/25 border border-secondary/30";
   if (node.status === "in_flight")
-    bubble = "bg-signal/30 border border-signal/40";
+    bubble = "bg-signal/35 border border-signal/45";
   if (node.status === "success" && !showPrice)
     bubble = "bg-raised border border-line";
   if (node.status === "detected" || node.status === "failed")
     bubble = "bg-overcharge/15 border border-overcharge/35";
   if (showPrice) {
     if (node.isCheapest)
-      bubble = "bg-signal text-ink border border-signal shadow-[0_0_24px_rgba(0,217,122,0.35)]";
+      bubble = "bg-signal text-ink border border-signal shadow-[0_0_28px_rgba(0,217,122,0.45)]";
     else if (node.isDearest)
-      bubble = "bg-overcharge text-ink border border-overcharge shadow-[0_0_24px_rgba(255,93,108,0.35)]";
+      bubble = "bg-overcharge text-ink border border-overcharge shadow-[0_0_28px_rgba(255,93,108,0.45)]";
     else
       bubble = "bg-raised border border-secondary/45 text-secondary";
   }
 
-  let sizeCls = "w-[6px] h-[6px] sm:w-[7px] sm:h-[7px]";
+  let sizeCls = "w-[7px] h-[7px] sm:w-[8px] sm:h-[8px]";
   if (showPrice) {
     if (isEndpoint) {
-      sizeCls = "min-w-[64px] sm:min-w-[72px] h-[30px] sm:h-[34px] px-3";
+      sizeCls = "min-w-[68px] sm:min-w-[78px] h-[32px] sm:h-[36px] px-3";
     } else {
-      sizeCls = "min-w-[46px] sm:min-w-[54px] h-[22px] sm:h-[24px] px-2";
+      sizeCls = "min-w-[48px] sm:min-w-[56px] h-[24px] sm:h-[26px] px-2.5";
     }
   }
 
-  const opacity =
-    node.status === "pending" ? 0.42 : node.status === "in_flight" ? 0.95 : 1;
+  /* Hover boost */
+  if (isHovered && !showPrice && node.status !== "pending") {
+    bubble = bubble.replace("border-line", "border-signal/60")
+                   .replace("border-secondary/30", "border-signal/40")
+                   .replace("border-secondary/45", "border-signal/40");
+  }
+
+  const baseOpacity =
+    node.status === "pending" ? 0.42 :
+    node.status === "in_flight" ? 0.92 :
+    1;
+  // Blend base × depth — but never below 0.5 for priced results
+  const targetOpacity = isComplete
+    ? Math.max(0.7, baseOpacity * depthOp)
+    : baseOpacity * depthOp;
 
   return (
     <motion.button
       type="button"
       onClick={clickable ? onClick : undefined}
+      onMouseEnter={() => clickable && onHover(true)}
+      onMouseLeave={() => onHover(false)}
       initial={
-        reducedMotion ? false : { opacity: 0, scale: 0.6, x: cx, y: cy }
+        reducedMotion || isComplete
+          ? false
+          : { opacity: 0, scale: 0.5, x: cx, y: cy }
       }
       animate={{
         x: cx + pos.x,
         y: cy + pos.y,
-        opacity,
-        scale: 1,
+        opacity: targetOpacity,
+        scale: isHovered ? 1.18 : 1,
       }}
       transition={{
-        x: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
-        y: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
+        x:       { duration: isComplete ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
+        y:       { duration: isComplete ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
         opacity: { duration: 0.4 },
-        scale: { duration: 0.4 },
+        scale:   { duration: 0.3 },
       }}
-      whileHover={clickable ? { scale: 1.12 } : undefined}
       style={{ position: "absolute", top: 0, left: 0 }}
       className={`${clickable ? "cursor-pointer" : "cursor-default"} pointer-events-auto`}
       aria-label={node.agent ? node.agent.agent_id : `agent ${node.idx}`}
     >
       <motion.div
         layout={!reducedMotion}
+        // Per-node breath: each cluster breathes slightly differently
         animate={
-          isEndpoint
-            ? { scale: [1, 1.08, 1] }
-            : node.status === "in_flight"
-              ? { scale: [1, 1.18, 1] }
+          isComplete
+            ? isEndpoint
+              ? { scale: [1, 1.06, 1] }
               : { scale: 1 }
+            : node.status === "in_flight"
+              ? { scale: [1, 1.22, 1] }
+              : node.status === "pending"
+                ? { scale: [1, 1.05, 1] }
+                : { scale: [1, 1.04, 1] }
         }
         transition={
-          isEndpoint
-            ? { duration: 1.4, delay: 0.7, ease: "easeOut" }
+          isComplete && isEndpoint
+            ? { duration: 1.6, delay: 0.4, ease: "easeOut" }
             : node.status === "in_flight"
               ? { duration: 1.4, repeat: Infinity, ease: "easeInOut" }
-              : { duration: 0.4, ease: [0.22, 1, 0.36, 1] }
+              : {
+                  duration: 2.6 + (node.idx % 5) * 0.4,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: (node.idx % 7) * 0.15,
+                }
         }
         className={`flex items-center justify-center rounded-full transition-colors duration-300 ${bubble} ${sizeCls}`}
         style={{ transform: "translate(-50%, -50%)" }}
@@ -467,8 +583,7 @@ function AgentNode({
         )}
       </motion.div>
 
-      {/* Tiny static label below pending/in-flight dots so cluster
-          structure is legible even before agents return */}
+      {/* Static small label below pending/in-flight/non-priced dots */}
       {!showPrice && (
         <span
           style={{
@@ -477,13 +592,12 @@ function AgentNode({
             left: 0,
             transform: "translate(-50%, 0)",
             opacity:
-              node.status === "pending"
-                ? 0.35
-                : node.status === "in_flight"
-                  ? 0.7
-                  : 0.5,
+              isHovered ? 1 :
+              node.status === "pending" ? 0.35 :
+              node.status === "in_flight" ? 0.75 :
+              0.55,
           }}
-          className="font-mono text-[8px] sm:text-[9px] text-muted whitespace-nowrap pointer-events-none"
+          className="font-mono text-[8px] sm:text-[9px] text-muted whitespace-nowrap pointer-events-none hidden sm:block"
         >
           {SHORT_LABELS[node.idx]}
         </span>

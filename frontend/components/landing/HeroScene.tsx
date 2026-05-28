@@ -239,8 +239,11 @@ export default function HeroScene() {
   /* Normalized for parallax */
   const mouseNormX = useMotionValue(0);
   const mouseNormY = useMotionValue(0);
-  const PARALLAX_NODES = 12;
-  const PARALLAX_STRANDS = 6;
+  // Use a SINGLE parallax magnitude for both nodes and strands. Different
+  // magnitudes were causing the strand endpoints to drift away from the
+  // node positions, breaking the spider-web look.
+  const PARALLAX_NODES = 10;
+  const PARALLAX_STRANDS = 10;
   const parallaxNodesX   = useSpring(useTransform(mouseNormX, (v) => v * PARALLAX_NODES),   { stiffness: 60, damping: 20 });
   const parallaxNodesY   = useSpring(useTransform(mouseNormY, (v) => v * PARALLAX_NODES),   { stiffness: 60, damping: 20 });
   const parallaxStrandsX = useSpring(useTransform(mouseNormX, (v) => v * PARALLAX_STRANDS), { stiffness: 60, damping: 20 });
@@ -545,7 +548,15 @@ export default function HeroScene() {
           {stage.w > 0 &&
             (Object.keys(CLUSTER_ANGLE) as Axis[]).map((axis) => {
               const angle = CLUSTER_ANGLE[axis] + rotationOffset;
-              const r = Math.min(stage.w * 0.40, stage.h * 0.50) + 38;
+              // The cluster ANCHOR sits at radius `anchorR` and pills fan
+              // *tangentially* around it. The pill at factor 0 (LDN $590
+              // for Location) lands ON the anchor. So the label must be
+              // pushed radially OUTWARD past the anchor by enough that
+              // the label sits clear of every fanned pill. Anchor at
+              // 0.40w, pill height ~36 px, label height ~14 px → need
+              // ~80 px radial clearance.
+              const anchorR = Math.min(stage.w * 0.40, stage.h * 0.50);
+              const r = anchorR + 90;
               const lx = cx + Math.cos(angle) * r;
               const ly = cy + Math.sin(angle) * r * 0.78;
               const target =

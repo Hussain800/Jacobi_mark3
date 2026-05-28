@@ -52,7 +52,7 @@ async def start_checkout(
     except Exception as e:
         import traceback as _tb
         print(f"[BILLING] create_checkout_session crashed: {e!r}\n{_tb.format_exc()}", flush=True)
-        raise HTTPException(502, f"Stripe error: {e}")
+        raise HTTPException(502, "A payment processing error occurred. Please try again.")
     return {"url": session["url"], "id": session["id"]}
 
 
@@ -73,7 +73,7 @@ async def sync_from_stripe(user=Depends(get_optional_user)):
     except Exception as e:
         import traceback as _tb
         print(f"[BILLING] /sync stripe lookup crashed: {e!r}\n{_tb.format_exc()}", flush=True)
-        raise HTTPException(502, f"Stripe lookup error: {e}")
+        raise HTTPException(502, "Failed to retrieve subscription information.")
     if not match:
         return {"tier": "free", "synced": False}
     try:
@@ -86,7 +86,7 @@ async def sync_from_stripe(user=Depends(get_optional_user)):
     except Exception as e:
         import traceback as _tb
         print(f"[BILLING] /sync apply failed: {e!r}\n{_tb.format_exc()}", flush=True)
-        raise HTTPException(502, f"Could not persist subscription: {e}")
+        raise HTTPException(502, "Could not persist subscription. Please contact support.")
     return {"tier": "pro", "synced": True}
 
 
@@ -141,7 +141,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
     try:
         event = verify_webhook(payload, stripe_signature)
     except Exception as e:
-        raise HTTPException(400, f"Webhook signature verification failed: {e}")
+        raise HTTPException(400, "Webhook signature verification failed.")
 
     etype = event["type"]
     obj = event["data"]["object"]

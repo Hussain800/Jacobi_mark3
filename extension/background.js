@@ -1,10 +1,18 @@
 "use strict";
 
+var JACOBI_BACKEND = "http://localhost:3000";
+
+chrome.storage.sync.get("jacobi_settings", function (result) {
+  if (result.jacobi_settings && result.jacobi_settings.backendUrl) {
+    JACOBI_BACKEND = result.jacobi_settings.backendUrl;
+  }
+});
+
 function openProbe(url) {
   if (!url || !/^https?:\/\//i.test(url)) return;
 
   var encoded = encodeURIComponent(url);
-  chrome.tabs.create({ url: "http://localhost:3000/chat?url=" + encoded });
+  chrome.tabs.create({ url: JACOBI_BACKEND + "/chat?url=" + encoded });
 
   chrome.storage.local.get("jacobi_recent", function (result) {
     var recent = result.jacobi_recent || [];

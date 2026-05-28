@@ -28,6 +28,7 @@ from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
 from cognee_memory import remember_probe, is_available as cognee_available
+from triggerware import dispatch_probe_event as triggerware_dispatch
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
@@ -988,6 +989,11 @@ async def launch_probe(input: TargetProbeInput, _: None = Depends(check_rate_lim
         # Persist to Cognee memory (fire-and-forget, no-op if not configured)
         try:
             await remember_probe(session)
+        except Exception:
+            pass
+        # Dispatch to TriggerWare.ai workflow (fire-and-forget, no-op if not configured)
+        try:
+            await triggerware_dispatch(session)
         except Exception:
             pass
         return {"session_id": session["session_id"], "status": session["status"]}

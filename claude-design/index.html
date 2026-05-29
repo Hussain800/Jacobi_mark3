@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — Pricing Topology Probe</title>
+<meta name="description" content="24 synthetic shoppers. One URL. The truth about what you pay. JACOBI exposes the pricing discrimination algorithms hide behind your digital fingerprint." />
+<link rel="stylesheet" href="assets/jacobi.css" />
+</head>
+<body data-screen-label="Landing">
+
+<div id="nav-root"></div>
+
+<!-- ════════════ HERO ════════════ -->
+<header class="hero" id="hero">
+  <div class="hero-grid wrap">
+    <div class="hero-copy">
+      <div class="chip" data-reveal>
+        <span class="pulse"></span> <span class="chip-num" data-count="1247892">0</span>&nbsp;probes &middot; running now
+      </div>
+
+      <h1 class="hero-h1" data-reveal>
+        Your browser is a
+        <span class="serif-i hero-accent">bargaining&nbsp;tool</span>
+        <span class="hero-sub-rule"></span>
+      </h1>
+
+      <p class="hero-typed mono" data-reveal>
+        <span id="typed"></span><span class="caret">▌</span>
+      </p>
+
+      <p class="hero-para sec" data-reveal>
+        JACOBI deploys 24 shopper profiles against your URL and surfaces the
+        pricing&nbsp;discrimination algorithms hide behind your digital&nbsp;fingerprint.
+      </p>
+
+      <form class="probe-instrument" data-reveal id="probe-form">
+        <div class="pi-row">
+          <span class="pi-meta"><span class="pi-glyph">⌖</span> 24 agents</span>
+          <input id="probe-input" class="pi-input" type="text"
+                 placeholder="paste a flight, hotel or product URL"
+                 spellcheck="false" autocomplete="off" />
+          <button class="pi-submit" type="submit">Inspect <span class="pi-arrow">→</span></button>
+        </div>
+        <span class="pi-rule"></span>
+      </form>
+
+      <div class="hero-proof label-mono" data-reveal>
+        4 discrimination vectors <span class="sep">·</span>
+        verdict in seconds <span class="sep">·</span>
+        no login required
+      </div>
+    </div>
+
+    <!-- globe -->
+    <div class="globe-stage" id="globe-stage" aria-hidden="true">
+      <canvas id="globe" class="globe-canvas"></canvas>
+      <div class="globe-readout mono">
+        <div class="gr-row"><span class="gr-led"></span><span id="gr-status">deploying identities</span></div>
+        <div class="gr-row gr-count"><span id="gr-count">00</span><span class="gr-of">/ 24 live</span></div>
+        <div class="gr-meta">JFK → LHR · UA182 · residential mesh</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-scrollcue label-mono">
+    <span>scroll</span>
+    <span class="cue-line"></span>
+  </div>
+</header>
+
+<!-- ════════════ STAT BAND ════════════ -->
+<section class="statband divider-top">
+  <div class="wrap statband-grid">
+    <div class="stat" data-reveal>
+      <div class="stat-num tnum"><span data-count="1247892">0</span></div>
+      <div class="label-mono">URLs investigated</div>
+    </div>
+    <div class="stat" data-reveal>
+      <div class="stat-num tnum"><span class="muted-pre">$</span><span data-count="4823450">0</span></div>
+      <div class="label-mono">Overcharges exposed</div>
+    </div>
+    <div class="stat" data-reveal>
+      <div class="stat-num tnum"><span data-count="73">0</span><span class="muted-pre">%</span></div>
+      <div class="label-mono">Sites pricing by device</div>
+    </div>
+    <div class="stat" data-reveal>
+      <div class="stat-num tnum"><span data-count="24">0</span></div>
+      <div class="label-mono">Identities per probe</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ MECHANISM ════════════ -->
+<section class="section divider-top" id="mechanism">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <span class="eyebrow"><span class="dot">●</span> The mechanism</span>
+      <h2 class="display sec-title">
+        The anatomy of a <span class="serif-i" style="color:var(--cobalt-bright)">probe</span>
+      </h2>
+      <p class="sec-lede sec">Watch the price disassemble. Each axis of your digital identity peels away to reveal what was actually driving the&nbsp;markup.</p>
+    </div>
+
+    <!-- 3D scroll disassembly -->
+    <div class="mech-scene" id="mech-scene">
+      <div class="mech-pin">
+        <div class="mech-stack" id="mech-stack">
+          <div class="mech-layer l1">
+            <div class="ml-head"><span class="ml-tag">surface</span><span class="ml-name">what you see</span></div>
+            <div class="ml-body">
+              <div class="ml-axis">$640</div>
+              <div class="ml-detail">UA182 · JFK → LHR · the price on your screen</div>
+            </div>
+          </div>
+          <div class="mech-layer l2">
+            <div class="ml-head"><span class="ml-tag">layer 01 · location</span><span class="ml-name">IP geolocation</span></div>
+            <div class="ml-body">
+              <div class="ml-axis serif-i">Manhattan</div>
+              <div class="ml-detail">high-income · low elasticity → <span class="ml-delta-up">+41% premium</span></div>
+            </div>
+            <div class="ml-price">$640 <span class="muted">← $454 baseline</span></div>
+          </div>
+          <div class="mech-layer l3">
+            <div class="ml-head"><span class="ml-tag">layer 02 · device</span><span class="ml-name">user-agent · canvas</span></div>
+            <div class="ml-body">
+              <div class="ml-axis serif-i">iPhone 15 Pro</div>
+              <div class="ml-detail">premium device → <span class="ml-delta-up">+13% premium</span></div>
+            </div>
+            <div class="ml-price">– $24 on Android</div>
+          </div>
+          <div class="mech-layer l4">
+            <div class="ml-head"><span class="ml-tag">layer 03 · cookies</span><span class="ml-name">visit history</span></div>
+            <div class="ml-body">
+              <div class="ml-axis serif-i">Aged · 90-day</div>
+              <div class="ml-detail">loyalty cohort → <span class="ml-delta-up">+4% loyalty tax</span></div>
+            </div>
+            <div class="ml-price">– $11 on a fresh session</div>
+          </div>
+          <div class="mech-layer l5">
+            <div class="ml-head"><span class="ml-tag">layer 04 · referrer</span><span class="ml-name">traffic source</span></div>
+            <div class="ml-body">
+              <div class="ml-axis serif-i">Direct</div>
+              <div class="ml-detail">no comparison signal → <span class="ml-delta-up">+5% direct premium</span></div>
+            </div>
+            <div class="ml-price">– $17 from Kayak</div>
+          </div>
+        </div>
+
+        <div class="mech-progress" aria-hidden="true">
+          <span data-step="0">surface</span>
+          <span data-step="1">location</span>
+          <span data-step="2">device</span>
+          <span data-step="3">cookies</span>
+          <span data-step="4">referrer</span>
+        </div>
+
+        <div class="mech-caption" aria-hidden="true">
+          <strong>Scroll.</strong> The price you see is five decisions deep. JACOBI peels them&nbsp;back.
+        </div>
+      </div>
+    </div>
+
+    <div class="phases" style="margin-top: 40px">
+      <div class="phase card card-hairtop" data-reveal>
+        <div class="phase-n mono">01</div>
+        <div class="phase-ico" data-ico="target"></div>
+        <h3 class="phase-title">Submit your target</h3>
+        <p class="phase-body sec">Drop any product, flight, or booking URL into the scanner. If it carries a price tag, JACOBI can find its real range.</p>
+      </div>
+      <div class="phase card card-hairtop" data-reveal>
+        <div class="phase-n mono">02</div>
+        <div class="phase-ico" data-ico="swarm"></div>
+        <h3 class="phase-title">The swarm launches</h3>
+        <p class="phase-body sec">24 identities disperse across four discrimination axes — location, device, cookies, referrer — striking the URL in coordinated waves.</p>
+      </div>
+      <div class="phase card card-hairtop" data-reveal>
+        <div class="phase-n mono">03</div>
+        <div class="phase-ico" data-ico="patterns"></div>
+        <h3 class="phase-title">Patterns emerge</h3>
+        <p class="phase-body sec">Every response is cross-referenced. Statistical outliers become evidence. Pricing bias becomes readable data.</p>
+      </div>
+      <div class="phase card card-hairtop" data-reveal>
+        <div class="phase-n mono">04</div>
+        <div class="phase-ico" data-ico="verdict"></div>
+        <h3 class="phase-title">Read the verdict</h3>
+        <p class="phase-body sec">A plain-English breakdown of what you'd save with a different profile — and exactly which vector was used to overcharge&nbsp;you.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ EVIDENCE ════════════ -->
+<section class="section divider-top" id="evidence">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <span class="eyebrow"><span class="dot">●</span> Evidence · full readout</span>
+      <h2 class="display sec-title">UA182 &nbsp;<span class="muted" style="font-weight:500">JFK → LHR</span></h2>
+      <p class="sec-lede sec">Five identities, five prices. The same seat on the same flight — and the gap between them.</p>
+    </div>
+
+    <div class="evidence-grid">
+      <!-- breakdown -->
+      <div class="evidence-rows" id="evidence-rows" data-reveal></div>
+
+      <!-- verdict aside -->
+      <aside class="evidence-verdict card" data-reveal>
+        <div class="topology-badge">
+          <span class="tb-dot"></span> Progressive
+        </div>
+        <div class="ev-spread-label label-mono">Hidden premium</div>
+        <div class="ev-spread serif tnum">+$<span data-count="144" data-evidence>0</span></div>
+        <div class="ev-spread-sub mono">29% over baseline · per ticket</div>
+
+        <div class="ev-index">
+          <div class="evi-top"><span class="label-mono">Discrimination index</span><span class="evi-val mono">71<span class="muted">/100</span></span></div>
+          <div class="evi-track"><div class="evi-fill" style="--w:71%"></div></div>
+        </div>
+
+        <p class="ev-note sec">
+          An <span style="color:var(--over)">iPhone in Manhattan</span> paid
+          <span style="color:var(--over)">$144 more</span> than an
+          <span class="good">Android in rural Iowa</span> — same cabin, same date.
+          The driver was <strong style="color:var(--text)">location</strong>.
+        </p>
+        <a class="btn btn-ghost ev-cta" href="#">See the full topology →</a>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ WHY / NORM ════════════ -->
+<section class="section grid-bg divider-top" id="why">
+  <div class="wrap why-wrap">
+    <div class="why-head" data-reveal>
+      <span class="eyebrow"><span class="dot">●</span> Why it matters</span>
+      <h2 class="display why-title">
+        Pricing discrimination<br/>is the <span class="serif-i" style="color:var(--cobalt-bright)">norm</span>.
+      </h2>
+      <p class="why-lede sec">
+        Companies build algorithms to read your willingness to pay from your browser.
+        JACOBI makes those algorithms&nbsp;visible.
+      </p>
+    </div>
+
+    <figure class="callout card" data-reveal>
+      <blockquote class="callout-quote serif">
+        “Two people, same booking, same seats — separated by $60 and a browser&nbsp;setting.”
+      </blockquote>
+      <figcaption class="callout-cite label-mono">— verified across 12,000+ probes</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ════════════ CTA ════════════ -->
+<section class="section cta-section divider-top" id="pricing">
+  <div class="wrap cta-wrap">
+    <div class="cta-aura" aria-hidden="true"></div>
+    <h2 class="display cta-title" data-reveal>
+      Stop being <span style="color:var(--over)">priced</span>.
+      Start <span class="serif-i" style="color:var(--cobalt-bright)">probing</span>.
+    </h2>
+    <p class="cta-sub sec mono" data-reveal>Two million URLs investigated. Zero cost to you. Paste your first target.</p>
+    <form class="probe-instrument cta-bar" data-reveal id="cta-form">
+      <div class="pi-row">
+        <span class="pi-meta"><span class="pi-glyph">⌖</span> 24 agents</span>
+        <input class="pi-input" type="text" placeholder="paste a URL to launch the probe" spellcheck="false" autocomplete="off" />
+        <button class="pi-submit" type="submit">Launch probe <span class="pi-arrow">→</span></button>
+      </div>
+      <span class="pi-rule"></span>
+    </form>
+  </div>
+</section>
+
+<!-- ════════════ FOOTER ════════════ -->
+<div id="footer-root"></div>
+
+<script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+<script src="assets/chrome.js"></script>
+<script src="assets/globe.js"></script>
+<script src="assets/landing.js"></script>
+</body>
+</html>

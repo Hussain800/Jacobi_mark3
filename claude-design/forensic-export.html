@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — Forensic Pricing Record</title>
+<link rel="stylesheet" href="assets/jacobi.css" />
+</head>
+<body data-screen-label="Forensic Export">
+
+<div id="nav-root"></div>
+
+<main class="page fx-main">
+  <section class="section page-top fx-section">
+    <div class="wrap fx-toolbar">
+      <div class="fx-tb-left">
+        <a class="deck-back" href="probe.html">← back to verdict</a>
+        <span class="fx-tb-doc mono">JX-2026-0529-A · forensic record</span>
+      </div>
+      <div class="fx-tb-right">
+        <button class="pi-submit" id="fx-share">Copy share link <span class="pi-arrow">→</span></button>
+        <button class="btn btn-primary" id="fx-pdf">Download PDF <span class="arrow">↓</span></button>
+      </div>
+    </div>
+
+    <article class="fx-doc" id="fx-doc" data-reveal>
+      <div class="fx-watermark mono" aria-hidden="true">CONFIDENTIAL · PRO · CONFIDENTIAL · PRO · CONFIDENTIAL · PRO</div>
+
+      <!-- Letterhead -->
+      <header class="fx-letterhead">
+        <div class="fx-brand">
+          <svg viewBox="0 0 32 32" fill="none" class="fx-mark" aria-hidden="true">
+            <circle cx="16" cy="16" r="12.6" stroke="#cdd5e8" stroke-width="0.8" opacity="0.7"/>
+            <circle cx="16" cy="16" r="7.6" stroke="#cdd5e8" stroke-width="1"/>
+            <line x1="16" y1="1.7" x2="16" y2="5.6" stroke="#cdd5e8" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="16" y1="26.4" x2="16" y2="30.3" stroke="#cdd5e8" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="1.7" y1="16" x2="5.6" y2="16" stroke="#cdd5e8" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="26.4" y1="16" x2="30.3" y2="16" stroke="#cdd5e8" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="20.7" cy="12.9" r="2.2" fill="#cdd5e8"/>
+          </svg>
+          <div>
+            <div class="fx-brand-name">JACOBI</div>
+            <div class="fx-brand-sub mono">forensic pricing record</div>
+          </div>
+        </div>
+        <div class="fx-letterhead-meta mono">
+          <div><span class="muted">issued</span> 29.05.2026 · 14:22 UTC</div>
+          <div><span class="muted">record</span> JX-2026-0529-A</div>
+          <div><span class="muted">examiner</span> JACOBI · adversarial probe engine</div>
+        </div>
+      </header>
+
+      <!-- Title -->
+      <h1 class="fx-title serif">Evidence of <span class="serif-i">differential</span> pricing</h1>
+      <p class="fx-sub mono">A formal record of the prices returned to twenty-four synthetic shoppers on a single URL within a forty-three second window.</p>
+
+      <!-- Target block -->
+      <section class="fx-block">
+        <div class="fx-block-head"><span class="fx-h-tag">§ 01</span><span class="fx-h-title">Target</span></div>
+        <div class="fx-target">
+          <div class="fx-target-row"><span class="fx-k">URL</span><span class="fx-v mono">https://www.booking.com/hotel/in/leela-palace-bangalore.en.html</span></div>
+          <div class="fx-target-row"><span class="fx-k">Host</span><span class="fx-v mono">booking.com</span></div>
+          <div class="fx-target-row"><span class="fx-k">Probe window</span><span class="fx-v mono">2026-05-29 14:21:18 → 14:22:01 UTC · 43.2s</span></div>
+          <div class="fx-target-row"><span class="fx-k">Method</span><span class="fx-v mono">JACOBI 24-agent adversarial probe · 3 waves · residential mesh</span></div>
+        </div>
+      </section>
+
+      <!-- Verdict -->
+      <section class="fx-block">
+        <div class="fx-block-head"><span class="fx-h-tag">§ 02</span><span class="fx-h-title">Verdict</span></div>
+        <div class="fx-verdict-grid">
+          <div class="fx-vg-cell">
+            <div class="label-mono">Topology</div>
+            <div class="fx-stamp">
+              <span class="fx-stamp-dot"></span>
+              <span class="fx-stamp-text">Aggressive</span>
+            </div>
+          </div>
+          <div class="fx-vg-cell">
+            <div class="label-mono">Discrimination index</div>
+            <div class="fx-stat serif">82<span class="muted">/100</span></div>
+          </div>
+          <div class="fx-vg-cell">
+            <div class="label-mono">Hidden premium</div>
+            <div class="fx-stat serif">+$71</div>
+            <div class="muted mono fx-stat-sub">29% over baseline · per night</div>
+          </div>
+          <div class="fx-vg-cell">
+            <div class="label-mono">Agents returned</div>
+            <div class="fx-stat serif">22<span class="muted">/24</span></div>
+            <div class="muted mono fx-stat-sub">2 blocked at edge proxy</div>
+          </div>
+        </div>
+        <p class="fx-verdict-text">
+          An <strong>aggressive</strong> pricing topology. The shopper identified as
+          <em>Manhattan · Safari · MacBook</em> was quoted <strong style="color:var(--over)">$316</strong>
+          — <strong style="color:var(--over)">$71 more</strong> than the shopper identified as
+          <em>rural Iowa · Chrome · Android</em> at <strong style="color:var(--good)">$245</strong>,
+          for the identical listing on the identical dates. The dominant discrimination signal was
+          <strong>location</strong>, secondarily <strong>device class</strong>.
+        </p>
+      </section>
+
+      <!-- Evidence table -->
+      <section class="fx-block">
+        <div class="fx-block-head"><span class="fx-h-tag">§ 03</span><span class="fx-h-title">Evidence — 24 identity probes</span></div>
+        <table class="fx-evidence">
+          <thead>
+            <tr><th>#</th><th>Identity</th><th>Device</th><th>Network</th><th class="r">Quoted</th><th class="r">Δ baseline</th></tr>
+          </thead>
+          <tbody id="fx-tbody"></tbody>
+        </table>
+      </section>
+
+      <!-- Vector decomposition -->
+      <section class="fx-block">
+        <div class="fx-block-head"><span class="fx-h-tag">§ 04</span><span class="fx-h-title">Vector decomposition</span></div>
+        <div class="fx-vector-bars">
+          <div class="fx-vr"><span class="fx-vname mono">Location</span><div class="fx-vbar"><div class="fx-vfill" style="width:100%"></div></div><span class="fx-vval mono">41%</span></div>
+          <div class="fx-vr"><span class="fx-vname mono">Device</span><div class="fx-vbar"><div class="fx-vfill" style="width:32%"></div></div><span class="fx-vval mono">13%</span></div>
+          <div class="fx-vr"><span class="fx-vname mono">Referrer</span><div class="fx-vbar"><div class="fx-vfill" style="width:12%"></div></div><span class="fx-vval mono">5%</span></div>
+          <div class="fx-vr"><span class="fx-vname mono">Cookies</span><div class="fx-vbar"><div class="fx-vfill" style="width:10%"></div></div><span class="fx-vval mono">4%</span></div>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <footer class="fx-auth">
+        <div class="fx-auth-row">
+          <div>
+            <div class="label-mono">SHA-256 evidence hash</div>
+            <div class="fx-hash mono">8f2a • c4d7 • 0e91 • bb55 • 4c1f • d83a • 67b0 • a09e</div>
+          </div>
+          <div class="fx-seal" aria-hidden="true">
+            <svg viewBox="0 0 80 80" fill="none">
+              <circle cx="40" cy="40" r="38" stroke="#7895ff" stroke-width="0.8" opacity="0.7"/>
+              <circle cx="40" cy="40" r="30" stroke="#7895ff" stroke-width="0.6" opacity="0.5"/>
+              <text x="40" y="34" text-anchor="middle" font-family="JetBrains Mono" font-size="6.5" letter-spacing="1.2" fill="#7895ff">JACOBI</text>
+              <text x="40" y="44" text-anchor="middle" font-family="JetBrains Mono" font-size="5" letter-spacing="1.5" fill="#7895ff" opacity="0.8">FORENSIC</text>
+              <text x="40" y="52" text-anchor="middle" font-family="JetBrains Mono" font-size="5" letter-spacing="1.5" fill="#7895ff" opacity="0.8">RECORD</text>
+              <line x1="22" y1="58" x2="58" y2="58" stroke="#7895ff" stroke-width="0.4" opacity="0.5"/>
+              <text x="40" y="64" text-anchor="middle" font-family="JetBrains Mono" font-size="4" letter-spacing="1" fill="#7895ff" opacity="0.7">authenticated</text>
+            </svg>
+          </div>
+        </div>
+        <div class="fx-foot mono">
+          <span>page 1 of 1</span>
+          <span>JACOBI · all probes signed and timestamped</span>
+          <span>jacobi.app/r/JX-2026-0529-A</span>
+        </div>
+      </footer>
+    </article>
+  </section>
+</main>
+
+<div id="footer-root"></div>
+
+<script src="assets/chrome.js"></script>
+<script>
+(function () {
+  const ROWS = [
+    [ 1, 'Manhattan',   'Safari · MacBook',  'datacenter',  316, +71],
+    [ 2, 'New York',    'iPhone 15 Pro',     'datacenter',  311, +66],
+    [ 3, 'Dubai',       'iPhone 15',         'datacenter',  309, +64],
+    [ 4, 'Los Angeles', 'iPhone 15 Pro',     'residential', 306, +61],
+    [ 5, 'Tokyo',       'Safari · iPad',     'datacenter',  299, +54],
+    [ 6, 'Chicago',     'Chrome · iMac',     'residential', 299, +54],
+    [ 7, 'Hong Kong',   'Safari · iPhone',   'residential', 297, +52],
+    [ 8, 'Paris',       'Safari · MacBook',  'residential', 294, +49],
+    [ 9, 'London',      'Edge · Surface',    'datacenter',  292, +47],
+    [10, 'Seoul',       'Chrome · Galaxy',   'residential', 289, +44],
+    [11, 'Singapore',   'Chrome · Pixelbook','datacenter',  289, +44],
+    [12, 'Sydney',      'Chrome · Pixel',    'mobile',      287, +42],
+    [13, 'Frankfurt',   'Chrome · ThinkPad', 'datacenter',  284, +39],
+    [14, 'Toronto',     'Edge · Dell XPS',   'datacenter',  282, +37],
+    [15, 'Amsterdam',   'Edge · Surface',    'residential', 279, +34],
+    [16, 'Berlin',      'Firefox · Linux',   'residential', 277, +32],
+    [17, 'Madrid',      'Chrome · MacBook',  'residential', 274, +29],
+    [18, 'São Paulo',   'Android · Moto',    'mobile',      265, +20],
+    [19, 'Lagos',       'Android · Tecno',   'mobile',      260, +15],
+    [20, 'Mumbai',      'Android · Redmi',   'mobile',      257, +12],
+    [21, 'Bogotá',      'Android · Moto',    'mobile',      252, +7 ],
+    [22, 'Bangalore',   'Firefox · Android', 'mobile',      250, +5 ],
+    [23, 'Mississippi', 'Android · Galaxy',  'mobile',      247, +2 ],
+    [24, 'Rural Iowa',  'Chrome · Android',  'mobile',      245,  0 ],
+  ];
+  const body = document.getElementById('fx-tbody');
+  ROWS.forEach(r => {
+    const [n, city, dev, net, price, delta] = r;
+    const cls = delta >= 50 ? 'over' : delta >= 30 ? 'warn' : delta > 0 ? 'mild' : 'base';
+    body.insertAdjacentHTML('beforeend',
+      `<tr class="${cls}"><td>${String(n).padStart(2,'0')}</td>` +
+      `<td>${city}</td><td>${dev}</td><td class="muted">${net}</td>` +
+      `<td class="r">$${price}</td>` +
+      `<td class="r delta">${delta === 0 ? '— baseline' : '+$' + delta}</td></tr>`);
+  });
+  document.getElementById('fx-share').addEventListener('click', e => {
+    e.target.textContent = 'Link copied ✓';
+    setTimeout(() => { e.target.innerHTML = 'Copy share link <span class="pi-arrow">→</span>'; }, 1800);
+  });
+  document.getElementById('fx-pdf').addEventListener('click', () => window.print());
+})();
+</script>
+</body>
+</html>

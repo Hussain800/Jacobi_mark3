@@ -17,7 +17,10 @@ import GlobalNav from "./global-nav";
 
 export default function RouteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isDesign = pathname.startsWith("/design-preview");
+  // The Claude Design landing (/) and its reference preview (/design-preview)
+  // both render their own DesignNav. RouteChrome must skip the global nav
+  // on those routes so a stacked second nav doesn't appear above them.
+  const isDesign = pathname === "/" || pathname.startsWith("/design-preview");
 
   if (isDesign) {
     return <>{children}</>;

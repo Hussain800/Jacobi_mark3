@@ -129,9 +129,9 @@ export default function LandingPage() {
           window.JacobiGlobe used by useGlobe(); effects.js adds the
           dual-element cursor, magnetic primary CTAs, hero parallax,
           and [data-tilt] tilt. */}
-      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
-      <Script src="/jacobi-design/globe.js"   strategy="afterInteractive" />
-      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+      <Script src="/jacobi-design/scene.js"    strategy="afterInteractive" />
+      <Script src="/jacobi-design/globe-v2.js" strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js"  strategy="afterInteractive" />
 
       <DesignNav />
 

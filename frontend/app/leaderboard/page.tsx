@@ -1,265 +1,275 @@
+"use client";
+
 /**
- * Leaderboard — aligned with the cockpit token system.
+ * Leaderboard / Board — Claude Design port.
  *
- * Server-rendered. Fetches from /api/leaderboard, falls back to a small
- * static set if the backend is unreachable. No behavior changes from the
- * pre-Phase-4 page; only visual chrome migrated to the new tokens.
+ * Decision note (per CEO question "do we even need this?"):
+ *   YES. JACOBI's whole pitch is "expose hidden pricing discrimination."
+ *   A public board makes the exposure shareable and journalism-friendly.
+ *   It's also a free distribution / SEO surface (every probe is a
+ *   shareable record). We do not show the user's URL unless they opted
+ *   to publish (default is public per /api/leaderboard).
+ *
+ * Data flow:
+ *   - Fetch `${apiBase}/api/leaderboard`
+ *   - Show real rows when present
+ *   - Show an honest empty state ("No probes have been published yet.
+ *     Run one to be the first on the board.") when none
+ *
+ * The fake "demo" rows from the static Claude Design prototype are
+ * NOT shipped here — we don't fabricate numbers.
  */
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import Script from "next/script";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import { getClientApiBase } from "../../lib/api-base";
+import "../jacobi-design.css";
 
-interface LeaderboardEntry {
-  target_url: string;
-  target_name: string;
-  topology_class: string;
-  discrimination_index: number;
-  max_price_spread: number;
-  baseline_price: number;
-  successful_agents: number;
-  total_agents: number;
-  timestamp: string;
+interface BoardEntry {
+  target_url?: string;
+  target_name?: string;
+  topology_class?: string;
+  discrimination_index?: number;
+  max_price_spread?: number;
+  baseline_price?: number | null;
+  successful_agents?: number;
+  total_agents?: number;
+  timestamp?: string;
+  // older response shape
+  name?: string;
+  savings?: number;
+  url?: string;
 }
 
-interface LeaderboardResponse {
-  entries: LeaderboardEntry[];
-  total_probes: number;
-  last_updated: string;
+interface BoardResponse {
+  entries?: BoardEntry[];
+  total_probes?: number;
+  last_updated?: string;
 }
 
-const FALLBACK_ENTRIES: LeaderboardEntry[] = [
-  {
-    target_url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html",
-    target_name: "Leela Palace Bangalore",
-    topology_class: "progressive",
-    discrimination_index: 87.1, max_price_spread: 57, baseline_price: 245,
-    successful_agents: 22, total_agents: 24,
-    timestamp: "2026-05-25T20:00:00Z",
-  },
-  {
-    target_url: "https://www.booking.com/hotel/us/the-knickerbocker.html",
-    target_name: "Knickerbocker NYC",
-    topology_class: "aggressive",
-    discrimination_index: 92.4, max_price_spread: 185, baseline_price: 350,
-    successful_agents: 21, total_agents: 24,
-    timestamp: "2026-05-24T14:30:00Z",
-  },
-  {
-    target_url: "https://www.amazon.com/s?k=wireless+headphones",
-    target_name: "Wireless Headphones (Amazon)",
-    topology_class: "selective",
-    discrimination_index: 34.2, max_price_spread: 18, baseline_price: 65,
-    successful_agents: 24, total_agents: 24,
-    timestamp: "2026-05-23T09:15:00Z",
-  },
-  {
-    target_url: "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB",
-    target_name: "DXB to KTM Flights",
-    topology_class: "uniform",
-    discrimination_index: 8.5, max_price_spread: 34, baseline_price: 420,
-    successful_agents: 20, total_agents: 24,
-    timestamp: "2026-05-22T16:45:00Z",
-  },
-  {
-    target_url: "https://www.booking.com/searchresults.html?ss=Tokyo",
-    target_name: "Tokyo Hotels Search",
-    topology_class: "progressive",
-    discrimination_index: 63.8, max_price_spread: 42, baseline_price: 120,
-    successful_agents: 23, total_agents: 24,
-    timestamp: "2026-05-21T11:00:00Z",
-  },
-];
+const TOPO_COLOR: Record<string, string> = {
+  uniform:     "#3ad79f",
+  selective:   "#d8b06a",
+  progressive: "#ff9d52",
+  aggressive:  "#ff5468",
+};
 
-function topologyTone(c: string) {
-  switch (c) {
-    case "uniform":     return { text: "text-signal",     bg: "bg-signal/10",     border: "border-signal/30" };
-    case "selective":   return { text: "text-warning",    bg: "bg-warning/10",    border: "border-warning/30" };
-    case "progressive": return { text: "text-warning",    bg: "bg-warning/10",    border: "border-warning/30" };
-    case "aggressive":  return { text: "text-overcharge", bg: "bg-overcharge/10", border: "border-overcharge/30" };
-    default:            return { text: "text-muted",      bg: "bg-raised",        border: "border-line" };
-  }
-}
-
-function intensityColor(di: number) {
-  if (di >= 70) return "bg-overcharge";
-  if (di >= 40) return "bg-warning";
-  if (di >= 15) return "bg-warning/70";
-  return "bg-signal";
-}
-
-function formatDate(ts: string) {
+function host(url: string | undefined): string {
+  if (!url) return "—";
   try {
-    const d = new Date(ts);
-    return d.toLocaleDateString("en-US", {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-    });
+    return new URL(url).host;
   } catch {
-    return ts;
+    return url.replace(/^https?:\/\//, "").split("/")[0];
   }
 }
 
-function truncate(s: string, max = 30) {
-  return s.length > max ? s.slice(0, max) + "…" : s;
+function timeAgo(ts: string | undefined): string {
+  if (!ts) return "—";
+  const t = new Date(ts).getTime();
+  if (!t) return "—";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60)        return `${Math.round(s)}s`;
+  if (s < 3600)      return `${Math.round(s / 60)}m`;
+  if (s < 86400)     return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
 }
 
-async function fetchLeaderboard(): Promise<LeaderboardResponse> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  try {
-    const res = await fetch(`${apiBase}/api/leaderboard?limit=20&min_agents=5`, {
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch {
-    return {
-      entries: FALLBACK_ENTRIES,
-      total_probes: FALLBACK_ENTRIES.length,
-      last_updated: new Date().toISOString(),
-    };
-  }
+function normalize(raw: BoardEntry): {
+  name: string; host: string; topology: string;
+  index: number; spread: number;
+  agents: string; time: string;
+} {
+  const name = raw.target_name || raw.name || (raw.target_url ? host(raw.target_url) : "Probe");
+  const hostname = host(raw.target_url || raw.url);
+  const topology = (raw.topology_class || "uniform").toLowerCase();
+  const index = Math.round(raw.discrimination_index ?? 0);
+  const spread = Math.round(raw.max_price_spread ?? raw.savings ?? 0);
+  const agents = `${raw.successful_agents ?? "—"}/${raw.total_agents ?? 24}`;
+  const time = `${timeAgo(raw.timestamp)} ago`;
+  return { name, host: hostname, topology, index, spread, agents, time };
 }
 
-export const dynamic = "force-dynamic";
+export default function LeaderboardPage() {
+  const [data, setData] = useState<BoardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const apiBase = getClientApiBase();
 
-export default async function LeaderboardPage() {
-  const data = await fetchLeaderboard();
-  const entries = data.entries;
-  const maxDi = entries.length > 0
-    ? Math.max(...entries.map(e => e.discrimination_index))
-    : 100;
+  useEffect(() => {
+    let active = true;
+    fetch(`${apiBase}/api/leaderboard?limit=30`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => {
+        if (!active) return;
+        const list: BoardEntry[] = Array.isArray(d) ? d : d.entries || [];
+        setData({ entries: list, total_probes: d.total_probes, last_updated: d.last_updated });
+      })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [apiBase]);
+
+  const rows = useMemo(
+    () => (data?.entries || []).map(normalize),
+    [data?.entries],
+  );
+
+  /* Aggregate header stats — computed honestly from real rows */
+  const stats = useMemo(() => {
+    const total = data?.total_probes ?? rows.length;
+    const spreads = rows.map(r => r.spread).filter(n => n > 0).sort((a, b) => a - b);
+    const median = spreads.length
+      ? spreads[Math.floor(spreads.length / 2)]
+      : 0;
+    const aggressive = rows.filter(r => r.topology === "aggressive").length;
+    const aggressivePct = rows.length ? Math.round((aggressive / rows.length) * 100) : 0;
+    const worst = rows.reduce<string>(
+      (m, r) => (r.index > 0 && (TOPO_COLOR[r.topology] ? r.index : 0) > 0 && (m === "" || (TOPO_COLOR[r.topology] && r.topology === "aggressive")) ? r.topology : m),
+      "",
+    );
+    return { total, median, aggressivePct, worst };
+  }, [rows, data?.total_probes]);
 
   return (
-    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20">
-      <header className="border-b border-line">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-3">
-              Public board
-            </div>
-            <h1 className="font-serif text-3xl sm:text-4xl tracking-tight text-primary">
-              Leaderboard
-            </h1>
-            <p className="font-mono text-[11px] text-muted mt-3">
-              Probes ranked by discrimination index — highest first
-            </p>
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted leading-relaxed text-left sm:text-right">
-            <div>{data.total_probes} probe{data.total_probes !== 1 ? "s" : ""} tracked</div>
-            <div className="text-secondary mt-1">Updated {formatDate(data.last_updated)}</div>
-          </div>
-        </div>
-      </header>
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 py-8">
-        {entries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-12 h-12 rounded-full border border-line flex items-center justify-center mb-6 bg-raised" />
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted mb-2">
-              No probes recorded yet
-            </p>
-            <Link
-              href="/chat"
-              className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
-            >
-              Run your first probe
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        ) : (
-          <div className="border border-line rounded-lg overflow-hidden bg-raised">
-            <div className="hidden lg:grid grid-cols-[40px_2fr_1fr_1.5fr_1fr_1fr_1fr] gap-3 px-5 py-3 border-b border-line font-mono text-[9px] uppercase tracking-[0.22em] text-muted">
-              <span>#</span>
-              <span>Target</span>
-              <span>Topology</span>
-              <span>Discrimination index</span>
-              <span>Spread</span>
-              <span>Agents</span>
-              <span>Date</span>
+      <DesignNav />
+
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Global board
+              </span>
+              <h1 className="display sec-title">
+                The{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  leaderboard
+                </span>
+              </h1>
+              <p className="sec-lede sec">
+                Every public probe, ranked by how aggressively the target
+                prices by identity. Updated as the network reports&nbsp;in.
+              </p>
             </div>
 
-            {entries.map((e, i) => {
-              const tone = topologyTone(e.topology_class);
-              const barPct = maxDi > 0 ? (e.discrimination_index / maxDi) * 100 : 0;
-              const barCls = intensityColor(e.discrimination_index);
-
-              return (
-                <div
-                  key={`${e.target_url}-${i}`}
-                  className="border-b border-line last:border-0 hover:bg-ink/40 transition-colors"
-                >
-                  {/* Desktop row */}
-                  <div className="hidden lg:grid grid-cols-[40px_2fr_1fr_1.5fr_1fr_1fr_1fr] gap-3 px-5 py-4 items-center">
-                    <span className="font-mono text-[12px] text-muted tabular-nums">{i + 1}</span>
-                    <div className="min-w-0">
-                      <div className="font-mono text-[12px] text-secondary truncate" title={e.target_url}>
-                        {truncate(e.target_name || e.target_url, 32)}
-                      </div>
-                    </div>
-                    <span className={`font-mono text-[9px] uppercase tracking-[0.18em] px-2 py-1 rounded-full border inline-block w-fit ${tone.bg} ${tone.text} ${tone.border}`}>
-                      {e.topology_class}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-1.5 max-w-[140px] rounded-full bg-ink overflow-hidden">
-                        <div className={`h-full ${barCls}`} style={{ width: `${barPct}%` }} />
-                      </div>
-                      <span className="font-mono text-[12px] text-secondary tabular-nums w-12 text-right">
-                        {e.discrimination_index.toFixed(1)}
-                      </span>
-                    </div>
-                    <span className="font-mono text-[12px] text-signal tabular-nums">
-                      ${e.max_price_spread.toFixed(0)}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted tabular-nums">
-                      {e.successful_agents}/{e.total_agents}
-                    </span>
-                    <span className="font-mono text-[10px] text-muted tabular-nums">
-                      {formatDate(e.timestamp)}
-                    </span>
-                  </div>
-
-                  {/* Mobile card */}
-                  <div className="lg:hidden px-5 py-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="font-mono text-[11px] text-muted tabular-nums shrink-0">{i + 1}.</span>
-                        <span className="font-mono text-[12px] text-secondary truncate">
-                          {truncate(e.target_name || e.target_url, 28)}
-                        </span>
-                      </div>
-                      <span className={`font-mono text-[9px] uppercase tracking-[0.18em] px-2 py-0.5 rounded-full border shrink-0 ${tone.bg} ${tone.text} ${tone.border}`}>
-                        {e.topology_class}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-1.5 rounded-full bg-ink overflow-hidden">
-                        <div className={`h-full ${barCls}`} style={{ width: `${barPct}%` }} />
-                      </div>
-                      <span className="font-mono text-[11px] text-secondary tabular-nums w-12 text-right">
-                        DI {e.discrimination_index.toFixed(0)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 font-mono text-[10px] text-muted">
-                      <span className="text-signal">Spread ${e.max_price_spread.toFixed(0)}</span>
-                      <span>·</span>
-                      <span>{e.successful_agents}/{e.total_agents} agents</span>
-                      <span className="ml-auto">{formatDate(e.timestamp)}</span>
-                    </div>
-                  </div>
+            {/* Stats — only shown when there is real data */}
+            {!loading && rows.length > 0 && (
+              <div className="board-stats" data-reveal>
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">{stats.total.toLocaleString()}</div>
+                  <div className="label-mono">probes logged</div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">+${stats.median}</div>
+                  <div className="label-mono">median spread</div>
+                </div>
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">{stats.aggressivePct}%</div>
+                  <div className="label-mono">aggressive topology</div>
+                </div>
+                <div className="bstat">
+                  <div
+                    className="bstat-num serif"
+                    style={{ color: stats.worst ? TOPO_COLOR[stats.worst] : "var(--text-3)" }}
+                  >
+                    {stats.worst ? stats.worst.charAt(0).toUpperCase() + stats.worst.slice(1) : "—"}
+                  </div>
+                  <div className="label-mono">worst topology</div>
+                </div>
+              </div>
+            )}
 
-        <div className="mt-8 text-center">
-          <Link
-            href="/chat"
-            className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted hover:text-secondary transition-colors"
-          >
-            ← Back to probe cockpit
-          </Link>
-        </div>
-      </div>
-    </main>
+            {/* Loading */}
+            {loading && (
+              <div style={{ padding: "80px 0", textAlign: "center", color: "var(--text-3)", fontFamily: "var(--mono)", fontSize: 12 }}>
+                Loading board…
+              </div>
+            )}
+
+            {/* Empty state — honest */}
+            {!loading && rows.length === 0 && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  No published probes yet
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  {error
+                    ? "The leaderboard service didn't respond. If you have backend access, check /api/leaderboard."
+                    : "The board fills as people publish their probes. Run one to be the first on the board."}
+                </p>
+                <Link href="/chat" className="btn btn-primary">
+                  Run a probe →
+                </Link>
+              </div>
+            )}
+
+            {/* Table */}
+            {!loading && rows.length > 0 && (
+              <div className="board-scroll" data-reveal>
+                <div className="board-table">
+                  <div className="bt-head">
+                    <span>#</span>
+                    <span>Target</span>
+                    <span>Topology</span>
+                    <span>Discrimination index</span>
+                    <span>Spread</span>
+                    <span>Agents</span>
+                    <span>Probed</span>
+                  </div>
+                  {rows.map((r, i) => {
+                    const c = TOPO_COLOR[r.topology] || "var(--text-3)";
+                    return (
+                      <div key={i} className="bt-row" data-reveal>
+                        <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="bt-target">
+                          <span className="bt-name">{r.name}</span>
+                          <span className="bt-host">{r.host}</span>
+                        </span>
+                        <span
+                          className="topo-pill"
+                          style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
+                        >
+                          <span className="d" style={{ background: c }} />
+                          {r.topology}
+                        </span>
+                        <span className="bt-index">
+                          <span className="bt-index-bar">
+                            <span className="bt-index-fill" style={{ width: `${r.index}%` }} />
+                          </span>
+                          <span className="bt-index-val">{r.index}</span>
+                        </span>
+                        <span className={`bt-spread ${r.spread === 0 ? "zero" : ""}`}>
+                          {r.spread === 0 ? "—" : `+$${r.spread}`}
+                        </span>
+                        <span className="bt-agents">{r.agents}</span>
+                        <span className="bt-time">{r.time}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <DesignFooter />
+    </div>
   );
 }

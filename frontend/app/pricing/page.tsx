@@ -1,25 +1,37 @@
 "use client";
 
 /**
- * Pricing — aligned with the cockpit token system.
+ * Pricing — Claude Design port + new Enterprise tier.
  *
- * No billing behavior changes. Only typography, colors, and chrome were
- * touched. Stripe checkout, customer portal, and self-heal sync paths
- * are identical to the pre-Phase-4 version.
+ * Three plans:
+ *   - Free   — 15 probes/month, shareable links, public board access
+ *   - Pro    — $29/mo, unlimited probes, forensic PDF, CSV/JSON exports,
+ *              priority residential lanes, scheduled re-probes
+ *   - Enterprise — bespoke, contact sales
+ *
+ * Pro keeps the existing Supabase + Stripe checkout flow (`startCheckout` /
+ * `startPortal` / `fetchPlan` from lib/billing.ts) so nothing about the
+ * paid path changes. Enterprise is a plain mailto.
+ *
+ * Wrapped in <div className="jacobi-design"> so jacobi-design.css's .plan
+ * card styles apply.
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
-import { Check, Zap, Shield, BarChart3, Download, Clock, ArrowRight } from "lucide-react";
+import Script from "next/script";
 import { createClient } from "../../lib/supabase/client";
 import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import "../jacobi-design.css";
+
+const ENTERPRISE_EMAIL = "enterprise@jacobi.report";
 
 const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
 
 export default function PricingPage() {
-  const reducedMotion = useReducedMotion();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +66,8 @@ export default function PricingPage() {
       }
       const url = await startCheckout();
       if (url) window.location.href = url;
-    } catch (e: any) {
-      setError(e?.message || "Checkout failed. Try again.");
+    } catch (e: unknown) {
+      setError((e as { message?: string })?.message || "Checkout failed. Try again.");
     } finally {
       setBusy(false);
     }
@@ -73,164 +85,186 @@ export default function PricingPage() {
 
   const isPro = plan?.tier === "pro";
 
-  const reveal = reducedMotion
-    ? {}
-    : {
-        initial: { opacity: 0, y: 12 },
-        animate: { opacity: 1, y: 0 },
-        transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as const },
-      };
-
   return (
-    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20 py-16 sm:py-20 px-5 sm:px-8">
-      <div className="max-w-4xl mx-auto">
-        {STRIPE_TEST_MODE && (
-          <div className="mb-8 rounded-md border border-warning/30 bg-warning/5 px-4 py-3 font-mono text-[11px] text-warning leading-relaxed">
-            <span className="uppercase tracking-[0.18em]">Stripe test mode</span> · Use card{" "}
-            <code className="px-1.5 py-0.5 rounded bg-warning/10">4242 4242 4242 4242</code>{" "}
-            with any future expiry and any 3-digit CVC. No real charges.
-          </div>
-        )}
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-        <motion.header {...reveal} className="text-center mb-14">
-          <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-4">
-            Plans
-          </div>
-          <h1 className="font-serif text-4xl sm:text-5xl tracking-tight text-primary mb-4">
-            Forensic pricing access
-          </h1>
-          <p className="font-mono text-[12px] text-secondary max-w-xl mx-auto leading-relaxed">
-            Start free. Upgrade when you need unlimited probes, priority
-            execution, and exports.
-          </p>
-        </motion.header>
+      <DesignNav />
 
-        <div className="grid md:grid-cols-2 gap-5 sm:gap-6">
-          {/* FREE */}
-          <motion.article
-            {...reveal}
-            transition={{ duration: 0.7, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-lg border border-line bg-raised p-7 flex flex-col"
-          >
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-                Free
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head pricing-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Pricing
               </span>
-              {plan?.tier === "free" && (
-                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-signal border border-signal/40 bg-signal/10 rounded-full px-2 py-0.5">
-                  current
+              <h1 className="display sec-title">
+                Run the truth,{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  free
                 </span>
+                .
+              </h1>
+              <p className="sec-lede sec">
+                Start with 15 probes a month. Go Pro when you want the full
+                forensic record and exports. Get in touch for Enterprise terms.
+              </p>
+              {STRIPE_TEST_MODE && (
+                <div className="stripe-banner mono" data-reveal>
+                  <span className="sb-dot" /> Stripe test mode · no card charged
+                </div>
               )}
             </div>
-            <div className="flex items-baseline gap-1 mb-7">
-              <span className="font-serif text-5xl text-primary tabular-nums">$0</span>
-              <span className="font-mono text-[11px] text-muted">/forever</span>
-            </div>
-            <ul className="space-y-3 font-mono text-[12px] text-secondary mb-8 flex-1">
-              <Bullet>15 probes per month</Bullet>
-              <Bullet>24-agent probe · 3 staggered waves · ~60–90s</Bullet>
-              <Bullet>Topline discrimination index + spread</Bullet>
-              <Bullet>7-day history retention</Bullet>
-              <Bullet muted>No exports · no per-agent breakdown</Bullet>
-            </ul>
-            <Link
-              href="/chat"
-              className="block text-center rounded-md border border-line hover:border-secondary/50 hover:text-primary font-mono text-[11px] uppercase tracking-[0.16em] text-secondary py-3 transition-colors"
+
+            <div
+              className="plans"
+              style={{ gridTemplateColumns: "repeat(3, 1fr)" }}
             >
-              {plan?.tier === "free" ? "Open the cockpit" : "Start free"}
-            </Link>
-          </motion.article>
+              {/* ── Free ─────────────────────────────────────────── */}
+              <div className="plan card" data-reveal>
+                <div className="plan-head">
+                  <span className="plan-name mono">
+                    Free
+                    {plan?.tier === "free" && (
+                      <span style={{
+                        marginLeft: 10, fontSize: 9, color: "var(--good)",
+                        border: "1px solid rgba(58,215,159,0.4)",
+                        borderRadius: 999, padding: "2px 7px",
+                        letterSpacing: "0.12em",
+                      }}>
+                        CURRENT
+                      </span>
+                    )}
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt">$0</span>
+                    <span className="plan-per mono">/ forever</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    For the curious shopper who wants proof before they buy.
+                  </p>
+                </div>
+                <Link className="btn btn-ghost plan-cta" href="/chat">
+                  Start probing
+                </Link>
+                <ul className="plan-feats">
+                  <li><span className="pf-check">✓</span> 15 probes / month</li>
+                  <li><span className="pf-check">✓</span> Full 24-agent deployment</li>
+                  <li><span className="pf-check">✓</span> Topology classification + verdict</li>
+                  <li><span className="pf-check">✓</span> Shareable result links</li>
+                  <li><span className="pf-check">✓</span> Public leaderboard access</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Forensic PDF / CSV export</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Scheduled re-probes</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Priority residential lanes</li>
+                </ul>
+              </div>
 
-          {/* PRO */}
-          <motion.article
-            {...reveal}
-            transition={{ duration: 0.7, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="relative rounded-lg border border-signal/40 bg-raised p-7 flex flex-col shadow-[0_0_40px_rgba(0,217,122,0.08)]"
-          >
-            <div className="absolute -top-3 left-7">
-              <span className="inline-flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.22em] text-signal bg-ink border border-signal/40 rounded-full px-2.5 py-1">
-                <span className="w-1 h-1 rounded-full bg-signal" />
-                Pro
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2 mb-2 mt-3">
-              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-signal">
-                Pro
-              </span>
-              {isPro && (
-                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-signal border border-signal/40 bg-signal/10 rounded-full px-2 py-0.5">
-                  active
-                </span>
-              )}
-            </div>
-            <div className="flex items-baseline gap-1 mb-7">
-              <span className="font-serif text-5xl text-primary tabular-nums">$29</span>
-              <span className="font-mono text-[11px] text-muted">/month</span>
-            </div>
-            <ul className="space-y-3 font-mono text-[12px] text-secondary mb-8 flex-1">
-              <Bullet icon={<Zap className="w-3.5 h-3.5 text-signal" />}>
-                <span className="text-primary">Unlimited probes</span>
-              </Bullet>
-              <Bullet icon={<Clock className="w-3.5 h-3.5 text-signal" />}>
-                Priority probing — single-wave concurrent <span className="text-muted">(~15s)</span>
-              </Bullet>
-              <Bullet icon={<BarChart3 className="w-3.5 h-3.5 text-signal" />}>
-                Full per-agent fingerprint breakdown
-              </Bullet>
-              <Bullet icon={<Download className="w-3.5 h-3.5 text-signal" />}>
-                PDF, CSV, and JSON exports
-              </Bullet>
-              <Bullet icon={<Shield className="w-3.5 h-3.5 text-signal" />}>
-                Unlimited probe history
-              </Bullet>
-            </ul>
-            {isPro ? (
-              <button
-                onClick={onManage}
-                disabled={busy}
-                className="block text-center rounded-md bg-raised hover:bg-line border border-secondary/40 hover:border-secondary font-mono text-[11px] uppercase tracking-[0.16em] text-primary py-3 transition-colors disabled:opacity-50"
-              >
-                {busy ? "Opening…" : "Manage billing"}
-              </button>
-            ) : (
-              <button
-                onClick={onSubscribe}
-                disabled={busy}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-signal hover:brightness-110 active:scale-[0.98] font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-ink py-3 transition-all disabled:opacity-50"
-              >
-                {busy ? "Loading…" : signedIn ? "Subscribe · $29 / mo" : "Sign in to subscribe"}
-                {!busy && <ArrowRight className="w-3.5 h-3.5" />}
-              </button>
-            )}
-            {error && (
-              <p className="text-overcharge font-mono text-[11px] mt-3 text-center">{error}</p>
-            )}
-          </motion.article>
-        </div>
+              {/* ── Pro ──────────────────────────────────────────── */}
+              <div className="plan card plan-pro" data-reveal>
+                <div className="plan-flag mono">Most popular</div>
+                <div className="plan-head">
+                  <span className="plan-name mono" style={{ color: "var(--cobalt-bright)" }}>
+                    Pro
+                    {isPro && (
+                      <span style={{
+                        marginLeft: 10, fontSize: 9, color: "var(--good)",
+                        border: "1px solid rgba(58,215,159,0.4)",
+                        borderRadius: 999, padding: "2px 7px",
+                        letterSpacing: "0.12em",
+                      }}>
+                        ACTIVE
+                      </span>
+                    )}
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt">$29</span>
+                    <span className="plan-per mono">/ month</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    For the analyst who treats pricing as evidence — and
+                    needs the paper trail.
+                  </p>
+                </div>
+                {isPro ? (
+                  <button
+                    className="btn btn-primary plan-cta"
+                    onClick={onManage}
+                    disabled={busy}
+                  >
+                    {busy ? "Opening…" : "Manage billing"}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary plan-cta"
+                    onClick={onSubscribe}
+                    disabled={busy}
+                  >
+                    {busy ? "Loading…" : signedIn ? "Go Pro" : "Sign in to subscribe"}
+                  </button>
+                )}
+                {error && (
+                  <p style={{
+                    color: "var(--over)", fontSize: 11, marginTop: 8,
+                    textAlign: "center", fontFamily: "var(--mono)",
+                  }}>
+                    {error}
+                  </p>
+                )}
+                <ul className="plan-feats">
+                  <li><span className="pf-check pro">✓</span> <strong>Unlimited</strong> probes</li>
+                  <li><span className="pf-check pro">✓</span> Everything in Free</li>
+                  <li><span className="pf-check pro">✓</span> Forensic PDF export — one-page report</li>
+                  <li><span className="pf-check pro">✓</span> Raw CSV + JSON export</li>
+                  <li><span className="pf-check pro">✓</span> Scheduled re-probes + alerts</li>
+                  <li><span className="pf-check pro">✓</span> Identity fingerprint breakdown</li>
+                  <li><span className="pf-check pro">✓</span> Priority residential proxy lanes</li>
+                </ul>
+              </div>
 
-        <p className="text-center font-mono text-[10px] uppercase tracking-[0.22em] text-muted mt-10">
-          Cancel anytime · no commitment
-        </p>
-      </div>
-    </main>
-  );
-}
+              {/* ── Enterprise ───────────────────────────────────── */}
+              <div className="plan card" data-reveal>
+                <div className="plan-head">
+                  <span className="plan-name mono" style={{ color: "var(--gold)" }}>
+                    Enterprise
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt" style={{ fontSize: 40 }}>Contact</span>
+                    <span className="plan-per mono">/ custom</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    For research teams, regulators, and journalism rooms
+                    that need bulk volume and a paper trail you can subpoena.
+                  </p>
+                </div>
+                <a
+                  className="btn btn-ghost plan-cta"
+                  href={`mailto:${ENTERPRISE_EMAIL}?subject=JACOBI%20Enterprise%20inquiry`}
+                  style={{ borderColor: "rgba(216,176,106,0.4)", color: "var(--gold)" }}
+                >
+                  Contact us →
+                </a>
+                <ul className="plan-feats">
+                  <li><span className="pf-check pro">✓</span> Everything in Pro</li>
+                  <li><span className="pf-check pro">✓</span> <strong>Bulk volume</strong> — thousands of probes / day</li>
+                  <li><span className="pf-check pro">✓</span> Dedicated proxy pool</li>
+                  <li><span className="pf-check pro">✓</span> Custom variable axes</li>
+                  <li><span className="pf-check pro">✓</span> Single sign-on (SAML/OIDC)</li>
+                  <li><span className="pf-check pro">✓</span> Audit-grade data retention</li>
+                  <li><span className="pf-check pro">✓</span> Direct line to engineering</li>
+                  <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
+                </ul>
+              </div>
+            </div>
 
-function Bullet({
-  children,
-  icon,
-  muted,
-}: {
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <li className={`flex items-start gap-2.5 ${muted ? "text-muted" : ""}`}>
-      <span className="mt-0.5 shrink-0">
-        {icon ?? <Check className="w-3.5 h-3.5 text-muted" />}
-      </span>
-      <span>{children}</span>
-    </li>
+            <p className="pricing-foot label-mono" data-reveal>
+              Cancel anytime · prices in USD · billed via Stripe
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <DesignFooter />
+    </div>
   );
 }

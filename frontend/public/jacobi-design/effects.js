@@ -1,7 +1,9 @@
 /* ============================================================================
-   JACOBI — Premium interactive effects
-   · Dual-element cursor: sharp dot (fast follow) + outer ring (lagging,
-     magnetic snap to interactive targets, mix-blend exclusion)
+   JACOBI — Premium interactive effects (v2)
+   · Dual-element cursor — dot tracks the real pointer 1:1 (no lag), ring
+     uses *proximity* snapping (28 px aura) so the user no longer has to
+     hit the small dot inside the larger ring. Clicks still happen at the
+     real pointer position; the ring is purely visual feedback.
    · Refined magnetic primary CTAs
    · Hero parallax
    · Light tilt on [data-tilt]
@@ -19,25 +21,51 @@
   document.body.appendChild(wrap);
   const ring = wrap.querySelector('.jx-cursor-ring');
   const dot  = wrap.querySelector('.jx-cursor-dot');
+  // Visual size of the dot (matches CSS .jx-cursor-dot width)
+  const DOT_SIZE = 8;
 
   let tx = innerWidth / 2, ty = innerHeight / 2;
-  let dx = tx, dy = ty;      // dot position
-  let rx = tx, ry = ty;      // ring position
+  let rx = tx, ry = ty;      // ring position (lagging for soft trail)
   let snapEl = null, snapBox = null;
 
-  // selectors the ring snaps to (precision intent)
-  const SNAP = 'a, button, .case-row, .log-row, .plan, .phase, [data-tilt], input, [role="button"]';
+  // Selectors the ring snaps to.
+  const SNAP = 'a, button, .case-row, .log-row, .plan, .phase, [data-tilt], input, [role="button"], .bt-row, .nav-link, .pi-submit, .btn';
+
+  // Proximity radius. If the cursor is within PROX_RADIUS px of ANY edge of
+  // a snap element, the ring previews that element. Cheap because we just
+  // re-test the cached candidates from the cheap direct-hit path first.
+  const PROX_RADIUS = 32;
+
+  function nearestSnap(x, y) {
+    let best = null, bestDist = Infinity;
+    document.querySelectorAll(SNAP).forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      // Distance from cursor to nearest edge of the element
+      const ddx = Math.max(r.left - x, 0, x - r.right);
+      const ddy = Math.max(r.top  - y, 0, y - r.bottom);
+      const d = Math.hypot(ddx, ddy);
+      if (d < bestDist) { bestDist = d; best = { el, box: r }; }
+    });
+    return bestDist <= PROX_RADIUS ? best : null;
+  }
 
   addEventListener('pointermove', e => {
     tx = e.clientX; ty = e.clientY;
     wrap.style.opacity = '1';
-    const el = e.target && e.target.closest ? e.target.closest(SNAP) : null;
+    // Direct hit first (cheap), then proximity fallback
+    let el = e.target && e.target.closest ? e.target.closest(SNAP) : null;
+    let box = el ? el.getBoundingClientRect() : null;
+    if (!el) {
+      const near = nearestSnap(tx, ty);
+      if (near) { el = near.el; box = near.box; }
+    }
     if (el !== snapEl) {
       snapEl = el;
-      snapBox = el ? el.getBoundingClientRect() : null;
+      snapBox = box;
       wrap.classList.toggle('snap', !!el);
     } else if (el) {
-      snapBox = el.getBoundingClientRect();
+      snapBox = box;
     }
   }, { passive: true });
 
@@ -46,26 +74,24 @@
   addEventListener('blur', () => { wrap.style.opacity = '0'; });
 
   (function loop(){
-    // Dot — sharp, very fast follow
-    dx += (tx - dx) * 0.42;
-    dy += (ty - dy) * 0.42;
-    dot.style.transform = `translate3d(${dx - 3}px, ${dy - 3}px, 0)`;
+    // Dot — 1:1 with the real pointer, no lag.
+    dot.style.transform = `translate3d(${tx - DOT_SIZE / 2}px, ${ty - DOT_SIZE / 2}px, 0)`;
 
-    // Ring — lagging; when snapped, gently morph to target's rect
+    // Ring — when snapped, gently morph to target's rect; otherwise softly trail.
     if (snapEl && snapBox) {
       const cx = snapBox.left + snapBox.width / 2;
       const cy = snapBox.top + snapBox.height / 2;
       const w = Math.min(snapBox.width  + 14, 280);
       const h = Math.min(snapBox.height + 14, 84);
-      rx += (cx - rx) * 0.20;
-      ry += (cy - ry) * 0.20;
+      rx += (cx - rx) * 0.32;
+      ry += (cy - ry) * 0.32;
       ring.style.transform = `translate3d(${rx - w/2}px, ${ry - h/2}px, 0)`;
       ring.style.width  = w + 'px';
       ring.style.height = h + 'px';
       ring.style.borderRadius = (snapBox.width > 240 ? 10 : 8) + 'px';
     } else {
-      rx += (tx - rx) * 0.16;
-      ry += (ty - ry) * 0.16;
+      rx += (tx - rx) * 0.22;
+      ry += (ty - ry) * 0.22;
       ring.style.transform = `translate3d(${rx - 18}px, ${ry - 18}px, 0)`;
       ring.style.width  = '36px';
       ring.style.height = '36px';

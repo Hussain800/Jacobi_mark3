@@ -141,8 +141,7 @@ export default function LandingPage() {
           <div className="hero-copy">
             <div className="chip" data-reveal>
               <span className="pulse" />{" "}
-              <span className="chip-num" data-count="1247892">0</span>
-              &nbsp;probes · running now
+              24 identities · 4 vectors · evidence-grade
             </div>
 
             <h1 className="hero-h1" data-reveal>
@@ -225,34 +224,32 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* ════════════ STAT BAND ════════════ */}
+      {/* ════════════ STAT BAND — honest, no fake aggregate numbers ═════════════ */}
       <section className="statband divider-top">
         <div className="wrap statband-grid">
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span data-count="1247892">0</span>
-            </div>
-            <div className="label-mono">URLs investigated</div>
-          </div>
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span className="muted-pre">$</span>
-              <span data-count="4823450">0</span>
-            </div>
-            <div className="label-mono">Overcharges exposed</div>
-          </div>
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span data-count="73">0</span>
-              <span className="muted-pre">%</span>
-            </div>
-            <div className="label-mono">Sites pricing by device</div>
-          </div>
           <div className="stat" data-reveal>
             <div className="stat-num tnum">
               <span data-count="24">0</span>
             </div>
             <div className="label-mono">Identities per probe</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="4">0</span>
+            </div>
+            <div className="label-mono">Discrimination vectors</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="3">0</span>
+            </div>
+            <div className="label-mono">Network tiers</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
+              ~60s
+            </div>
+            <div className="label-mono">Typical probe time</div>
           </div>
         </div>
       </section>
@@ -529,7 +526,7 @@ export default function LandingPage() {
               and a browser&nbsp;setting.&rdquo;
             </blockquote>
             <figcaption className="callout-cite label-mono">
-              — verified across 12,000+ probes
+              — observed across independent academic studies
             </figcaption>
           </figure>
         </div>
@@ -548,7 +545,7 @@ export default function LandingPage() {
             .
           </h2>
           <p className="cta-sub sec mono" data-reveal>
-            Two million URLs investigated. Zero cost to you. Paste your first target.
+            24 identities. Four vectors. One URL. Paste your first target.
           </p>
           <form
             className="probe-instrument cta-bar"

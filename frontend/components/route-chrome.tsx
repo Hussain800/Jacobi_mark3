@@ -17,13 +17,15 @@ import GlobalNav from "./global-nav";
 
 export default function RouteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // The Claude Design surfaces (/, /design-preview, /chat) each render
-  // their own DesignNav. RouteChrome skips the global nav on those
-  // routes so a stacked second nav doesn't appear above them.
+  // The Claude Design surfaces each render their own DesignNav. RouteChrome
+  // skips the global nav on those routes so a stacked second nav doesn't
+  // appear above them.
   const isDesign =
     pathname === "/" ||
     pathname.startsWith("/design-preview") ||
-    pathname.startsWith("/chat");
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/pricing") ||
+    pathname.startsWith("/leaderboard");
 
   if (isDesign) {
     return <>{children}</>;

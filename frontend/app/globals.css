@@ -124,3 +124,19 @@ body::after {
   0%   { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+
+/* Custom cursor — slightly larger and brighter so the user can SEE the
+   actual click point. Wins the cascade against jacobi-design.css's
+   namespace-allowlisted .jx-cursor-dot rule. */
+.jx-cursor-dot {
+  width: 8px !important;
+  height: 8px !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 6px rgba(110, 146, 255, 0.55);
+}
+.jx-cursor-ring {
+  border-color: rgba(230, 234, 242, 0.55) !important;
+}
+.jx-cursor.snap .jx-cursor-ring {
+  border-color: rgba(110, 146, 255, 0.7) !important;
+}

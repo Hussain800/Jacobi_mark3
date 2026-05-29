@@ -7,36 +7,14 @@
  */
 
 import Link from "next/link";
-
-function BrandMark() {
-  return (
-    <svg
-      className="mark"
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="16" cy="16" r="12.6" stroke="#3a4868" strokeWidth="0.9" opacity="0.8" />
-      <circle cx="16" cy="16" r="7.6"  stroke="#7895ff" strokeWidth="1.1" />
-      <line x1="16" y1="1.7"  x2="16" y2="5.6"  stroke="#7895ff" strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="16" y1="26.4" x2="16" y2="30.3" stroke="#7895ff" strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="1.7"  y1="16" x2="5.6"  y2="16" stroke="#7895ff" strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="26.4" y1="16" x2="30.3" y2="16" stroke="#7895ff" strokeWidth="1.4" strokeLinecap="round" />
-      <circle cx="20.7" cy="12.9" r="2.2" fill="#7895ff" />
-      <circle cx="20.7" cy="12.9" r="3.6" stroke="#7895ff" strokeWidth="0.7" opacity="0.5" />
-    </svg>
-  );
-}
+import BrandLockup from "./BrandLockup";
 
 export default function DesignFooter() {
   return (
     <footer className="footer">
       <div className="wrap footer-grid">
         <div className="footer-brand">
-          <Link href="/" className="brand">
-            <BrandMark />
-            <span className="word">JACOBI</span>
-          </Link>
+          <BrandLockup size={18} />
           <p className="footer-desc sec">
             24-agent adversarial pricing probe. Illuminating the hidden
             algorithms that decide what you pay&nbsp;online.

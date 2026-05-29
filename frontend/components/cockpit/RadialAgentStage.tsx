@@ -1,24 +1,21 @@
 "use client";
 
 /**
- * RadialAgentStage — Phase 6 vocabulary in the cockpit.
+ * RadialAgentStage — Phase 7: silent forensic instrument.
  *
- * Identical visual language to the landing HeroScene:
- *   • Per-axis colored, glowy nodes (signal / cyan / amber / rose / violet)
- *   • Spider-web strands — gradient stops from bright bone-white at the
- *     center origin to the axis core at the node end
- *   • Cursor halo follows the mouse with spring physics
- *   • Cursor repulsion — nodes and their strand endpoints push away
- *     from the cursor within 160 px radius (cubic falloff)
- *   • Perpetual gentle rotation (~30s/rev) and per-node organic breath
- *   • Curved bezier strands (organic, not straight rays)
- *   • Depth opacity for 2.5D illusion
+ * Apple-restrained cockpit visualization. No axis colors, no cursor
+ * effects, no perpetual rotation. Agents are neutral; only the
+ * cheapest (signal-green) and dearest (overcharge-rose) carry color
+ * on result.
  *
- * Two modes:
- *   • live   → all of the above, plus wave-driven status reveal
- *   • result → rotation continues at half speed; the cheapest and
- *              dearest pills carry the spread, their strands stay full
- *              signal/overcharge, others dim.
+ * Geometry contract — strand endpoint == node center exactly. Both
+ * layers consume positions[i] directly, no per-layer transforms.
+ *
+ * Modes:
+ *   live   → wave-driven status reveal as backend returns data
+ *   result → 5 priced nodes morph to pills; on result, irrelevant
+ *            agents fade; cheapest + dearest remain bright; their
+ *            strands carry the only color in the scene.
  */
 
 import {
@@ -32,11 +29,7 @@ import {
 import {
   AnimatePresence,
   motion,
-  useMotionValue,
-  useSpring,
-  useTransform,
   useReducedMotion,
-  type MotionValue,
 } from "framer-motion";
 import {
   Agent,
@@ -47,14 +40,7 @@ import {
   SHORT_LABELS,
 } from "./types";
 import AgentDetailDrawer from "./AgentDetailDrawer";
-import {
-  AXIS_COLOR,
-  CLUSTER_ANGLE,
-  Pt,
-  strandPath,
-  depthFactor,
-  repulsionOffset,
-} from "./orbital";
+import { CLUSTER_ANGLE, Pt, strandPath } from "./orbital";
 
 function indexToAxis(i: number): Axis {
   return INDEX_TO_AXIS[i] || "ctrl";
@@ -65,10 +51,9 @@ function agentIndex(agent_id: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-/** Cluster position with rotation offset. */
-function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }, rot = 0): Pt {
-  const anchorAngle = CLUSTER_ANGLE[axis] + rot;
-  const anchorR = Math.min(stage.w * 0.34, stage.h * 0.40);
+function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }): Pt {
+  const anchorAngle = CLUSTER_ANGLE[axis];
+  const anchorR = Math.min(stage.w * 0.34, stage.h * 0.42);
   const ax = Math.cos(anchorAngle) * anchorR;
   const ay = Math.sin(anchorAngle) * anchorR * 0.82;
 
@@ -77,8 +62,7 @@ function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }, ro
   const idxInCluster = peers.indexOf(idx);
   const n = peers.length;
   const tangentAngle = anchorAngle + Math.PI / 2;
-  const spread = n === 1
-    ? 0
+  const spread = n === 1 ? 0
     : ((idxInCluster - (n - 1) / 2) / Math.max(1, (n - 1) / 2)) *
       Math.min(stage.w * 0.14, 110);
 
@@ -112,7 +96,7 @@ export default function RadialAgentStage({
   report,
   scanStarted = 0,
   mode,
-  showLabels = true,
+  showLabels = false,
   compact = false,
 }: Props) {
   const reducedMotion = useReducedMotion();
@@ -121,76 +105,15 @@ export default function RadialAgentStage({
   const [selected, setSelected] = useState<Agent | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [rotationOffset, setRotationOffset] = useState(0);
 
-  const isComplete = mode === "result";
-
-  /* Cursor tracking — motion values + springs */
-  const cursorPxX  = useMotionValue(0);
-  const cursorPxY  = useMotionValue(0);
-  const cursorHaloX = useSpring(cursorPxX, { stiffness: 140, damping: 24 });
-  const cursorHaloY = useSpring(cursorPxY, { stiffness: 140, damping: 24 });
-  const cursorStageX = useMotionValue(99999);
-  const cursorStageY = useMotionValue(99999);
-  const cursorRepX = useSpring(cursorStageX, { stiffness: 150, damping: 22 });
-  const cursorRepY = useSpring(cursorStageY, { stiffness: 150, damping: 22 });
-
-  // Unified parallax so nodes and strands move together (no drift)
-  const mouseNormX = useMotionValue(0);
-  const mouseNormY = useMotionValue(0);
-  const PARALLAX_MAG = 8;
-  const parallaxX = useSpring(useTransform(mouseNormX, (v) => v * PARALLAX_MAG), { stiffness: 60, damping: 20 });
-  const parallaxY = useSpring(useTransform(mouseNormY, (v) => v * PARALLAX_MAG), { stiffness: 60, damping: 20 });
-  const [cursorInside, setCursorInside] = useState(false);
+  const isResult = mode === "result";
 
   /* Live tick during scan */
   useEffect(() => {
-    if (isComplete || scanStarted === 0) return;
+    if (isResult || scanStarted === 0) return;
     const id = setInterval(() => setNow(Date.now()), 300);
     return () => clearInterval(id);
-  }, [isComplete, scanStarted]);
-
-  /* Perpetual rotation — slower in result */
-  useEffect(() => {
-    if (reducedMotion) return;
-    const speed = isComplete ? 0.0003 : 0.0007;
-    const id = setInterval(() => {
-      setRotationOffset((prev) => (prev + speed) % (Math.PI * 2));
-    }, 50);
-    return () => clearInterval(id);
-  }, [isComplete, reducedMotion]);
-
-  /* Mouse tracking */
-  useEffect(() => {
-    if (reducedMotion) return;
-    const el = stageRef.current;
-    if (!el) return;
-    const handle = (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      cursorPxX.set(px);
-      cursorPxY.set(py);
-      cursorStageX.set(px - rect.width / 2);
-      cursorStageY.set(py - rect.height / 2);
-      mouseNormX.set((px - rect.width / 2) / (rect.width / 2));
-      mouseNormY.set((py - rect.height / 2) / (rect.height / 2));
-    };
-    const enter = () => setCursorInside(true);
-    const leave = () => {
-      setCursorInside(false);
-      mouseNormX.set(0); mouseNormY.set(0);
-      cursorStageX.set(99999); cursorStageY.set(99999);
-    };
-    el.addEventListener("mousemove", handle);
-    el.addEventListener("mouseenter", enter);
-    el.addEventListener("mouseleave", leave);
-    return () => {
-      el.removeEventListener("mousemove", handle);
-      el.removeEventListener("mouseenter", enter);
-      el.removeEventListener("mouseleave", leave);
-    };
-  }, [mouseNormX, mouseNormY, cursorPxX, cursorPxY, cursorStageX, cursorStageY, reducedMotion]);
+  }, [isResult, scanStarted]);
 
   useLayoutEffect(() => {
     if (!stageRef.current) return;
@@ -208,14 +131,14 @@ export default function RadialAgentStage({
     return () => ro.disconnect();
   }, []);
 
-  /* Resolve 24-node state from report */
+  /* Resolve 24-node state */
   const nodes: NodeState[] = useMemo(() => {
     const agentsById = new Map<number, Agent>();
     (report?.agents || []).forEach((a) => agentsById.set(agentIndex(a.agent_id), a));
 
     let cheapestIdx = -1;
     let dearestIdx = -1;
-    if (isComplete && report) {
+    if (isResult && report) {
       let cheapest: Agent | null = null;
       let dearest: Agent | null = null;
       report.agents.forEach((a) => {
@@ -233,7 +156,7 @@ export default function RadialAgentStage({
       let status: NodeStatus = "pending";
       if (a) {
         status = (a.status as NodeStatus) || "success";
-      } else if (scanStarted > 0 && !isComplete) {
+      } else if (scanStarted > 0 && !isResult) {
         const wave = i < 8 ? 0 : i < 16 ? 1 : 2;
         const ms = now - scanStarted;
         const waveDelay = wave * 2000 + (i % 8) * 400;
@@ -249,11 +172,11 @@ export default function RadialAgentStage({
         isDearest:  i === dearestIdx,
       };
     });
-  }, [report, scanStarted, isComplete, now]);
+  }, [report, scanStarted, isResult, now]);
 
   const positions = useMemo(
-    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage, rotationOffset)),
-    [nodes, stage, rotationOffset],
+    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage)),
+    [nodes, stage],
   );
 
   const cx = stage.w / 2;
@@ -268,136 +191,87 @@ export default function RadialAgentStage({
     setSelected(n.agent);
   }, []);
 
-  const clusterLabels = useMemo(() => {
-    if (!stage.w) return [];
-    const anchorR = Math.min(stage.w * 0.34, stage.h * 0.40);
-    const r = anchorR + 70; // clear the tangential pill fan
-    return (Object.keys(CLUSTER_ANGLE) as Axis[]).map((axis) => {
-      const angle = CLUSTER_ANGLE[axis] + rotationOffset;
-      return {
-        axis,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r * 0.82,
-      };
-    });
-  }, [stage, cx, cy, rotationOffset]);
-
   const height = compact
-    ? "h-[52vh] min-h-[400px] sm:min-h-[460px]"
-    : "h-[64vh] min-h-[480px] sm:min-h-[540px]";
+    ? "h-[52vh] min-h-[380px] sm:min-h-[440px]"
+    : "h-[60vh] min-h-[440px] sm:min-h-[500px]";
 
   return (
     <div className="relative">
-      <div ref={stageRef} className={`relative mx-auto w-full max-w-[940px] ${height}`}>
-        {/* Cursor halo */}
-        {!reducedMotion && (
-          <AnimatePresence>
-            {cursorInside && (
-              <motion.div
-                key="cursor-halo"
-                aria-hidden
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.45 }}
-                style={{
-                  position: "absolute",
-                  left: cursorHaloX,
-                  top:  cursorHaloY,
-                  width: 320,
-                  height: 320,
-                  marginLeft: -160,
-                  marginTop:  -160,
-                  pointerEvents: "none",
-                  willChange: "transform",
-                  background:
-                    "radial-gradient(circle, rgba(0,217,122,0.22) 0%, rgba(0,217,122,0.08) 30%, transparent 70%)",
-                  borderRadius: "50%",
-                  filter: "blur(10px)",
-                }}
-                className="z-[5]"
-              />
-            )}
-          </AnimatePresence>
-        )}
-
-        {/* Center anchor */}
-        <motion.div
+      <div ref={stageRef} className={`relative mx-auto w-full max-w-[920px] ${height}`}>
+        {/* Center anchor — single soft point */}
+        <div
           aria-hidden
-          initial={false}
-          animate={{
-            opacity: isComplete ? 0.55 : 0.85,
-            scale: isComplete ? 1 : [1, 1.12, 1],
-          }}
-          transition={{
-            scale:   { duration: 2.4, repeat: Infinity, ease: "easeInOut" },
-            opacity: { duration: 0.6 },
-          }}
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-signal pointer-events-none z-20"
-          style={{ boxShadow: "0 0 22px rgba(0, 217, 122, 0.65)" }}
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-secondary/50 pointer-events-none z-[3]"
         />
 
-        {/* SVG strand layer — same parallax as node layer for perfect alignment */}
-        <motion.svg
-          className="absolute inset-0 pointer-events-none"
+        {/* SVG strand layer — no transforms, raw position math */}
+        <svg
+          className="absolute inset-0 pointer-events-none z-[1]"
           width="100%"
           height="100%"
           viewBox={`-${cx} -${cy} ${stage.w} ${stage.h}`}
           preserveAspectRatio="none"
           aria-hidden
-          style={reducedMotion ? {} : { x: parallaxX, y: parallaxY }}
         >
-          <defs>
-            {(Object.keys(AXIS_COLOR) as Axis[]).map((axis) => (
-              <linearGradient key={axis} id={`cockpit-web-${axis}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="rgba(225, 232, 245, 0.6)" />
-                <stop offset="100%" stopColor={AXIS_COLOR[axis].core} stopOpacity="0.55" />
-              </linearGradient>
-            ))}
-          </defs>
-          {nodes.map((n) => (
-            <CockpitStrand
-              key={n.idx}
-              node={n}
-              target={positions[n.idx]}
-              hovered={hoveredIdx === n.idx}
-              isComplete={isComplete}
-              cursorRepX={cursorRepX}
-              cursorRepY={cursorRepY}
-              reducedMotion={!!reducedMotion}
-            />
-          ))}
-        </motion.svg>
+          {nodes.map((n) => {
+            const target = positions[n.idx];
+            const path = strandPath({ x: 0, y: 0 }, target);
 
-        {/* Cluster labels */}
-        {showLabels &&
-          clusterLabels.map((l) => {
-            const c = AXIS_COLOR[l.axis];
+            const visible =
+              n.status === "in_flight" ||
+              n.status === "success" ||
+              n.status === "detected" ||
+              n.status === "failed";
+
+            let stroke = "rgba(232, 234, 237, 0.18)";
+            let strokeWidth = 0.7;
+            let opacity = 0.55;
+
+            if (isResult) {
+              if (n.isCheapest) {
+                stroke = "rgba(0, 217, 122, 0.85)";
+                strokeWidth = 1.5;
+                opacity = 1;
+              } else if (n.isDearest) {
+                stroke = "rgba(255, 93, 108, 0.85)";
+                strokeWidth = 1.5;
+                opacity = 1;
+              } else if (n.status === "detected" || n.status === "failed") {
+                stroke = "rgba(255, 93, 108, 0.18)";
+                opacity = 0.3;
+              } else {
+                stroke = "rgba(232, 234, 237, 0.08)";
+                opacity = 0.22;
+              }
+            } else if (hoveredIdx === n.idx) {
+              stroke = "rgba(232, 234, 237, 0.55)";
+              strokeWidth = 1.1;
+              opacity = 0.9;
+            }
+
             return (
-              <div
-                key={l.axis}
-                style={{
-                  position: "absolute",
-                  left: l.x,
-                  top: l.y,
-                  transform: "translate(-50%, -50%)",
+              <motion.path
+                key={n.idx}
+                d={path}
+                fill="none"
+                strokeLinecap="round"
+                initial={{ pathLength: 0, opacity: 0 }}
+                animate={visible
+                  ? { pathLength: 1, opacity }
+                  : { pathLength: 0, opacity: 0 }}
+                transition={{
+                  pathLength: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
+                  opacity:    { duration: 0.7 },
                 }}
-                className="hidden md:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] whitespace-nowrap pointer-events-none"
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: c.core, boxShadow: `0 0 8px ${c.glow}` }}
-                />
-                <span style={{ color: c.core, opacity: 0.85 }}>{AXIS_LABEL[l.axis]}</span>
-              </div>
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+              />
             );
           })}
+        </svg>
 
-        {/* Agent nodes — same parallax */}
-        <motion.div
-          className="absolute inset-0 z-10"
-          style={reducedMotion ? {} : { x: parallaxX, y: parallaxY }}
-        >
+        {/* Agent nodes */}
+        <div className="absolute inset-0 z-[2]">
           {nodes.map((n) => (
             <CockpitAgentNode
               key={n.idx}
@@ -406,32 +280,39 @@ export default function RadialAgentStage({
               cx={cx}
               cy={cy}
               reducedMotion={!!reducedMotion}
-              isComplete={isComplete}
-              depth={depthFactor(positions[n.idx])}
+              isResult={isResult}
               isHovered={hoveredIdx === n.idx}
               onClick={() => onNodeClick(n)}
               onHover={(h) =>
                 setHoveredIdx(h ? n.idx : (cur) => (cur === n.idx ? null : cur))
               }
-              cursorRepX={cursorRepX}
-              cursorRepY={cursorRepY}
             />
           ))}
-        </motion.div>
+        </div>
+
+        {/* Cluster labels — only on hover or result mode (axis hover) */}
+        {showLabels && hoveredIdx !== null && (
+          <ClusterLabel
+            axis={nodes[hoveredIdx].axis}
+            stage={stage}
+            cx={cx}
+            cy={cy}
+          />
+        )}
 
         {/* Status badge */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center pointer-events-none">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-            {isComplete ? "Probe complete" : "Live deployment"}
+            {isResult ? "Probe complete" : "Live deployment"}
           </div>
           <div className="font-mono text-[12px] text-secondary tabular-nums mt-0.5">
             {totalDone}<span className="text-muted">/24 agents</span>
-            {scanStarted > 0 && !isComplete && (
+            {scanStarted > 0 && !isResult && (
               <span className="ml-3 text-muted">
                 {((now - scanStarted) / 1000).toFixed(1)}s
               </span>
             )}
-            {isComplete && report?.elapsed_seconds && (
+            {isResult && report?.elapsed_seconds && (
               <span className="ml-3 text-muted">
                 {report.elapsed_seconds.toFixed(1)}s
               </span>
@@ -452,86 +333,43 @@ export default function RadialAgentStage({
   );
 }
 
-/* ─── Strand — curved bezier with cluster tint + repulsion ─────────── */
-
-function CockpitStrand({
-  node,
-  target,
-  hovered,
-  isComplete,
-  cursorRepX,
-  cursorRepY,
-  reducedMotion,
+function ClusterLabel({
+  axis,
+  stage,
+  cx,
+  cy,
 }: {
-  node: NodeState;
-  target: Pt;
-  hovered: boolean;
-  isComplete: boolean;
-  cursorRepX: MotionValue<number>;
-  cursorRepY: MotionValue<number>;
-  reducedMotion: boolean;
+  axis: Axis;
+  stage: { w: number; h: number };
+  cx: number;
+  cy: number;
 }) {
-  /* Strand endpoint follows the same repulsion as its node */
-  const d = useTransform([cursorRepX, cursorRepY], ([rx, ry]) => {
-    const off = reducedMotion ? { x: 0, y: 0 } : repulsionOffset(target, { x: rx as number, y: ry as number });
-    const t = { x: target.x + off.x, y: target.y + off.y };
-    return strandPath({ x: 0, y: 0 }, t);
-  });
-
-  const visible =
-    node.status === "in_flight" ||
-    node.status === "success" ||
-    node.status === "detected" ||
-    node.status === "failed";
-
-  const c = AXIS_COLOR[node.axis];
-  let stroke = `url(#cockpit-web-${node.axis})`;
-  let strokeWidth = 0.9;
-  let opacity = 0.7;
-
-  if (isComplete) {
-    if (node.isCheapest) {
-      stroke = "rgba(0, 217, 122, 0.92)";
-      strokeWidth = 1.8;
-      opacity = 1;
-    } else if (node.isDearest) {
-      stroke = "rgba(255, 93, 108, 0.92)";
-      strokeWidth = 1.8;
-      opacity = 1;
-    } else if (node.status === "detected" || node.status === "failed") {
-      stroke = "rgba(255, 93, 108, 0.25)";
-      opacity = 0.5;
-    } else {
-      stroke = `url(#cockpit-web-${node.axis})`;
-      opacity = 0.45;
-    }
-  } else if (hovered) {
-    stroke = c.core;
-    strokeWidth = 1.6;
-    opacity = 1;
-  }
-
+  const angle = CLUSTER_ANGLE[axis];
+  const anchorR = Math.min(stage.w * 0.34, stage.h * 0.42);
+  const r = anchorR + 70;
+  const lx = cx + Math.cos(angle) * r;
+  const ly = cy + Math.sin(angle) * r * 0.82;
   return (
-    <motion.path
-      d={d as unknown as string}
-      fill="none"
-      strokeLinecap="round"
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={visible ? { pathLength: 1, opacity } : { pathLength: 0, opacity: 0 }}
-      transition={{
-        pathLength: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
-        opacity:    { duration: 0.5 },
-        stroke:     { duration: 0.6 },
-        strokeWidth: { duration: 0.6 },
+    <motion.div
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 0.8, scale: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      style={{
+        position: "absolute",
+        left: lx,
+        top: ly,
+        transform: "translate(-50%, -50%)",
       }}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      style={{ filter: hovered ? `drop-shadow(0 0 6px ${c.glow})` : undefined }}
-    />
+      className="hidden md:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-secondary whitespace-nowrap pointer-events-none z-[4]"
+    >
+      <span className="w-1 h-1 rounded-full bg-secondary/55" />
+      {AXIS_LABEL[axis]}
+    </motion.div>
   );
 }
 
-/* ─── Agent node — glowy, color-tinted, repulsive ─────────────────── */
+/* ─── Agent node ───────────────────────────────────────────────────── */
 
 function CockpitAgentNode({
   node,
@@ -539,105 +377,96 @@ function CockpitAgentNode({
   cx,
   cy,
   reducedMotion,
-  isComplete,
-  depth,
+  isResult,
   isHovered,
   onClick,
   onHover,
-  cursorRepX,
-  cursorRepY,
 }: {
   node: NodeState;
   pos: Pt;
   cx: number;
   cy: number;
   reducedMotion: boolean;
-  isComplete: boolean;
-  depth: number;
+  isResult: boolean;
   isHovered: boolean;
   onClick: () => void;
   onHover: (h: boolean) => void;
-  cursorRepX: MotionValue<number>;
-  cursorRepY: MotionValue<number>;
 }) {
-  const isEndpoint = isComplete && (node.isCheapest || node.isDearest);
-  const showPrice = isComplete && node.price !== null && node.status === "success";
+  const isEndpoint = isResult && (node.isCheapest || node.isDearest);
+  const showPrice = isResult && node.price !== null && node.status === "success";
   const clickable =
     node.agent &&
     (node.status === "success" || node.status === "detected" || node.status === "failed");
-  const c = AXIS_COLOR[node.axis];
 
-  /* Repulsion offset */
-  const repX = useTransform([cursorRepX, cursorRepY], ([rx, ry]) => {
-    if (reducedMotion) return 0;
-    return repulsionOffset(pos, { x: rx as number, y: ry as number }).x;
-  });
-  const repY = useTransform([cursorRepX, cursorRepY], ([rx, ry]) => {
-    if (reducedMotion) return 0;
-    return repulsionOffset(pos, { x: rx as number, y: ry as number }).y;
-  });
+  /* Opacity — on result, irrelevant agents fade */
+  let targetOpacity = 0;
+  if (node.status === "pending") {
+    targetOpacity = isResult ? 0.10 : 0.45;
+  } else if (node.status === "in_flight") {
+    targetOpacity = 0.9;
+  } else if (isResult) {
+    if (isEndpoint) targetOpacity = 1;
+    else if (node.price !== null) targetOpacity = 0.20;
+    else if (node.status === "detected" || node.status === "failed") targetOpacity = 0.30;
+    else targetOpacity = 0.12;
+  } else {
+    targetOpacity = 1;
+  }
 
-  /* Sizing */
-  let sizeCls = "w-[8px] h-[8px] sm:w-[10px] sm:h-[10px]";
+  /* Bubble — neutral by default; signal/overcharge only for endpoints */
+  let bubbleStyle: React.CSSProperties = {
+    transform: "translate(-50%, -50%)",
+    backgroundColor: "rgba(232, 234, 237, 0.10)",
+    border: "1px solid rgba(232, 234, 237, 0.22)",
+  };
+  let textColor: string | undefined;
+
+  if (node.status === "in_flight") {
+    bubbleStyle.backgroundColor = "rgba(232, 234, 237, 0.20)";
+    bubbleStyle.border = "1px solid rgba(232, 234, 237, 0.40)";
+  } else if (node.status === "detected" || node.status === "failed") {
+    bubbleStyle.backgroundColor = "rgba(255, 93, 108, 0.12)";
+    bubbleStyle.border = "1px solid rgba(255, 93, 108, 0.35)";
+  }
+  if (showPrice) {
+    if (node.isCheapest) {
+      bubbleStyle = {
+        transform: "translate(-50%, -50%)",
+        backgroundColor: "#00d97a",
+        border: "1px solid #00d97a",
+      };
+      textColor = "#07080c";
+    } else if (node.isDearest) {
+      bubbleStyle = {
+        transform: "translate(-50%, -50%)",
+        backgroundColor: "#ff5d6c",
+        border: "1px solid #ff5d6c",
+      };
+      textColor = "#07080c";
+    } else {
+      bubbleStyle = {
+        transform: "translate(-50%, -50%)",
+        backgroundColor: "rgba(20, 22, 28, 0.95)",
+        border: "1px solid rgba(232, 234, 237, 0.18)",
+      };
+      textColor = "rgba(232, 234, 237, 0.7)";
+    }
+  }
+  if (isHovered && !showPrice) {
+    bubbleStyle.backgroundColor = "rgba(232, 234, 237, 0.22)";
+    bubbleStyle.border = "1px solid rgba(232, 234, 237, 0.45)";
+  }
+
+  /* Size */
+  let sizeCls = "w-[6px] h-[6px] sm:w-[7px] sm:h-[7px]";
   if (showPrice) {
     sizeCls = isEndpoint
       ? "min-w-[68px] sm:min-w-[78px] h-[32px] sm:h-[36px] px-3"
       : "min-w-[50px] sm:min-w-[58px] h-[24px] sm:h-[26px] px-2.5";
   }
 
-  /* Bubble style — glowy with cluster color */
-  let bubbleStyle: React.CSSProperties = {
-    transform: "translate(-50%, -50%)",
-    backgroundColor: c.soft,
-    borderColor: `${c.core}50`,
-    boxShadow: `0 0 12px ${c.glow}, inset 0 0 4px ${c.soft}`,
-  };
-  let textColor: string | undefined;
-
-  if (node.status === "pending") {
-    bubbleStyle.opacity = 0.55;
-    bubbleStyle.boxShadow = `0 0 6px ${c.soft}`;
-  } else if (node.status === "in_flight") {
-    bubbleStyle.opacity = 1;
-    bubbleStyle.backgroundColor = c.soft;
-    bubbleStyle.borderColor = c.core;
-    bubbleStyle.boxShadow = `0 0 18px ${c.glow}`;
-  } else if (node.status === "success" && !showPrice) {
-    bubbleStyle.backgroundColor = "rgba(12, 14, 19, 0.9)";
-    bubbleStyle.borderColor = c.core;
-    bubbleStyle.boxShadow = `0 0 14px ${c.glow}, inset 0 0 6px ${c.soft}`;
-  } else if (node.status === "detected" || node.status === "failed") {
-    bubbleStyle.backgroundColor = "rgba(255, 93, 108, 0.15)";
-    bubbleStyle.borderColor = "rgba(255, 93, 108, 0.5)";
-    bubbleStyle.boxShadow = "0 0 14px rgba(255, 93, 108, 0.45)";
-  }
-  if (showPrice) {
-    if (node.isCheapest) {
-      bubbleStyle.backgroundColor = "#00d97a";
-      bubbleStyle.borderColor = "#00d97a";
-      bubbleStyle.boxShadow = "0 0 32px rgba(0, 217, 122, 0.65), 0 0 12px rgba(0, 217, 122, 0.45)";
-      textColor = "#07080c";
-    } else if (node.isDearest) {
-      bubbleStyle.backgroundColor = "#ff5d6c";
-      bubbleStyle.borderColor = "#ff5d6c";
-      bubbleStyle.boxShadow = "0 0 32px rgba(255, 93, 108, 0.65), 0 0 12px rgba(255, 93, 108, 0.45)";
-      textColor = "#07080c";
-    } else {
-      bubbleStyle.backgroundColor = "rgba(12, 14, 19, 0.95)";
-      bubbleStyle.borderColor = `${c.core}80`;
-      bubbleStyle.boxShadow = `0 0 16px ${c.glow}`;
-      textColor = c.core;
-    }
-  }
-  if (isHovered && !showPrice) {
-    bubbleStyle.boxShadow = `0 0 22px ${c.core}, 0 0 8px ${c.glow}`;
-  }
-
-  const baseOpacity =
-    node.status === "pending"   ? 0.55 :
-    node.status === "in_flight" ? 0.95 :
-                                   1;
-  const targetOpacity = Math.max(0.55, baseOpacity * depth);
+  /* Endpoint label */
+  const endpointLabel = isResult && (node.isCheapest || node.isDearest);
 
   return (
     <motion.div
@@ -649,72 +478,76 @@ function CockpitAgentNode({
         x: cx + pos.x,
         y: cy + pos.y,
         opacity: targetOpacity,
-        scale: isHovered ? 1.28 : 1,
+        scale: isHovered && !isResult ? 1.20 : 1,
       }}
       transition={{
-        x:       { duration: isComplete ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
-        y:       { duration: isComplete ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
-        opacity: { duration: 0.4 },
+        x:       { duration: isResult ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
+        y:       { duration: isResult ? 0.6 : 0.9, ease: [0.22, 1, 0.36, 1] },
+        opacity: { duration: 0.7 },
         scale:   { duration: 0.3 },
       }}
       style={{ position: "absolute", top: 0, left: 0 }}
       className={`${clickable ? "cursor-pointer" : "cursor-default"} pointer-events-auto`}
     >
-      <motion.div style={{ x: repX, y: repY, willChange: "transform" }}>
-        <motion.div
-          animate={
-            isEndpoint
-              ? { scale: [1, 1.05, 1] }
-              : node.status === "in_flight"
-                ? { scale: [1, 1.18, 1] }
-                : node.status === "pending"
-                  ? { scale: [1, 1.07, 1] }
-                  : { scale: [1, 1.04, 1] }
-          }
-          transition={{
-            duration: 2.4 + (node.idx % 6) * 0.35,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: (node.idx % 9) * 0.18,
-          }}
-          className={`flex items-center justify-center rounded-full border transition-colors duration-300 ${sizeCls}`}
-          style={bubbleStyle}
-        >
-          {showPrice && (
-            <span
-              className={
-                isEndpoint
-                  ? "font-mono text-[12px] sm:text-[13px] font-semibold tabular-nums whitespace-nowrap"
-                  : "font-mono text-[10px] font-semibold tabular-nums whitespace-nowrap"
-              }
-              style={textColor ? { color: textColor } : undefined}
-            >
-              ${node.price}
-            </span>
-          )}
-        </motion.div>
-
-        {!showPrice && (
+      <div
+        className={`flex items-center justify-center rounded-full ${sizeCls} transition-colors duration-300`}
+        style={bubbleStyle}
+      >
+        {showPrice && (
           <span
+            className={
+              isEndpoint
+                ? "font-mono text-[12px] sm:text-[13px] font-semibold tabular-nums whitespace-nowrap"
+                : "font-mono text-[10px] font-semibold tabular-nums whitespace-nowrap"
+            }
+            style={textColor ? { color: textColor } : undefined}
+          >
+            ${node.price}
+          </span>
+        )}
+      </div>
+
+      {/* Hover label OR endpoint label */}
+      <AnimatePresence>
+        {((isHovered && !isResult) || endpointLabel) && !showPrice && (
+          <motion.span
+            key="label"
+            initial={reducedMotion ? false : { opacity: 0, y: -3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
             style={{
               position: "absolute",
               top: 14,
               left: 0,
               transform: "translate(-50%, 0)",
-              color: isHovered ? c.core : "#5b6270",
-              textShadow: isHovered ? `0 0 6px ${c.glow}` : undefined,
-              opacity:
-                isHovered ? 1 :
-                node.status === "pending" ? 0.35 :
-                node.status === "in_flight" ? 0.75 :
-                0.55,
             }}
-            className="font-mono text-[8px] sm:text-[9px] whitespace-nowrap pointer-events-none transition-colors hidden sm:block"
+            className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted whitespace-nowrap pointer-events-none hidden sm:block"
           >
             {SHORT_LABELS[node.idx]}
-          </span>
+          </motion.span>
         )}
-      </motion.div>
+        {endpointLabel && showPrice && (
+          <motion.span
+            key="endpoint-label"
+            initial={reducedMotion ? false : { opacity: 0, y: -3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, delay: 0.3 }}
+            style={{
+              position: "absolute",
+              top: 26,
+              left: 0,
+              transform: "translate(-50%, 0)",
+            }}
+            className={`font-mono text-[9px] uppercase tracking-[0.22em] whitespace-nowrap pointer-events-none ${
+              node.isCheapest ? "text-signal" : "text-overcharge"
+            }`}
+          >
+            {SHORT_LABELS[node.idx]}
+          </motion.span>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

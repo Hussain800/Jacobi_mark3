@@ -1,30 +1,35 @@
 "use client";
 
 /**
- * CockpitProbe — Phase C port of probe.html + probe.js onto live JACOBI.
+ * CockpitProbe — Phase D: stacked readable layout.
  *
- * Two states (same as the static prototype):
- *   - idle:  command input + 5 sample case rows
- *   - deck:  24-agent radial web + telemetry → verdict
+ * Restructured from side-by-side (radial + rail) into a vertical
+ * narrative so a non-technical reader can follow it:
  *
- * What changed from probe.js: every API call is the real backend.
- *   - POST /api/probe                       (kicks off a probe)
- *   - poll GET /api/result/{session_id}     (1s cadence, 3-min timeout)
- *   - POST /api/analyze                     (final verdict)
- *   - demo mode (useCache) uses DEMO_REPORT + /api/analyze-demo, same
- *     scripted wave reveal as before
- *   - Cancel halts polling without firing analyze
- *   - probe-conversations localStorage write on completion (history)
+ *   ░ Cockpit (idle)
+ *     - command input + 5 sample cases
  *
- * The radial-web visualization is driven by the backend's per-agent
- * status as it lands. The progressive `firing → done.over/good/normal`
- * class transitions mirror probe.js exactly, but each node maps to a
- * real backend `AGENT_NN`.
+ *   ░ Deck (running / complete / error)
+ *     1. The visual — radial 24-agent web centered alone, full width
+ *     2. The verdict strip — topology, hidden premium, plain-English sentence
+ *     3. The math — baseline, mean, spread, % over baseline, index
+ *     4. The recommendation — "switch to X to save $Y"
+ *     5. The evidence table — all 24 agents sorted by price (worst → best)
+ *     6. The drivers — price impact by vector, each with a short explainer
+ *     7. The actions — Download PDF report · Copy link · Export JSON · New probe
+ *
+ * Backend behavior is unchanged — same POST /api/probe → poll
+ * /api/result/{session_id} → POST /api/analyze flow, same demo mode,
+ * same probe-conversations localStorage write, same retry/cancel.
+ *
+ * Visual styling is unchanged — we only restructured DOM and added
+ * deeper textual explanations. All Claude Design tokens still apply via
+ * jacobi-design.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/* ─── Types & helpers ────────────────────────────────────────────────── */
+/* ─── Types & data ──────────────────────────────────────────────────── */
 
 interface Gradient {
   variable_name: string;
@@ -77,10 +82,7 @@ interface TopologyReport {
   topology_class: string;
   agents: BackendAgent[];
   error: string | null;
-  discrimination_score?: number;
 }
-
-/* ─── Sample cases (used for the "or open a case" list on idle) ──── */
 
 const CASES = [
   { name: "Leela Palace Bangalore", host: "www.booking.com", url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html", base: 245 },
@@ -90,8 +92,6 @@ const CASES = [
   { name: "Wireless Headphones",    host: "www.amazon.com",  url: "https://www.amazon.com/s?k=wireless+headphones", base: 65 },
 ];
 
-/* ─── Radial web geometry — mirrors probe.js exactly ───────────────── */
-
 const WAVES = [
   { label: "Wave 1 · datacenter",  r: 150 },
   { label: "Wave 2 · residential", r: 250 },
@@ -100,17 +100,9 @@ const WAVES = [
 const CX = 450;
 const CY = 450;
 
-interface NodeGeom {
-  i: number;
-  wave: number;
-  posInWave: number;
-  angle: number;
-  x: number;
-  y: number;
-  lineLen: number;
-}
+interface NodeGeom { i: number; wave: number; posInWave: number; angle: number; x: number; y: number; lineLen: number; }
 
-function buildGeometry(): NodeGeom[] {
+const NODE_GEOM: NodeGeom[] = (() => {
   const out: NodeGeom[] = [];
   for (let i = 0; i < 24; i++) {
     const wave = Math.floor(i / 8);
@@ -120,17 +112,14 @@ function buildGeometry(): NodeGeom[] {
     const angle = (posInWave / 8) * Math.PI * 2 + offset;
     const x = CX + w.r * Math.cos(angle);
     const y = CY + w.r * Math.sin(angle);
-    const lineLen = Math.hypot(x - CX, y - CY);
-    out.push({ i, wave, posInWave, angle, x, y, lineLen });
+    out.push({ i, wave, posInWave, angle, x, y, lineLen: Math.hypot(x - CX, y - CY) });
   }
   return out;
-}
-
-const NODE_GEOM = buildGeometry();
+})();
 
 type NodeVis = "pending" | "deploying" | "done-over" | "done-good" | "done-normal" | "blocked";
 
-function classifyAgent(a: BackendAgent | undefined, baselinePrice: number | null, allPrices: number[]): NodeVis {
+function classifyAgent(a: BackendAgent | undefined, allPrices: number[]): NodeVis {
   if (!a) return "pending";
   if (a.status === "detected" || a.status === "failed" || a.bot_detected) return "blocked";
   if (a.status === "success" && a.price != null) {
@@ -147,21 +136,42 @@ function classifyAgent(a: BackendAgent | undefined, baselinePrice: number | null
 }
 
 function agentLabelCity(a: BackendAgent): string {
-  // Backend labels look like "AGENT_05 LOCATION HIGH SAN FRANCISCO".
-  // Strip "AGENT_NN" prefix; show the rest in title case.
   const rest = (a.label || a.agent_id).replace(/^AGENT_\d+\s*/i, "").trim();
-  if (!rest) return a.agent_id;
-  return rest;
+  return rest || a.agent_id;
 }
 
-const TOPO: Record<string, [string, string]> = {
-  uniform:     ["#3ad79f", "Uniform"],
-  selective:   ["#d8b06a", "Selective"],
-  progressive: ["#ff9d52", "Progressive"],
-  aggressive:  ["#ff5468", "Aggressive"],
+/** Friendly vector descriptions used in the explainers + PDF */
+const VECTOR_INFO: Record<string, { label: string; what: string; how: string }> = {
+  location: {
+    label: "Location",
+    what: "Your IP geolocation — what country, city, and ZIP your traffic appears to come from.",
+    how: "Use a VPN or change which city you book from. ZIP codes inside the same city can move pricing on their own.",
+  },
+  device: {
+    label: "Device",
+    what: "Your browser's user-agent and rendering fingerprint — phone vs laptop, premium vs budget.",
+    how: "Try the same URL on a different device. Premium phones (iPhone, Galaxy) often see higher quotes than Androids.",
+  },
+  cookie_profile: {
+    label: "Cookies / session",
+    what: "Cookies the site has set on you — loyalty status, visit recency, viewed history.",
+    how: "Open the site in an incognito window. A fresh session often gets a lower 'first-touch' price.",
+  },
+  referrer: {
+    label: "Referrer",
+    what: "Where you arrived from — direct URL, search engine, or aggregator like Kayak.",
+    how: "Click through from an aggregator instead of going direct. Sites discount when they think you're comparison-shopping.",
+  },
 };
 
-/* ─── Demo data (matches dashboard.tsx's DEMO_REPORT) ────────────── */
+const TOPO: Record<string, [string, string, string]> = {
+  uniform:     ["#3ad79f", "Uniform",     "Prices are roughly the same across every profile we tested. Nothing meaningful to dodge."],
+  selective:   ["#d8b06a", "Selective",   "One variable is driving most of the price difference. Worth changing that one signal."],
+  progressive: ["#ff9d52", "Progressive", "Several variables stack together. The more 'premium' your fingerprint looks, the more you pay."],
+  aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
+};
+
+/* ─── Demo data (unchanged) ──────────────────────────────────────────── */
 
 const DEMO_AGENTS: BackendAgent[] = Array.from({ length: 24 }, (_, i) => {
   const tier = i < 8 ? 0 : i < 16 ? 1 : 2;
@@ -198,26 +208,20 @@ const DEMO_REPORT: TopologyReport = {
   target_name: "Leela Palace Bangalore",
   timestamp: "2026-05-25T20:00:00Z",
   status: "completed",
-  total_agents: 24,
-  successful_agents: 22,
-  failed_agents: 1,
-  detected_agents: 1,
+  total_agents: 24, successful_agents: 22, failed_agents: 1, detected_agents: 1,
   elapsed_seconds: 8.7,
-  baseline_price: 245,
-  mean_price: 252,
+  baseline_price: 245, mean_price: 252,
   all_prices: Object.fromEntries(DEMO_AGENTS.filter(a => a.price !== null).map(a => [a.agent_id, a.price])),
   price_range: [221, 278],
-  max_price_spread: 57,
-  max_price_spread_pct: 23.3,
+  max_price_spread: 57, max_price_spread_pct: 23.3,
   gradients: [
-    { variable_name: "location",       state_high: "High Income",   state_low: "Low Income",     mean_price_high: 268.3, mean_price_low: 226.7, delta: 41.6, delta_pct: 17,   pooled_std: 2.5, t_statistic: 16.6, significant: true,  n_high: 3, n_low: 3 },
+    { variable_name: "location",       state_high: "High Income",    state_low: "Low Income",     mean_price_high: 268.3, mean_price_low: 226.7, delta: 41.6, delta_pct: 17,   pooled_std: 2.5, t_statistic: 16.6, significant: true,  n_high: 3, n_low: 3 },
     { variable_name: "device",         state_high: "Premium Device", state_low: "Budget Device",  mean_price_high: 269.5, mean_price_low: 236,   delta: 33.5, delta_pct: 13.7, pooled_std: 3.1, t_statistic: 10.8, significant: true,  n_high: 4, n_low: 4 },
     { variable_name: "cookie_profile", state_high: "Aged Profile",   state_low: "Fresh Profile",  mean_price_high: 247.5, mean_price_low: 245,   delta: 2.5,  delta_pct: 1,    pooled_std: 4.2, t_statistic: 0.6,  significant: false, n_high: 2, n_low: 2 },
     { variable_name: "referrer",       state_high: "Aggregator",     state_low: "Direct",         mean_price_high: 257,   mean_price_low: 245,   delta: 12,   delta_pct: 4.9,  pooled_std: 3.8, t_statistic: 3.16, significant: true,  n_high: 2, n_low: 2 },
   ],
   discrimination_index: 87.1,
   topology_class: "progressive",
-  discrimination_score: 84.2,
   agents: DEMO_AGENTS,
   error: null,
 };
@@ -236,13 +240,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const [useCache, setUseCache] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Live state
   const [report, setReport] = useState<TopologyReport | null>(null);
   const [returnedAgents, setReturnedAgents] = useState<BackendAgent[]>([]);
   const [activeWave, setActiveWave] = useState<number>(0);
   const [elapsed, setElapsed] = useState(0);
 
-  // Refs
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -251,7 +253,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const lastNameRef = useRef("");
   const cancelledRef = useRef(false);
 
-  /* Auto-run when arriving with ?url=... */
   useEffect(() => {
     if (initialUrl && phase === "idle") {
       const t = setTimeout(() => {
@@ -263,7 +264,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialUrl]);
 
-  /* Cleanup on unmount */
   useEffect(() => () => {
     if (pollRef.current)    clearInterval(pollRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -274,14 +274,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     try {
       const existing = JSON.parse(localStorage.getItem("probe-conversations") || "[]");
       existing.unshift({
-        id: r.session_id,
-        session_id: r.session_id,
+        id: r.session_id, session_id: r.session_id,
         title: (r.target_name || r.target_url || "Probe").slice(0, 50),
         timestamp: Date.now(),
-        targetUrl: r.target_url,
-        targetName: r.target_name,
-        baselinePrice: r.baseline_price,
-        savings: r.max_price_spread,
+        targetUrl: r.target_url, targetName: r.target_name,
+        baselinePrice: r.baseline_price, savings: r.max_price_spread,
         topologyClass: r.topology_class,
       });
       localStorage.setItem("probe-conversations", JSON.stringify(existing.slice(0, 50)));
@@ -330,7 +327,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     lastNameRef.current = name;
     startTimeRef.current = performance.now();
 
-    // Elapsed timer
     tickRef.current = setInterval(() => {
       setElapsed((performance.now() - startTimeRef.current) / 1000);
     }, 100);
@@ -343,7 +339,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useCache, apiBase]);
 
-  /* Demo mode — scripted wave reveal */
   const runDemo = useCallback(async (url: string, name: string) => {
     const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
     const sub: BackendAgent[] = [];
@@ -361,8 +356,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     if (cancelledRef.current) return;
     setReturnedAgents([...sub]);
     setDeckPhaseLabel("complete");
-
-    // Optional /api/analyze-demo
     try {
       const r = await fetch(`${apiBase}/api/analyze-demo`);
       if (r.ok) {
@@ -378,7 +371,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     stopTimers();
   }, [apiBase, stopTimers]);
 
-  /* Live mode — real backend */
   const runLive = useCallback(async (url: string, name: string) => {
     try {
       const r1 = await fetch(`${apiBase}/api/probe`, {
@@ -403,7 +395,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           if (!r2.ok) throw new Error(`Poll error: ${r2.status}`);
           const data: TopologyReport = await r2.json();
           setReturnedAgents(data.agents.filter(a => a.status === "success" || a.status === "detected" || a.status === "failed"));
-          // Wave label
           const succ = data.successful_agents;
           setActiveWave(succ < 8 ? 0 : succ < 16 ? 1 : 2);
 
@@ -467,7 +458,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     setReturnedAgents([]);
   }, [cancel]);
 
-  /* Derived: per-node visual state */
+  /* ─── Derived data for the readable verdict ────────────────────── */
+
   const allPrices = useMemo(
     () => returnedAgents.filter(a => a.price != null && a.status === "success").map(a => a.price as number),
     [returnedAgents],
@@ -477,36 +469,45 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     return NODE_GEOM.map((g) => {
       const idStr = `AGENT_${String(g.i).padStart(2, "0")}`;
       const a = returnedAgents.find(x => x.agent_id === idStr);
-      const succ = returnedAgents.length;
-      if (a) return classifyAgent(a, report?.baseline_price ?? null, allPrices);
-      // Not yet returned. Show as deploying if its wave is the active wave.
+      if (a) return classifyAgent(a, allPrices);
       if (phase === "deploying" && g.wave <= activeWave) return "deploying";
       return "pending";
     });
-  }, [returnedAgents, allPrices, phase, activeWave, report?.baseline_price]);
+  }, [returnedAgents, allPrices, phase, activeWave]);
 
-  /* Verdict numbers */
   const verdict = useMemo(() => {
     if (!report) return null;
     const cls = report.topology_class || "selective";
-    const [color, label] = TOPO[cls] || TOPO.selective;
+    const [color, label, blurb] = TOPO[cls] || TOPO.selective;
     const spread = Math.round(report.max_price_spread || 0);
     const pct = Math.round(report.max_price_spread_pct || 0);
     const index = Math.round(report.discrimination_index || 0);
-    const sortedAgents = report.agents.filter(a => a.status === "success" && a.price != null);
-    const top = sortedAgents.reduce((m, a) => (a.price! > (m.price ?? 0) ? a : m), sortedAgents[0]);
-    const low = sortedAgents.reduce((m, a) => (a.price! < (m.price ?? Infinity) ? a : m), sortedAgents[0]);
+
+    const successAgents = report.agents.filter(a => a.status === "success" && a.price != null);
+    const sortedByPrice = successAgents.slice().sort((a, b) => (b.price! - a.price!));
+    const top = sortedByPrice[0];
+    const low = sortedByPrice[sortedByPrice.length - 1];
+
     const dominant = report.gradients
       .filter(g => g.significant)
-      .reduce((m, g) => (Math.abs(g.delta_pct) > Math.abs(m?.delta_pct ?? 0) ? g : m), null as Gradient | null);
+      .reduce<Gradient | null>((m, g) => (Math.abs(g.delta_pct) > Math.abs(m?.delta_pct ?? 0) ? g : m), null);
+
     return {
-      color, label, spread, pct, index,
-      top: top ? { city: agentLabelCity(top), price: top.price } : null,
-      low: low ? { city: agentLabelCity(low), price: low.price } : null,
-      dominant: dominant?.variable_name || "location",
+      color, label, blurb, spread, pct, index,
+      baseline: report.baseline_price ?? null,
+      mean: report.mean_price ?? null,
+      range: report.price_range,
+      top, low,
+      sortedByPrice,
+      dominantName: dominant?.variable_name || null,
+      dominantPct: dominant ? Math.round(Math.abs(dominant.delta_pct)) : 0,
       successCount: report.successful_agents,
       totalCount: report.total_agents,
       gradients: report.gradients,
+      elapsed: report.elapsed_seconds,
+      target: report.target_url,
+      session: report.session_id,
+      targetName: report.target_name,
     };
   }, [report]);
 
@@ -516,29 +517,208 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     return verdict.gradients
       .slice()
       .sort((a, b) => Math.abs(b.delta_pct) - Math.abs(a.delta_pct))
-      .slice(0, 4)
       .map(g => ({
-        name: g.variable_name.charAt(0).toUpperCase() + g.variable_name.slice(1).replace("_", " "),
+        key: g.variable_name,
+        info: VECTOR_INFO[g.variable_name] || { label: g.variable_name, what: "", how: "" },
         pct: Math.round(Math.abs(g.delta_pct)),
+        delta: g.delta,
         max,
+        high: g.state_high, low: g.state_low,
+        highPrice: g.mean_price_high, lowPrice: g.mean_price_low,
+        significant: g.significant,
       }));
   }, [verdict]);
 
-  const [copyLabel, setCopyLabel] = useState("Copy result link");
+  const [copyLabel, setCopyLabel] = useState("Copy share link");
   const copyShare = useCallback(() => {
     if (!report?.session_id) return;
     try {
       navigator.clipboard.writeText(`${window.location.origin}/share/${report.session_id}`);
       setCopyLabel("Link copied ✓");
-      setTimeout(() => setCopyLabel("Copy result link"), 1800);
+      setTimeout(() => setCopyLabel("Copy share link"), 1800);
     } catch {}
   }, [report?.session_id]);
 
+  const exportJSON = useCallback(() => {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `probe-${report.session_id || "report"}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }, [report]);
+
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  const downloadPDF = useCallback(async () => {
+    if (!verdict || !report) return;
+    setPdfBusy(true);
+    try {
+      const mod = await import("jspdf");
+      const jsPDF = mod.jsPDF || (mod as { default: typeof mod.jsPDF }).default;
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      const M = 48;
+      let y = 56;
+
+      const writeWrapped = (text: string, x: number, yPos: number, maxW: number, lineH = 14) => {
+        const lines = doc.splitTextToSize(text, maxW);
+        doc.text(lines, x, yPos);
+        return yPos + lines.length * lineH;
+      };
+
+      // Header
+      doc.setFontSize(22).setFont("helvetica", "bold");
+      doc.text("JACOBI · Pricing Topology Report", M, y); y += 30;
+      doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(120);
+      doc.text(`Session ${verdict.session.slice(0, 16)} · ${new Date().toLocaleString()}`, M, y); y += 18;
+      doc.setTextColor(0);
+
+      doc.setFontSize(11).setFont("helvetica", "bold");
+      doc.text("Target", M, y); y += 14;
+      doc.setFont("helvetica", "normal");
+      y = writeWrapped(verdict.target || "—", M, y, W - 2 * M); y += 6;
+      if (verdict.targetName) {
+        doc.setFont("helvetica", "italic").setTextColor(110);
+        y = writeWrapped(verdict.targetName, M, y, W - 2 * M); y += 4;
+        doc.setTextColor(0).setFont("helvetica", "normal");
+      }
+      y += 14;
+
+      // Headline
+      doc.setFontSize(16).setFont("helvetica", "bold");
+      doc.text(`Hidden premium: $${verdict.spread}`, M, y); y += 22;
+      doc.setFontSize(11).setFont("helvetica", "normal");
+      y = writeWrapped(
+        `Topology classification: ${verdict.label} — ${verdict.blurb}`,
+        M, y, W - 2 * M,
+      );
+      y += 12;
+      doc.setTextColor(70);
+      y = writeWrapped(
+        `Probed ${verdict.successCount} of ${verdict.totalCount} identities in ${verdict.elapsed?.toFixed?.(1) || "?"} seconds. The spread between the most expensive and cheapest result was $${verdict.spread} (${verdict.pct}% over baseline). Discrimination index: ${verdict.index}/100.`,
+        M, y, W - 2 * M,
+      );
+      doc.setTextColor(0);
+      y += 14;
+
+      // What this means
+      if (verdict.top && verdict.low) {
+        doc.setFontSize(12).setFont("helvetica", "bold");
+        doc.text("Bottom line", M, y); y += 16;
+        doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(60);
+        y = writeWrapped(
+          `An identity matching "${agentLabelCity(verdict.top)}" paid $${verdict.top.price} for this listing. ` +
+          `An identity matching "${agentLabelCity(verdict.low)}" paid $${verdict.low.price} for the same listing. ` +
+          `That's $${verdict.spread} you'd save by switching your apparent profile — ` +
+          (verdict.dominantName ? `the dominant driver was ${verdict.dominantName} (~${verdict.dominantPct}% effect).` : "no single dominant driver."),
+          M, y, W - 2 * M,
+        );
+        doc.setTextColor(0);
+        y += 14;
+      }
+
+      // Stats grid
+      doc.setFontSize(12).setFont("helvetica", "bold");
+      doc.text("Numbers", M, y); y += 16;
+      doc.setFontSize(10).setFont("helvetica", "normal");
+      const stats: Array<[string, string]> = [
+        ["Baseline price",     verdict.baseline != null ? `$${verdict.baseline}` : "—"],
+        ["Mean price",         verdict.mean != null ? `$${Math.round(verdict.mean)}` : "—"],
+        ["Range",              verdict.range ? `$${verdict.range[0]} – $${verdict.range[1]}` : "—"],
+        ["Hidden premium",     `$${verdict.spread}`],
+        ["% over baseline",    `${verdict.pct}%`],
+        ["Discrimination idx", `${verdict.index}/100`],
+        ["Agents returned",    `${verdict.successCount}/${verdict.totalCount}`],
+        ["Probe elapsed",      `${verdict.elapsed?.toFixed?.(1) || "?"}s`],
+      ];
+      stats.forEach(([k, v]) => {
+        doc.setTextColor(120); doc.text(k, M, y);
+        doc.setTextColor(0);   doc.text(v, M + 160, y);
+        y += 14;
+      });
+      y += 8;
+
+      // Vectors
+      if (y > H - 220) { doc.addPage(); y = 56; }
+      doc.setFontSize(12).setFont("helvetica", "bold");
+      doc.text("Drivers — what made the price move", M, y); y += 16;
+      doc.setFontSize(10).setFont("helvetica", "normal");
+      topVectors.forEach(v => {
+        if (y > H - 80) { doc.addPage(); y = 56; }
+        doc.setFont("helvetica", "bold");
+        doc.text(`${v.info.label} · ${v.significant ? `${v.pct}% impact` : "no significant effect"}`, M, y); y += 14;
+        doc.setFont("helvetica", "normal").setTextColor(80);
+        if (v.info.what) y = writeWrapped(v.info.what, M, y, W - 2 * M); else y += 0;
+        y += 2;
+        if (v.significant) {
+          y = writeWrapped(
+            `High: ${v.high} (~$${Math.round(v.highPrice)}) vs Low: ${v.low} (~$${Math.round(v.lowPrice)}) → $${Math.round(v.delta)} difference.`,
+            M, y, W - 2 * M,
+          );
+        }
+        if (v.info.how) {
+          doc.setTextColor(40);
+          y = writeWrapped(`How to dodge: ${v.info.how}`, M, y, W - 2 * M);
+        }
+        doc.setTextColor(0);
+        y += 10;
+      });
+
+      // Per-agent table
+      if (y > H - 140) { doc.addPage(); y = 56; }
+      doc.setFontSize(12).setFont("helvetica", "bold");
+      doc.text(`Per-agent breakdown (${report.agents.length} agents)`, M, y); y += 16;
+      doc.setFontSize(9).setFont("helvetica", "bold");
+      doc.setTextColor(120);
+      doc.text("Agent",  M,       y);
+      doc.text("Profile", M + 80, y);
+      doc.text("Tier",   M + 320, y);
+      doc.text("Status", M + 380, y);
+      doc.text("Price",  W - M - 40, y, { align: "right" });
+      doc.setTextColor(0);
+      y += 12;
+      doc.setFont("helvetica", "normal");
+      const tiers = ["Datacenter", "Residential", "Mobile"];
+      report.agents.slice().sort((a, b) => (b.price ?? -1) - (a.price ?? -1)).forEach(a => {
+        if (y > H - 50) { doc.addPage(); y = 56; }
+        doc.setTextColor(80); doc.text(a.agent_id.replace("AGENT_", "#"), M, y);
+        doc.setTextColor(20); doc.text(agentLabelCity(a).slice(0, 38), M + 80, y);
+        doc.setTextColor(110); doc.text(tiers[a.network_tier ?? 0] || "—", M + 320, y);
+        doc.text(a.status, M + 380, y);
+        doc.setTextColor(0);
+        doc.text(a.price != null ? `$${a.price}` : "—", W - M - 40, y, { align: "right" });
+        y += 13;
+      });
+
+      // Footer on every page
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8).setTextColor(140);
+        doc.text(
+          `JACOBI · ${i} / ${pageCount}`,
+          W / 2, H - 24, { align: "center" },
+        );
+        doc.setTextColor(0);
+      }
+
+      doc.save(`jacobi-report-${verdict.session.slice(0, 8) || "probe"}.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed", e);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [verdict, report, topVectors]);
+
   /* ─── Render ──────────────────────────────────────────────────────── */
+
+  const showStage = phase !== "idle";
 
   return (
     <main className="probe-main">
-      {/* ── COCKPIT (idle) ─────────────────────────────────────────── */}
+      {/* ── COCKPIT (idle) ───────────────────────────────────────────── */}
       <section className={`cockpit ${phase === "idle" ? "active" : ""}`} id="cockpit">
         <div className="wrap cockpit-wrap">
           <span className="eyebrow cockpit-eyebrow">
@@ -548,11 +728,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             Paste a URL. <span className="cobalt-i">Twenty-four shoppers</span> go to work.
           </h1>
 
-          <form
-            className="probe-instrument cockpit-bar"
-            id="cockpit-form"
-            onSubmit={handleSubmit}
-          >
+          <form className="probe-instrument cockpit-bar" onSubmit={handleSubmit}>
             <div className="pi-row">
               <span className="pi-meta">
                 <span className="pi-glyph">⌖</span> 24 agents
@@ -613,8 +789,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         </div>
       </section>
 
-      {/* ── DECK (deploying / complete / error) ────────────────────── */}
-      <section className={`deck ${phase !== "idle" ? "active" : ""}`} id="deck">
+      {/* ── DECK (deploying / complete / error) ──────────────────────── */}
+      <section className={`deck ${showStage ? "active" : ""}`} id="deck">
         <div className="wrap">
           <div className="deck-head">
             <div className="deck-target">
@@ -643,241 +819,441 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             </div>
           </div>
 
-          <div className="deck-grid">
-            {/* ── Radial web ────────────────────────────────── */}
-            <div className="radial-stage" id="radial-stage">
-              <svg
-                className="radial-svg"
-                viewBox="0 0 900 900"
-                preserveAspectRatio="xMidYMid meet"
-                aria-hidden="true"
-              >
-                {/* guides */}
+          {/* ── 1. THE VISUAL — radial alone, centered ───────────── */}
+          <div
+            className="radial-stage"
+            id="radial-stage"
+            style={{ maxWidth: 620, margin: "0 auto 64px" }}
+          >
+            <svg
+              className="radial-svg"
+              viewBox="0 0 900 900"
+              preserveAspectRatio="xMidYMid meet"
+              aria-hidden="true"
+            >
+              {WAVES.map((w, i) => (
+                <circle key={`g${i}`} cx={CX} cy={CY} r={w.r} className="radial-guide" />
+              ))}
+              {NODE_GEOM.map((g) => {
+                const v = nodeStates[g.i];
+                const isFiring = v === "deploying";
+                const isDone = v === "done-over" || v === "done-good" || v === "done-normal";
+                const isBlocked = v === "blocked";
+                let cls = "radial-line";
+                if (isFiring) cls += " firing";
+                if (isDone || isBlocked) {
+                  cls += " done";
+                  if (v === "done-over") cls += " over";
+                  else if (v === "done-good") cls += " good";
+                }
+                const dashoffset = (isFiring || isDone || isBlocked) ? 0 : g.lineLen;
+                return (
+                  <line
+                    key={`l${g.i}`}
+                    x1={CX} y1={CY} x2={g.x} y2={g.y}
+                    className={cls}
+                    style={{ strokeDasharray: g.lineLen, strokeDashoffset: dashoffset }}
+                  />
+                );
+              })}
+              <circle cx={CX} cy={CY} r={30} className="radial-hub" />
+              <circle cx={CX} cy={CY} r={20} className="radial-hub" />
+              <circle cx={CX} cy={CY} r={11} className="radial-hub core" />
+              {NODE_GEOM.map((g) => {
+                const v = nodeStates[g.i];
+                let cls = "radial-node";
+                if (v === "deploying") cls += " deploying";
+                if (v === "done-over") cls += " done over";
+                if (v === "done-good") cls += " done good";
+                if (v === "done-normal") cls += " done normal";
+                if (v === "blocked") cls += " blocked";
+                return (
+                  <g key={`n${g.i}`} className={cls} transform={`translate(${g.x} ${g.y})`}>
+                    <circle r={11} className="rn-ring" />
+                    <circle r={5.5} className="rn-dot" />
+                  </g>
+                );
+              })}
+            </svg>
+
+            <div className="radial-readout mono">
+              <div className="rr-label label-mono">live deployment</div>
+              <div className="rr-count">
+                <span>{returnedAgents.length}</span>
+                <span className="rr-of">/24 agents</span>
+              </div>
+              <div className="rr-time">
+                <span>{elapsed.toFixed(1)}</span>s elapsed
+              </div>
+              <div className="rr-waves">
                 {WAVES.map((w, i) => (
-                  <circle key={`g${i}`} cx={CX} cy={CY} r={w.r} className="radial-guide" />
+                  <div
+                    key={i}
+                    className={`rr-wave${i === activeWave && phase === "deploying" ? " active" : ""}`}
+                  >
+                    <span className="rw-dot" />
+                    {w.label}
+                  </div>
                 ))}
+              </div>
+            </div>
+          </div>
 
-                {/* lines */}
-                {NODE_GEOM.map((g) => {
-                  const v = nodeStates[g.i];
-                  const isFiring = v === "deploying";
-                  const isDone = v === "done-over" || v === "done-good" || v === "done-normal";
-                  const isBlocked = v === "blocked";
-                  let cls = "radial-line";
-                  if (isFiring) cls += " firing";
-                  if (isDone || isBlocked) {
-                    cls += " done";
-                    if (v === "done-over") cls += " over";
-                    else if (v === "done-good") cls += " good";
-                  }
-                  const dashoffset = (isFiring || isDone || isBlocked) ? 0 : g.lineLen;
+          {/* ── While running — telemetry log ────────────────────── */}
+          {phase === "deploying" && (
+            <div style={{ maxWidth: 720, margin: "0 auto" }}>
+              <span className="label-mono" style={{ display: "block", marginBottom: 10 }}>
+                Live returns
+              </span>
+              <div className="telemetry">
+                {returnedAgents.slice().reverse().map((a) => {
+                  const tier = a.network_tier ?? 0;
+                  const net = ["datacenter", "residential", "mobile"][tier] || "—";
+                  const succ = a.status === "success";
+                  const state = succ && a.price != null && allPrices.length
+                    ? (a.price === Math.max(...allPrices) ? "over" : a.price === Math.min(...allPrices) ? "good" : "")
+                    : "";
+                  const cls = `tele-row${state ? " " + state : ""}`;
                   return (
-                    <line
-                      key={`l${g.i}`}
-                      x1={CX} y1={CY} x2={g.x} y2={g.y}
-                      className={cls}
-                      style={{
-                        strokeDasharray: g.lineLen,
-                        strokeDashoffset: dashoffset,
-                      }}
-                    />
+                    <div key={a.agent_id} className={cls}>
+                      <span className="tele-ok">{succ ? "✓" : "×"}</span>
+                      <span className="tele-city">{agentLabelCity(a)}</span>
+                      <span className="tele-net">{net}</span>
+                      <span className="tele-price tnum">
+                        {a.price != null ? `$${a.price}` : "—"}
+                      </span>
+                    </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
 
-                {/* hub */}
-                <circle cx={CX} cy={CY} r={30} className="radial-hub" />
-                <circle cx={CX} cy={CY} r={20} className="radial-hub" />
-                <circle cx={CX} cy={CY} r={11} className="radial-hub core" />
-
-                {/* nodes */}
-                {NODE_GEOM.map((g) => {
-                  const v = nodeStates[g.i];
-                  let cls = "radial-node";
-                  if (v === "deploying") cls += " deploying";
-                  if (v === "done-over") cls += " done over";
-                  if (v === "done-good") cls += " done good";
-                  if (v === "done-normal") cls += " done normal";
-                  if (v === "blocked") cls += " blocked";
-                  return (
-                    <g
-                      key={`n${g.i}`}
-                      className={cls}
-                      transform={`translate(${g.x} ${g.y})`}
-                    >
-                      <circle r={11} className="rn-ring" />
-                      <circle r={5.5} className="rn-dot" />
-                    </g>
-                  );
-                })}
-              </svg>
-
-              <div className="radial-readout mono">
-                <div className="rr-label label-mono">live deployment</div>
-                <div className="rr-count">
-                  <span>{returnedAgents.length}</span>
-                  <span className="rr-of">/24 agents</span>
+          {/* ── Error state ──────────────────────────────────────── */}
+          {phase === "error" && errorMsg && (
+            <div style={{ maxWidth: 620, margin: "0 auto" }}>
+              <div style={{
+                padding: "20px 22px",
+                border: "1px solid var(--over-line)",
+                background: "var(--over-soft)",
+                borderRadius: "var(--r)",
+                color: "var(--over)",
+                fontFamily: "var(--mono)", fontSize: 13,
+                marginBottom: 18,
+              }}>
+                {errorMsg}
+              </div>
+              {lastUrlRef.current && (
+                <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                  <button className="btn btn-primary" onClick={retry}>
+                    ↻ retry probe
+                  </button>
+                  <button className="btn btn-ghost" onClick={backToIdle}>
+                    new probe
+                  </button>
                 </div>
-                <div className="rr-time">
-                  <span>{elapsed.toFixed(1)}</span>s elapsed
+              )}
+            </div>
+          )}
+
+          {/* ── 2-7. THE DETAILED RESULT — full width, scrolls naturally ── */}
+          {phase === "complete" && verdict && report && (
+            <div style={{ maxWidth: 880, margin: "0 auto" }}>
+
+              {/* 2. Headline + topology */}
+              <ResultSection eyebrow="01 · verdict">
+                <div
+                  className="topology-badge"
+                  style={{
+                    color: verdict.color,
+                    borderColor: verdict.color + "55",
+                    background: verdict.color + "14",
+                    marginBottom: 22,
+                  }}
+                >
+                  <span
+                    className="tb-dot"
+                    style={{ background: verdict.color, boxShadow: `0 0 8px ${verdict.color}` }}
+                  />
+                  {verdict.label} pricing
                 </div>
-                <div className="rr-waves">
-                  {WAVES.map((w, i) => (
+                <div className="ev-spread-label label-mono">Hidden premium · what you're overpaying</div>
+                <div className="ev-spread serif tnum" style={{ marginBottom: 10 }}>
+                  +${verdict.spread}
+                </div>
+                <div className="ev-spread-sub mono" style={{ marginBottom: 22 }}>
+                  {verdict.pct}% over the cheapest result · {verdict.successCount}/{verdict.totalCount} agents returned in {verdict.elapsed?.toFixed?.(1) || "?"}s
+                </div>
+                <p className="verdict-text sec" style={{ marginTop: 0 }}>
+                  {verdict.blurb}
+                </p>
+                {verdict.top && verdict.low && (
+                  <p className="verdict-text sec">
+                    A shopper presenting as{" "}
+                    <span className="over">{agentLabelCity(verdict.top)}</span> paid{" "}
+                    <span className="over">${verdict.top.price}</span>.{" "}
+                    A shopper presenting as{" "}
+                    <span className="good">{agentLabelCity(verdict.low)}</span> paid{" "}
+                    <span className="good">${verdict.low.price}</span> for the identical listing.{" "}
+                    The gap is{" "}
+                    <strong style={{ color: "var(--text)" }}>${verdict.spread}</strong>
+                    {verdict.dominantName && (
+                      <>
+                        {" "}— and the dominant driver was{" "}
+                        <strong style={{ color: "var(--text)" }}>{verdict.dominantName}</strong>.
+                      </>
+                    )}
+                  </p>
+                )}
+              </ResultSection>
+
+              {/* 3. Stats grid */}
+              <ResultSection eyebrow="02 · numbers">
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                  gap: 28,
+                }}>
+                  <Stat label="Baseline" value={verdict.baseline != null ? `$${verdict.baseline}` : "—"} />
+                  <Stat label="Mean" value={verdict.mean != null ? `$${Math.round(verdict.mean)}` : "—"} />
+                  <Stat label="Range" value={verdict.range ? `$${verdict.range[0]} – $${verdict.range[1]}` : "—"} />
+                  <Stat label="Spread" value={`$${verdict.spread}`} accent="over" />
+                  <Stat label="% over baseline" value={`${verdict.pct}%`} accent="over" />
+                  <Stat label="Discrimination index" value={`${verdict.index}/100`} />
+                </div>
+                <div className="ev-index" style={{ marginTop: 26 }}>
+                  <div className="evi-track">
                     <div
-                      key={i}
-                      className={`rr-wave${i === activeWave && phase === "deploying" ? " active" : ""}`}
-                    >
-                      <span className="rw-dot" />
-                      {w.label}
+                      className="evi-fill in"
+                      style={{ ["--w" as string]: verdict.index + "%" } as React.CSSProperties}
+                    />
+                  </div>
+                </div>
+                <p className="verdict-text sec" style={{ marginTop: 18 }}>
+                  The <strong style={{ color: "var(--text)" }}>discrimination index</strong> rolls
+                  the spread + how many vectors contributed into a single 0–100 score. Above 60
+                  means at least one of your identity signals is materially moving the price; above
+                  80 means several signals are stacking against you.
+                </p>
+              </ResultSection>
+
+              {/* 4. Recommendation */}
+              {verdict.top && verdict.low && verdict.spread > 0 && (
+                <ResultSection eyebrow="03 · what to do">
+                  <div style={{
+                    padding: "26px 28px",
+                    border: "1px solid var(--cobalt-line)",
+                    background: "linear-gradient(180deg, rgba(61,107,255,0.08), transparent)",
+                    borderRadius: "var(--r)",
+                  }}>
+                    <div className="label-mono" style={{ marginBottom: 10, color: "var(--cobalt-bright)" }}>
+                      Recommendation
+                    </div>
+                    <p className="verdict-text" style={{ margin: 0, fontSize: 15 }}>
+                      Use a profile closer to{" "}
+                      <strong className="good">{agentLabelCity(verdict.low)}</strong>{" "}
+                      to save{" "}
+                      <strong className="good">${verdict.spread}</strong>{" "}
+                      on this listing.
+                      {verdict.dominantName && VECTOR_INFO[verdict.dominantName] && (
+                        <>
+                          {" "}The single biggest lever is{" "}
+                          <strong style={{ color: "var(--text)" }}>
+                            {VECTOR_INFO[verdict.dominantName].label.toLowerCase()}
+                          </strong>
+                          : {VECTOR_INFO[verdict.dominantName].how}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </ResultSection>
+              )}
+
+              {/* 5. Drivers — explained */}
+              <ResultSection eyebrow="04 · drivers">
+                <p className="verdict-text sec" style={{ marginBottom: 24 }}>
+                  Four signals were tested. Each bar shows how much that one variable
+                  moved the price on its own, holding the others as steady as we can.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                  {topVectors.map(v => (
+                    <div key={v.key}>
+                      <div className="impact-row" style={{ marginBottom: 10 }}>
+                        <span className="impact-name mono" style={{ width: "auto", minWidth: 90 }}>
+                          {v.info.label}
+                        </span>
+                        <div className="impact-track">
+                          <div
+                            className="impact-fill"
+                            style={{
+                              width: `${(v.pct / v.max) * 100}%`,
+                              background: v.significant
+                                ? "linear-gradient(90deg, var(--cobalt), var(--cobalt-bright))"
+                                : "var(--text-4)",
+                            }}
+                          />
+                        </div>
+                        <span className="impact-val mono">
+                          {v.significant ? `${v.pct}%` : "n/s"}
+                        </span>
+                      </div>
+                      <div style={{
+                        fontFamily: "var(--sans)", fontSize: 13.5,
+                        color: "var(--text-2)", lineHeight: 1.65,
+                        padding: "0 0 0 102px",
+                      }}>
+                        <div style={{ marginBottom: 4 }}>{v.info.what}</div>
+                        {v.significant && (
+                          <div style={{ color: "var(--text-3)", fontFamily: "var(--mono)", fontSize: 11, margin: "6px 0" }}>
+                            {v.high} ~${Math.round(v.highPrice)} &nbsp;vs&nbsp; {v.low} ~${Math.round(v.lowPrice)}
+                            &nbsp;·&nbsp; gap ${Math.round(v.delta)}
+                          </div>
+                        )}
+                        {v.info.how && (
+                          <div style={{ color: "var(--text)" }}>
+                            <strong style={{ color: "var(--cobalt-bright)" }}>How to dodge:</strong>{" "}
+                            {v.info.how}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
+              </ResultSection>
 
-            {/* ── Rail: telemetry → verdict ─────────────────── */}
-            <aside className="rail">
-              {phase === "deploying" || phase === "error" ? (
-                <div className="rail-live">
-                  <span className="label-mono">telemetry</span>
-                  <div className="telemetry">
-                    {returnedAgents.slice().reverse().slice(0, 8).map((a) => {
-                      const tier = a.network_tier ?? 0;
-                      const net = ["datacenter", "residential", "mobile"][tier] || "—";
-                      const succ = a.status === "success";
-                      const state = succ && a.price != null && allPrices.length
-                        ? (a.price === Math.max(...allPrices) ? "over" : a.price === Math.min(...allPrices) ? "good" : "")
-                        : "";
-                      const cls = `tele-row${state ? " " + state : ""}`;
-                      return (
-                        <div key={a.agent_id} className={cls}>
-                          <span className="tele-ok">{succ ? "✓" : "×"}</span>
-                          <span className="tele-city">{agentLabelCity(a)}</span>
-                          <span className="tele-net">{net}</span>
-                          <span className="tele-price tnum">
-                            {a.price != null ? `$${a.price}` : "—"}
-                          </span>
-                        </div>
-                      );
-                    })}
+              {/* 6. Per-agent table */}
+              <ResultSection eyebrow="05 · all 24 agents">
+                <p className="verdict-text sec" style={{ marginBottom: 22 }}>
+                  Every identity we deployed, sorted by price (most expensive first). Agents that
+                  saw the highest prices are marked red; the cheapest, green.
+                </p>
+                <div style={{
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--r-sm)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "44px 1fr 110px 100px 70px",
+                    gap: 12,
+                    padding: "12px 18px",
+                    background: "var(--surface-2)",
+                    borderBottom: "1px solid var(--line)",
+                    fontFamily: "var(--mono)",
+                    fontSize: 10.5, textTransform: "uppercase",
+                    letterSpacing: "0.16em", color: "var(--text-3)",
+                  }}>
+                    <span>#</span>
+                    <span>Profile</span>
+                    <span>Network</span>
+                    <span>Status</span>
+                    <span style={{ textAlign: "right" }}>Price</span>
                   </div>
-                  {phase === "error" && errorMsg && (
-                    <div style={{
-                      marginTop: 22, padding: "14px 16px",
-                      border: "1px solid var(--over-line)",
-                      background: "var(--over-soft)",
-                      borderRadius: "var(--r-sm)",
-                      fontFamily: "var(--mono)", fontSize: 12,
-                      color: "var(--over)",
-                    }}>
-                      {errorMsg}
-                      {lastUrlRef.current && (
-                        <button
-                          onClick={retry}
-                          style={{
-                            display: "block", marginTop: 12,
-                            fontFamily: "var(--mono)", fontSize: 11,
-                            color: "var(--cobalt-bright)",
-                            background: "none", border: "1px solid var(--cobalt-line)",
-                            borderRadius: 6, padding: "6px 12px", cursor: "pointer",
-                            letterSpacing: "0.04em",
-                          }}
-                        >
-                          ↻ retry probe
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {phase === "complete" && verdict && (
-                <div className="rail-verdict">
-                  <div
-                    className="topology-badge"
-                    style={{
-                      color: verdict.color,
-                      borderColor: verdict.color + "55",
-                      background: verdict.color + "14",
-                    }}
-                  >
-                    <span
-                      className="tb-dot"
-                      style={{ background: verdict.color, boxShadow: `0 0 8px ${verdict.color}` }}
-                    />
-                    {verdict.label}
-                  </div>
-                  <div className="ev-spread-label label-mono">Hidden premium</div>
-                  <div className="ev-spread serif tnum">+${verdict.spread}</div>
-                  <div className="ev-spread-sub mono">
-                    {verdict.pct}% over baseline · {verdict.successCount}/{verdict.totalCount} agents returned
-                  </div>
-
-                  <div className="ev-index">
-                    <div className="evi-top">
-                      <span className="label-mono">Discrimination index</span>
-                      <span className="evi-val mono">
-                        {verdict.index}<span className="muted">/100</span>
-                      </span>
-                    </div>
-                    <div className="evi-track">
+                  {report.agents.slice().sort((a, b) => (b.price ?? -1) - (a.price ?? -1)).map((a, idx) => {
+                    const tier = a.network_tier ?? 0;
+                    const net = ["Datacenter", "Residential", "Mobile"][tier] || "—";
+                    let priceColor = "var(--text-2)";
+                    if (a.price != null && allPrices.length > 1) {
+                      const hi = Math.max(...allPrices), lo = Math.min(...allPrices);
+                      if (a.price === hi) priceColor = "var(--over)";
+                      else if (a.price === lo) priceColor = "var(--good)";
+                    }
+                    return (
                       <div
-                        className="evi-fill in"
-                        style={{ ["--w" as string]: verdict.index + "%" } as React.CSSProperties}
-                      />
-                    </div>
-                  </div>
-
-                  <p className="verdict-text sec">
-                    {verdict.top && verdict.low ? (
-                      <>
-                        {/^[aeiou]/i.test(verdict.label) ? "An " : "A "}
-                        <strong style={{ color: verdict.color }}>{verdict.label.toLowerCase()}</strong> pricing topology.{" "}
-                        A shopper in{" "}
-                        <span className="over">{verdict.top.city}</span> paid{" "}
-                        <span className="over">${verdict.top.price}</span> —{" "}
-                        <span className="over">${verdict.spread} more</span>{" "}
-                        than <span className="good">{verdict.low.city}</span>{" "}
-                        (<span className="good">${verdict.low.price}</span>) for the identical listing.{" "}
-                        The dominant signal was{" "}
-                        <strong style={{ color: "var(--text)" }}>{verdict.dominant}</strong>.
-                      </>
-                    ) : (
-                      <>Topology: {verdict.label.toLowerCase()}.</>
-                    )}
-                  </p>
-
-                  <div className="impact">
-                    <span className="label-mono">Price impact by vector</span>
-                    <div className="impact-bars">
-                      {topVectors.map(v => (
-                        <div key={v.name} className="impact-row">
-                          <span className="impact-name mono">{v.name}</span>
-                          <div className="impact-track">
-                            <div
-                              className="impact-fill"
-                              style={{ width: `${(v.pct / v.max) * 100}%` }}
-                            />
-                          </div>
-                          <span className="impact-val mono">{v.pct}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="verdict-actions">
-                    <button className="btn btn-primary" onClick={copyShare}>
-                      {copyLabel}
-                    </button>
-                    <button className="btn btn-ghost" onClick={backToIdle}>
-                      new probe →
-                    </button>
-                  </div>
+                        key={a.agent_id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "44px 1fr 110px 100px 70px",
+                          gap: 12,
+                          padding: "13px 18px",
+                          borderTop: idx === 0 ? "none" : "1px solid var(--line)",
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ color: "var(--text-3)" }}>{a.agent_id.replace("AGENT_", "#")}</span>
+                        <span style={{ color: "var(--text-2)" }}>{agentLabelCity(a)}</span>
+                        <span style={{ color: "var(--text-3)" }}>{net}</span>
+                        <span style={{ color: a.status === "success" ? "var(--good)" : "var(--over)" }}>
+                          {a.status}
+                        </span>
+                        <span style={{ color: priceColor, textAlign: "right", fontWeight: 500 }}>
+                          {a.price != null ? `$${a.price}` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </aside>
-          </div>
+              </ResultSection>
+
+              {/* 7. Actions */}
+              <ResultSection eyebrow="06 · take it with you">
+                <p className="verdict-text sec" style={{ marginBottom: 22 }}>
+                  Download a printable PDF of this report, share it with someone, or export the
+                  raw data for your own analysis.
+                </p>
+                <div className="verdict-actions" style={{ marginTop: 0 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={downloadPDF}
+                    disabled={pdfBusy}
+                  >
+                    {pdfBusy ? "Generating…" : "↓ Download PDF report"}
+                  </button>
+                  <button className="btn btn-ghost" onClick={copyShare}>
+                    {copyLabel}
+                  </button>
+                  <button className="btn btn-ghost" onClick={exportJSON}>
+                    Export JSON
+                  </button>
+                  <button className="btn btn-ghost" onClick={backToIdle}>
+                    New probe →
+                  </button>
+                </div>
+              </ResultSection>
+            </div>
+          )}
         </div>
       </section>
     </main>
+  );
+}
+
+/* ─── Layout helpers ─────────────────────────────────────────────────── */
+
+function ResultSection({ eyebrow, children }: { eyebrow: string; children: React.ReactNode }) {
+  return (
+    <section style={{
+      paddingTop: 40,
+      paddingBottom: 40,
+      borderTop: "1px solid var(--line)",
+    }}>
+      <div className="label-mono" style={{ marginBottom: 22, color: "var(--cobalt-bright)" }}>
+        {eyebrow}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: "over" | "good" }) {
+  const c =
+    accent === "over" ? "var(--over)" :
+    accent === "good" ? "var(--good)" :
+                        "var(--text)";
+  return (
+    <div>
+      <div className="label-mono" style={{ marginBottom: 8 }}>{label}</div>
+      <div
+        className="tnum"
+        style={{
+          fontFamily: "var(--mono)", fontSize: 22,
+          color: c, letterSpacing: "-0.01em",
+        }}
+      >
+        {value}
+      </div>
+    </div>
   );
 }

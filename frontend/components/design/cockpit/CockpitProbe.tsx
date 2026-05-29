@@ -140,27 +140,24 @@ function agentLabelCity(a: BackendAgent): string {
   return rest || a.agent_id;
 }
 
-/** Friendly vector descriptions used in the explainers + PDF */
-const VECTOR_INFO: Record<string, { label: string; what: string; how: string }> = {
+/** Neutral, factual descriptions of each pricing signal — no prescriptive
+ *  advice. JACOBI reports what it observed; the reader draws conclusions. */
+const VECTOR_INFO: Record<string, { label: string; what: string }> = {
   location: {
     label: "Location",
-    what: "Your IP geolocation — what country, city, and ZIP your traffic appears to come from.",
-    how: "Use a VPN or change which city you book from. ZIP codes inside the same city can move pricing on their own.",
+    what: "The IP geolocation each identity appeared to come from — country, region, and metro area.",
   },
   device: {
     label: "Device",
-    what: "Your browser's user-agent and rendering fingerprint — phone vs laptop, premium vs budget.",
-    how: "Try the same URL on a different device. Premium phones (iPhone, Galaxy) often see higher quotes than Androids.",
+    what: "The browser user-agent and rendering fingerprint each identity reported — phone vs laptop, premium vs budget hardware.",
   },
   cookie_profile: {
     label: "Cookies / session",
-    what: "Cookies the site has set on you — loyalty status, visit recency, viewed history.",
-    how: "Open the site in an incognito window. A fresh session often gets a lower 'first-touch' price.",
+    what: "The session state each identity carried — loyalty cookies, visit recency, prior browsing history.",
   },
   referrer: {
     label: "Referrer",
-    what: "Where you arrived from — direct URL, search engine, or aggregator like Kayak.",
-    how: "Click through from an aggregator instead of going direct. Sites discount when they think you're comparison-shopping.",
+    what: "Where the request appeared to originate — direct visit, search engine, or comparison aggregator.",
   },
 };
 
@@ -557,152 +554,264 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const mod = await import("jspdf");
       const jsPDF = mod.jsPDF || (mod as { default: typeof mod.jsPDF }).default;
       const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const W = doc.internal.pageSize.getWidth();
-      const H = doc.internal.pageSize.getHeight();
-      const M = 48;
-      let y = 56;
+      const W = doc.internal.pageSize.getWidth();   // 595
+      const H = doc.internal.pageSize.getHeight();  // 842
+      const M = 44;
 
-      const writeWrapped = (text: string, x: number, yPos: number, maxW: number, lineH = 14) => {
-        const lines = doc.splitTextToSize(text, maxW);
-        doc.text(lines, x, yPos);
-        return yPos + lines.length * lineH;
+      /* Single-page forensic-report layout.
+       *
+       * Palette (RGB):
+       *   ink     = #0c0f15  near-black canvas
+       *   surface = #161b25  card tint
+       *   line    = #2a3245  hairlines
+       *   text    = #ffffff  primary
+       *   text-2  = #c4ccd9  body
+       *   text-3  = #7d8699  metadata
+       *   cobalt  = #6e92ff  accent
+       *   over    = #ff5468  exposed premium
+       *   good    = #3ad79f  baseline
+       */
+      const C = {
+        ink:    [12, 15, 21] as const,
+        surface:[22, 27, 37] as const,
+        surface2:[28, 34, 47] as const,
+        line:   [42, 50, 69] as const,
+        text:   [255, 255, 255] as const,
+        text2:  [196, 204, 217] as const,
+        text3:  [125, 134, 153] as const,
+        cobalt: [110, 146, 255] as const,
+        over:   [255, 84, 104] as const,
+        good:   [58, 215, 159] as const,
       };
+      const setFill = (c: readonly [number, number, number]) => doc.setFillColor(c[0], c[1], c[2]);
+      const setText = (c: readonly [number, number, number]) => doc.setTextColor(c[0], c[1], c[2]);
+      const setStroke = (c: readonly [number, number, number]) => doc.setDrawColor(c[0], c[1], c[2]);
 
-      // Header
-      doc.setFontSize(22).setFont("helvetica", "bold");
-      doc.text("JACOBI · Pricing Topology Report", M, y); y += 30;
-      doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(120);
-      doc.text(`Session ${verdict.session.slice(0, 16)} · ${new Date().toLocaleString()}`, M, y); y += 18;
-      doc.setTextColor(0);
+      // ── Canvas ─────────────────────────────────────────────────
+      setFill(C.ink);
+      doc.rect(0, 0, W, H, "F");
 
-      doc.setFontSize(11).setFont("helvetica", "bold");
-      doc.text("Target", M, y); y += 14;
-      doc.setFont("helvetica", "normal");
-      y = writeWrapped(verdict.target || "—", M, y, W - 2 * M); y += 6;
+      // ── Header band ────────────────────────────────────────────
+      setStroke(C.cobalt);
+      doc.setLineWidth(1.4);
+      doc.line(M, 56, M + 28, 56);   // cobalt accent tick top-left
+
+      // Brand mark (small geometric crosshair)
+      setStroke(C.cobalt);
+      doc.setLineWidth(0.8);
+      doc.circle(M + 11, 78, 9, "S");
+      doc.circle(M + 11, 78, 4, "S");
+      setFill(C.cobalt);
+      doc.circle(M + 14, 75, 1.4, "F");
+
+      doc.setFont("helvetica", "bold").setFontSize(14);
+      setText(C.text);
+      doc.text("JACOBI", M + 28, 81);
+      doc.setFont("helvetica", "normal").setFontSize(8.5);
+      setText(C.text3);
+      doc.text("Pricing topology forensic report", M + 78, 81);
+
+      // Right side: session id + date
+      doc.setFont("courier", "normal").setFontSize(8);
+      setText(C.text3);
+      const dateLine = new Date().toLocaleString();
+      const sessionLine = `Session ${verdict.session.slice(0, 12) || "—"}`;
+      doc.text(dateLine,    W - M, 75, { align: "right" });
+      doc.text(sessionLine, W - M, 86, { align: "right" });
+
+      // Header rule
+      setStroke(C.line);
+      doc.setLineWidth(0.6);
+      doc.line(M, 102, W - M, 102);
+
+      // ── Target line ───────────────────────────────────────────
+      let y = 122;
+      doc.setFont("helvetica", "normal").setFontSize(8);
+      setText(C.text3);
+      doc.text("TARGET", M, y);
+      doc.setFont("courier", "normal").setFontSize(9.5);
+      setText(C.text2);
+      const targetText = doc.splitTextToSize(verdict.target || "—", W - 2 * M - 60);
+      doc.text(targetText[0] || "—", M + 60, y);
       if (verdict.targetName) {
-        doc.setFont("helvetica", "italic").setTextColor(110);
-        y = writeWrapped(verdict.targetName, M, y, W - 2 * M); y += 4;
-        doc.setTextColor(0).setFont("helvetica", "normal");
-      }
-      y += 14;
-
-      // Headline
-      doc.setFontSize(16).setFont("helvetica", "bold");
-      doc.text(`Hidden premium: $${verdict.spread}`, M, y); y += 22;
-      doc.setFontSize(11).setFont("helvetica", "normal");
-      y = writeWrapped(
-        `Topology classification: ${verdict.label} — ${verdict.blurb}`,
-        M, y, W - 2 * M,
-      );
-      y += 12;
-      doc.setTextColor(70);
-      y = writeWrapped(
-        `Probed ${verdict.successCount} of ${verdict.totalCount} identities in ${verdict.elapsed?.toFixed?.(1) || "?"} seconds. The spread between the most expensive and cheapest result was $${verdict.spread} (${verdict.pct}% over baseline). Discrimination index: ${verdict.index}/100.`,
-        M, y, W - 2 * M,
-      );
-      doc.setTextColor(0);
-      y += 14;
-
-      // What this means
-      if (verdict.top && verdict.low) {
-        doc.setFontSize(12).setFont("helvetica", "bold");
-        doc.text("Bottom line", M, y); y += 16;
-        doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(60);
-        y = writeWrapped(
-          `An identity matching "${agentLabelCity(verdict.top)}" paid $${verdict.top.price} for this listing. ` +
-          `An identity matching "${agentLabelCity(verdict.low)}" paid $${verdict.low.price} for the same listing. ` +
-          `That's $${verdict.spread} you'd save by switching your apparent profile — ` +
-          (verdict.dominantName ? `the dominant driver was ${verdict.dominantName} (~${verdict.dominantPct}% effect).` : "no single dominant driver."),
-          M, y, W - 2 * M,
-        );
-        doc.setTextColor(0);
-        y += 14;
-      }
-
-      // Stats grid
-      doc.setFontSize(12).setFont("helvetica", "bold");
-      doc.text("Numbers", M, y); y += 16;
-      doc.setFontSize(10).setFont("helvetica", "normal");
-      const stats: Array<[string, string]> = [
-        ["Baseline price",     verdict.baseline != null ? `$${verdict.baseline}` : "—"],
-        ["Mean price",         verdict.mean != null ? `$${Math.round(verdict.mean)}` : "—"],
-        ["Range",              verdict.range ? `$${verdict.range[0]} – $${verdict.range[1]}` : "—"],
-        ["Hidden premium",     `$${verdict.spread}`],
-        ["% over baseline",    `${verdict.pct}%`],
-        ["Discrimination idx", `${verdict.index}/100`],
-        ["Agents returned",    `${verdict.successCount}/${verdict.totalCount}`],
-        ["Probe elapsed",      `${verdict.elapsed?.toFixed?.(1) || "?"}s`],
-      ];
-      stats.forEach(([k, v]) => {
-        doc.setTextColor(120); doc.text(k, M, y);
-        doc.setTextColor(0);   doc.text(v, M + 160, y);
-        y += 14;
-      });
-      y += 8;
-
-      // Vectors
-      if (y > H - 220) { doc.addPage(); y = 56; }
-      doc.setFontSize(12).setFont("helvetica", "bold");
-      doc.text("Drivers — what made the price move", M, y); y += 16;
-      doc.setFontSize(10).setFont("helvetica", "normal");
-      topVectors.forEach(v => {
-        if (y > H - 80) { doc.addPage(); y = 56; }
-        doc.setFont("helvetica", "bold");
-        doc.text(`${v.info.label} · ${v.significant ? `${v.pct}% impact` : "no significant effect"}`, M, y); y += 14;
-        doc.setFont("helvetica", "normal").setTextColor(80);
-        if (v.info.what) y = writeWrapped(v.info.what, M, y, W - 2 * M); else y += 0;
-        y += 2;
-        if (v.significant) {
-          y = writeWrapped(
-            `High: ${v.high} (~$${Math.round(v.highPrice)}) vs Low: ${v.low} (~$${Math.round(v.lowPrice)}) → $${Math.round(v.delta)} difference.`,
-            M, y, W - 2 * M,
-          );
-        }
-        if (v.info.how) {
-          doc.setTextColor(40);
-          y = writeWrapped(`How to dodge: ${v.info.how}`, M, y, W - 2 * M);
-        }
-        doc.setTextColor(0);
-        y += 10;
-      });
-
-      // Per-agent table
-      if (y > H - 140) { doc.addPage(); y = 56; }
-      doc.setFontSize(12).setFont("helvetica", "bold");
-      doc.text(`Per-agent breakdown (${report.agents.length} agents)`, M, y); y += 16;
-      doc.setFontSize(9).setFont("helvetica", "bold");
-      doc.setTextColor(120);
-      doc.text("Agent",  M,       y);
-      doc.text("Profile", M + 80, y);
-      doc.text("Tier",   M + 320, y);
-      doc.text("Status", M + 380, y);
-      doc.text("Price",  W - M - 40, y, { align: "right" });
-      doc.setTextColor(0);
-      y += 12;
-      doc.setFont("helvetica", "normal");
-      const tiers = ["Datacenter", "Residential", "Mobile"];
-      report.agents.slice().sort((a, b) => (b.price ?? -1) - (a.price ?? -1)).forEach(a => {
-        if (y > H - 50) { doc.addPage(); y = 56; }
-        doc.setTextColor(80); doc.text(a.agent_id.replace("AGENT_", "#"), M, y);
-        doc.setTextColor(20); doc.text(agentLabelCity(a).slice(0, 38), M + 80, y);
-        doc.setTextColor(110); doc.text(tiers[a.network_tier ?? 0] || "—", M + 320, y);
-        doc.text(a.status, M + 380, y);
-        doc.setTextColor(0);
-        doc.text(a.price != null ? `$${a.price}` : "—", W - M - 40, y, { align: "right" });
         y += 13;
+        doc.setFont("helvetica", "italic").setFontSize(9);
+        setText(C.text3);
+        doc.text(verdict.targetName, M + 60, y);
+      }
+      y += 22;
+
+      // ── Headline panel (the verdict) ──────────────────────────
+      // Cobalt-glow shadow rect + main panel
+      setFill(C.surface);
+      setStroke(C.line);
+      doc.setLineWidth(0.6);
+      doc.roundedRect(M, y, W - 2 * M, 112, 6, 6, "FD");
+
+      // Topology pill (top-left inside panel)
+      const topoColor = (() => {
+        const t = verdict.label.toLowerCase();
+        if (t === "uniform")     return C.good;
+        if (t === "aggressive")  return C.over;
+        return [255, 157, 82] as const; // progressive/selective amber
+      })();
+      const pillX = M + 18, pillY = y + 16;
+      const pillTextW = doc.getTextWidth(verdict.label.toUpperCase());
+      setFill([topoColor[0], topoColor[1], topoColor[2]]);
+      doc.setGState(doc.GState({ opacity: 0.18 }));
+      doc.roundedRect(pillX, pillY - 9, pillTextW + 28, 16, 8, 8, "F");
+      doc.setGState(doc.GState({ opacity: 1 }));
+      setFill(topoColor);
+      doc.circle(pillX + 8, pillY - 1, 2, "F");
+      doc.setFont("helvetica", "bold").setFontSize(7.5);
+      setText(topoColor);
+      doc.text(verdict.label.toUpperCase(), pillX + 16, pillY + 1.5);
+
+      // Big spread number
+      doc.setFont("helvetica", "bold").setFontSize(46);
+      setText(C.text);
+      const spreadStr = `+$${verdict.spread}`;
+      doc.text(spreadStr, M + 18, y + 70);
+
+      // Label above spread
+      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      setText(C.text3);
+      doc.text("HIDDEN PREMIUM", M + 18, y + 38);
+
+      // Sub line under spread
+      doc.setFont("helvetica", "normal").setFontSize(9);
+      setText(C.text2);
+      doc.text(
+        `${verdict.pct}% over baseline · ${verdict.successCount}/${verdict.totalCount} identities returned · ${(verdict.elapsed || 0).toFixed(1)}s`,
+        M + 18, y + 90,
+      );
+
+      // Right side of panel: discrimination index visual
+      const diX = W - M - 150, diY = y + 22;
+      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      setText(C.text3);
+      doc.text("DISCRIMINATION INDEX", diX, diY);
+      doc.setFont("helvetica", "bold").setFontSize(32);
+      setText(C.text);
+      doc.text(String(verdict.index), diX, diY + 32);
+      doc.setFont("helvetica", "normal").setFontSize(10);
+      setText(C.text3);
+      doc.text("/100", diX + doc.getTextWidth(String(verdict.index)) + 4, diY + 32);
+
+      // Index bar
+      const barX = diX, barY = diY + 50, barW = 130, barH = 4;
+      setFill(C.line);
+      doc.roundedRect(barX, barY, barW, barH, 2, 2, "F");
+      // gradient simulation with 3 segments cobalt → amber → over
+      const fillW = (verdict.index / 100) * barW;
+      const seg1 = Math.min(fillW, barW * 0.4);
+      const seg2 = Math.max(0, Math.min(fillW - barW * 0.4, barW * 0.3));
+      const seg3 = Math.max(0, fillW - barW * 0.7);
+      if (seg1 > 0) { setFill(C.cobalt); doc.roundedRect(barX, barY, seg1, barH, 2, 2, "F"); }
+      if (seg2 > 0) { setFill([255, 157, 82]); doc.rect(barX + barW * 0.4, barY, seg2, barH, "F"); }
+      if (seg3 > 0) { setFill(C.over); doc.rect(barX + barW * 0.7, barY, seg3, barH, "F"); }
+
+      y += 132;
+
+      // ── Plain English summary ──────────────────────────────────
+      doc.setFont("helvetica", "normal").setFontSize(8);
+      setText(C.text3);
+      doc.text("SUMMARY", M, y);
+      y += 14;
+      doc.setFont("helvetica", "normal").setFontSize(10);
+      setText(C.text);
+      const summary =
+        verdict.top && verdict.low
+          ? `An identity presenting as "${agentLabelCity(verdict.top)}" was quoted $${verdict.top.price}. An identity presenting as "${agentLabelCity(verdict.low)}" was quoted $${verdict.low.price} for the identical listing — a $${verdict.spread} gap${verdict.dominantName ? `. The dominant signal in the data was ${verdict.dominantName}.` : "."}`
+          : verdict.blurb;
+      const summaryLines = doc.splitTextToSize(summary, W - 2 * M);
+      doc.text(summaryLines, M, y);
+      y += summaryLines.length * 13 + 16;
+
+      // ── Endpoints row (top vs bottom) ──────────────────────────
+      if (verdict.top && verdict.low) {
+        const cardW = (W - 2 * M - 14) / 2;
+        const cardH = 64;
+
+        // Top (over)
+        setFill(C.surface);
+        setStroke([C.over[0], C.over[1], C.over[2]]);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(M, y, cardW, cardH, 5, 5, "FD");
+        doc.setFont("helvetica", "normal").setFontSize(7);
+        setText(C.over);
+        doc.text("TOP QUOTE", M + 14, y + 18);
+        doc.setFont("helvetica", "bold").setFontSize(22);
+        setText(C.text);
+        doc.text(`$${verdict.top.price}`, M + 14, y + 42);
+        doc.setFont("helvetica", "normal").setFontSize(8.5);
+        setText(C.text2);
+        const topName = doc.splitTextToSize(agentLabelCity(verdict.top), cardW - 28);
+        doc.text(topName[0] || "—", M + 14, y + 56);
+
+        // Low (good)
+        const lowX = M + cardW + 14;
+        setFill(C.surface);
+        setStroke([C.good[0], C.good[1], C.good[2]]);
+        doc.roundedRect(lowX, y, cardW, cardH, 5, 5, "FD");
+        doc.setFont("helvetica", "normal").setFontSize(7);
+        setText(C.good);
+        doc.text("LOW QUOTE", lowX + 14, y + 18);
+        doc.setFont("helvetica", "bold").setFontSize(22);
+        setText(C.text);
+        doc.text(`$${verdict.low.price}`, lowX + 14, y + 42);
+        doc.setFont("helvetica", "normal").setFontSize(8.5);
+        setText(C.text2);
+        const lowName = doc.splitTextToSize(agentLabelCity(verdict.low), cardW - 28);
+        doc.text(lowName[0] || "—", lowX + 14, y + 56);
+
+        y += cardH + 20;
+      }
+
+      // ── Drivers (impact bars) ──────────────────────────────────
+      doc.setFont("helvetica", "normal").setFontSize(8);
+      setText(C.text3);
+      doc.text("DRIVERS", M, y);
+      y += 16;
+      const tvMax = Math.max(1, ...topVectors.map(v => v.pct));
+      topVectors.forEach(v => {
+        // Label
+        doc.setFont("helvetica", "normal").setFontSize(9.5);
+        setText(C.text);
+        doc.text(v.info.label, M, y);
+        // Value
+        doc.setFont("courier", "bold").setFontSize(9);
+        setText(v.significant ? C.text : C.text3);
+        doc.text(
+          v.significant ? `${v.pct}%` : "n/s",
+          W - M, y, { align: "right" },
+        );
+        // Track
+        const trackX = M + 110, trackY = y - 5, trackW = W - 2 * M - 140, trackH = 6;
+        setFill(C.line);
+        doc.roundedRect(trackX, trackY, trackW, trackH, 3, 3, "F");
+        if (v.significant) {
+          const w = (v.pct / tvMax) * trackW;
+          setFill(C.cobalt);
+          doc.roundedRect(trackX, trackY, w, trackH, 3, 3, "F");
+        }
+        y += 20;
       });
 
-      // Footer on every page
-      const pageCount = doc.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8).setTextColor(140);
-        doc.text(
-          `JACOBI · ${i} / ${pageCount}`,
-          W / 2, H - 24, { align: "center" },
-        );
-        doc.setTextColor(0);
-      }
+      // ── Footer ─────────────────────────────────────────────────
+      setStroke(C.line);
+      doc.setLineWidth(0.4);
+      doc.line(M, H - 50, W - M, H - 50);
+      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      setText(C.text3);
+      doc.text(
+        "Generated by JACOBI · 24-agent adversarial pricing probe",
+        M, H - 32,
+      );
+      doc.text(
+        `jacobi.report/${verdict.session.slice(0, 8)}`,
+        W - M, H - 32, { align: "right" },
+      );
 
       doc.save(`jacobi-report-${verdict.session.slice(0, 8) || "probe"}.pdf`);
     } catch (e) {
@@ -984,22 +1093,22 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 <div className="ev-spread-sub mono" style={{ marginBottom: 22 }}>
                   {verdict.pct}% over the cheapest result · {verdict.successCount}/{verdict.totalCount} agents returned in {verdict.elapsed?.toFixed?.(1) || "?"}s
                 </div>
-                <p className="verdict-text sec" style={{ marginTop: 0 }}>
+                <p className="verdict-text" style={{ marginTop: 0, color: "var(--text)" }}>
                   {verdict.blurb}
                 </p>
                 {verdict.top && verdict.low && (
-                  <p className="verdict-text sec">
-                    A shopper presenting as{" "}
-                    <span className="over">{agentLabelCity(verdict.top)}</span> paid{" "}
+                  <p className="verdict-text" style={{ color: "var(--text)" }}>
+                    An identity presenting as{" "}
+                    <span className="over">{agentLabelCity(verdict.top)}</span> was quoted{" "}
                     <span className="over">${verdict.top.price}</span>.{" "}
-                    A shopper presenting as{" "}
-                    <span className="good">{agentLabelCity(verdict.low)}</span> paid{" "}
+                    An identity presenting as{" "}
+                    <span className="good">{agentLabelCity(verdict.low)}</span> was quoted{" "}
                     <span className="good">${verdict.low.price}</span> for the identical listing.{" "}
                     The gap is{" "}
                     <strong style={{ color: "var(--text)" }}>${verdict.spread}</strong>
                     {verdict.dominantName && (
                       <>
-                        {" "}— and the dominant driver was{" "}
+                        {" "}— and the dominant driver in the data was{" "}
                         <strong style={{ color: "var(--text)" }}>{verdict.dominantName}</strong>.
                       </>
                     )}
@@ -1029,57 +1138,25 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     />
                   </div>
                 </div>
-                <p className="verdict-text sec" style={{ marginTop: 18 }}>
+                <p className="verdict-text" style={{ marginTop: 18, color: "var(--text)" }}>
                   The <strong style={{ color: "var(--text)" }}>discrimination index</strong> rolls
-                  the spread + how many vectors contributed into a single 0–100 score. Above 60
-                  means at least one of your identity signals is materially moving the price; above
-                  80 means several signals are stacking against you.
+                  the spread and how many vectors contributed into a single 0–100 score. Above 60
+                  means at least one identity signal materially moved the price; above 80 means
+                  several signals stacked.
                 </p>
               </ResultSection>
 
-              {/* 4. Recommendation */}
-              {verdict.top && verdict.low && verdict.spread > 0 && (
-                <ResultSection eyebrow="03 · what to do">
-                  <div style={{
-                    padding: "26px 28px",
-                    border: "1px solid var(--cobalt-line)",
-                    background: "linear-gradient(180deg, rgba(61,107,255,0.08), transparent)",
-                    borderRadius: "var(--r)",
-                  }}>
-                    <div className="label-mono" style={{ marginBottom: 10, color: "var(--cobalt-bright)" }}>
-                      Recommendation
-                    </div>
-                    <p className="verdict-text" style={{ margin: 0, fontSize: 15 }}>
-                      Use a profile closer to{" "}
-                      <strong className="good">{agentLabelCity(verdict.low)}</strong>{" "}
-                      to save{" "}
-                      <strong className="good">${verdict.spread}</strong>{" "}
-                      on this listing.
-                      {verdict.dominantName && VECTOR_INFO[verdict.dominantName] && (
-                        <>
-                          {" "}The single biggest lever is{" "}
-                          <strong style={{ color: "var(--text)" }}>
-                            {VECTOR_INFO[verdict.dominantName].label.toLowerCase()}
-                          </strong>
-                          : {VECTOR_INFO[verdict.dominantName].how}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </ResultSection>
-              )}
-
-              {/* 5. Drivers — explained */}
-              <ResultSection eyebrow="04 · drivers">
-                <p className="verdict-text sec" style={{ marginBottom: 24 }}>
+              {/* 3. Drivers — neutral, observational only */}
+              <ResultSection eyebrow="03 · drivers">
+                <p className="verdict-text" style={{ marginBottom: 24, color: "var(--text)" }}>
                   Four signals were tested. Each bar shows how much that one variable
-                  moved the price on its own, holding the others as steady as we can.
+                  moved the price on its own, holding the others as steady as the sample allowed.
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
                   {topVectors.map(v => (
                     <div key={v.key}>
                       <div className="impact-row" style={{ marginBottom: 10 }}>
-                        <span className="impact-name mono" style={{ width: "auto", minWidth: 90 }}>
+                        <span className="impact-name mono" style={{ width: "auto", minWidth: 90, color: "var(--text)" }}>
                           {v.info.label}
                         </span>
                         <div className="impact-track">
@@ -1093,26 +1170,20 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                             }}
                           />
                         </div>
-                        <span className="impact-val mono">
+                        <span className="impact-val mono" style={{ color: v.significant ? "var(--text)" : "var(--text-3)" }}>
                           {v.significant ? `${v.pct}%` : "n/s"}
                         </span>
                       </div>
                       <div style={{
                         fontFamily: "var(--sans)", fontSize: 13.5,
-                        color: "var(--text-2)", lineHeight: 1.65,
+                        color: "var(--text)", lineHeight: 1.65,
                         padding: "0 0 0 102px",
                       }}>
                         <div style={{ marginBottom: 4 }}>{v.info.what}</div>
                         {v.significant && (
-                          <div style={{ color: "var(--text-3)", fontFamily: "var(--mono)", fontSize: 11, margin: "6px 0" }}>
+                          <div style={{ color: "var(--text-2)", fontFamily: "var(--mono)", fontSize: 11, margin: "6px 0" }}>
                             {v.high} ~${Math.round(v.highPrice)} &nbsp;vs&nbsp; {v.low} ~${Math.round(v.lowPrice)}
                             &nbsp;·&nbsp; gap ${Math.round(v.delta)}
-                          </div>
-                        )}
-                        {v.info.how && (
-                          <div style={{ color: "var(--text)" }}>
-                            <strong style={{ color: "var(--cobalt-bright)" }}>How to dodge:</strong>{" "}
-                            {v.info.how}
                           </div>
                         )}
                       </div>
@@ -1121,9 +1192,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 </div>
               </ResultSection>
 
-              {/* 6. Per-agent table */}
-              <ResultSection eyebrow="05 · all 24 agents">
-                <p className="verdict-text sec" style={{ marginBottom: 22 }}>
+              {/* 4. Per-agent table */}
+              <ResultSection eyebrow="04 · all 24 agents">
+                <p className="verdict-text" style={{ marginBottom: 22, color: "var(--text)" }}>
                   Every identity we deployed, sorted by price (most expensive first). Agents that
                   saw the highest prices are marked red; the cheapest, green.
                 </p>
@@ -1187,9 +1258,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 </div>
               </ResultSection>
 
-              {/* 7. Actions */}
-              <ResultSection eyebrow="06 · take it with you">
-                <p className="verdict-text sec" style={{ marginBottom: 22 }}>
+              {/* 5. Actions */}
+              <ResultSection eyebrow="05 · take it with you">
+                <p className="verdict-text" style={{ marginBottom: 22, color: "var(--text)" }}>
                   Download a printable PDF of this report, share it with someone, or export the
                   raw data for your own analysis.
                 </p>

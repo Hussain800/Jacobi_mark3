@@ -22,10 +22,73 @@ import DesignNav from "../components/design/DesignNav";
 import DesignFooter from "../components/design/DesignFooter";
 import {
   useCounters,
+  useEvidenceBars,
+  useEvidenceIndexFill,
   useGlobe,
+  useMechScroll,
   useReveals,
   useTyped,
 } from "../components/design/landing-interactions";
+
+/* ─── Phase card icons (ported from landing.js's ICONS map) ───────── */
+
+const PhaseIcons = {
+  target: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="16" cy="16" r="11" />
+      <circle cx="16" cy="16" r="6" />
+      <circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none" />
+      <path d="M16 1v6M16 25v6M1 16h6M25 16h6" strokeLinecap="round" />
+    </svg>
+  ),
+  swarm: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="16" cy="16" r="3" />
+      <circle cx="6" cy="7" r="2" />
+      <circle cx="26" cy="7" r="2" />
+      <circle cx="6" cy="25" r="2" />
+      <circle cx="26" cy="25" r="2" />
+      <path d="M8 8.5 13.5 14M24 8.5 18.5 14M8 23.5 13.5 18M24 23.5 18.5 18" strokeLinecap="round" />
+    </svg>
+  ),
+  patterns: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M4 24 11 15l5 4 8-11" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="11" cy="15" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="19" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="24" cy="8" r="1.8" fill="currentColor" stroke="none" />
+      <path d="M4 28h24" strokeLinecap="round" opacity=".4" />
+    </svg>
+  ),
+  verdict: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M16 3 27 8v8c0 7-4.6 11-11 13C9.6 27 5 23 5 16V8z" strokeLinejoin="round" />
+      <path d="M11 16l3.5 3.5L21 12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+};
+
+/* ─── Evidence sample (verbatim from landing.js evidence()) ───────── */
+
+const EVIDENCE_SAMPLE: Array<{
+  profile: string;
+  price: number;
+  state: "over" | "good" | "normal";
+  tag?: "top" | "baseline";
+}> = [
+  { profile: "iPhone · Manhattan · direct", price: 642, state: "over",   tag: "top" },
+  { profile: "Safari · Tokyo · direct",     price: 612, state: "normal" },
+  { profile: "Edge · London · direct",      price: 596, state: "normal" },
+  { profile: "Firefox · Bangalore · VPN",   price: 512, state: "normal" },
+  { profile: "Chrome · rural Iowa · VPN",   price: 498, state: "good",   tag: "baseline" },
+];
+
+const EV_LO = Math.min(...EVIDENCE_SAMPLE.map((s) => s.price));
+const EV_HI = Math.max(...EVIDENCE_SAMPLE.map((s) => s.price));
+const evColorFor = (s: "over" | "good" | "normal") =>
+  s === "over" ? "var(--over)" : s === "good" ? "var(--good)" : "rgba(151,160,177,0.55)";
+const evPriceColorFor = (s: "over" | "good" | "normal") =>
+  s === "over" ? "var(--over)" : s === "good" ? "var(--good)" : "var(--text-2)";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -40,6 +103,9 @@ export default function LandingPage() {
   useCounters();
   useTyped();
   useGlobe();
+  useMechScroll();
+  useEvidenceBars();
+  useEvidenceIndexFill();
 
   const launch = useCallback(
     (raw: string) => {
@@ -60,9 +126,12 @@ export default function LandingPage() {
         strategy="afterInteractive"
       />
       {/* scene.js paints the WebGL background; globe.js exposes
-          window.JacobiGlobe used by useGlobe(). */}
-      <Script src="/jacobi-design/scene.js" strategy="afterInteractive" />
-      <Script src="/jacobi-design/globe.js" strategy="afterInteractive" />
+          window.JacobiGlobe used by useGlobe(); effects.js adds the
+          dual-element cursor, magnetic primary CTAs, hero parallax,
+          and [data-tilt] tilt. */}
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/globe.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
       <DesignNav />
 
@@ -300,7 +369,7 @@ export default function LandingPage() {
           <div className="phases" style={{ marginTop: "40px" }}>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">01</div>
-              <div className="phase-ico" data-ico="target" />
+              <div className="phase-ico" data-ico="target">{PhaseIcons.target}</div>
               <h3 className="phase-title">Submit your target</h3>
               <p className="phase-body sec">
                 Drop any product, flight, or booking URL into the scanner. If
@@ -309,7 +378,7 @@ export default function LandingPage() {
             </div>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">02</div>
-              <div className="phase-ico" data-ico="swarm" />
+              <div className="phase-ico" data-ico="swarm">{PhaseIcons.swarm}</div>
               <h3 className="phase-title">The swarm launches</h3>
               <p className="phase-body sec">
                 24 identities disperse across four discrimination axes —
@@ -319,7 +388,7 @@ export default function LandingPage() {
             </div>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">03</div>
-              <div className="phase-ico" data-ico="patterns" />
+              <div className="phase-ico" data-ico="patterns">{PhaseIcons.patterns}</div>
               <h3 className="phase-title">Patterns emerge</h3>
               <p className="phase-body sec">
                 Every response is cross-referenced. Statistical outliers
@@ -328,7 +397,7 @@ export default function LandingPage() {
             </div>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">04</div>
-              <div className="phase-ico" data-ico="verdict" />
+              <div className="phase-ico" data-ico="verdict">{PhaseIcons.verdict}</div>
               <h3 className="phase-title">Read the verdict</h3>
               <p className="phase-body sec">
                 A plain-English breakdown of what you'd save with a different
@@ -359,7 +428,39 @@ export default function LandingPage() {
           </div>
 
           <div className="evidence-grid">
-            <div className="evidence-rows" id="evidence-rows" data-reveal />
+            <div className="evidence-rows" id="evidence-rows" data-reveal>
+              {EVIDENCE_SAMPLE.map((s, i) => {
+                const w = Math.max(6, ((s.price - EV_LO) / (EV_HI - EV_LO)) * 100);
+                return (
+                  <div key={i} className="ev-row">
+                    <div>
+                      <div className="ev-row-head">
+                        <span className="ev-profile">{s.profile}</span>
+                        {s.tag && (
+                          <span className={`ev-tag ${s.tag}`}>{s.tag}</span>
+                        )}
+                      </div>
+                      <div className="ev-bar">
+                        <div
+                          className="ev-bar-fill"
+                          data-w={w}
+                          style={{
+                            background: evColorFor(s.state),
+                            transform: "scaleX(0)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className="ev-price"
+                      style={{ color: evPriceColorFor(s.state) }}
+                    >
+                      ${s.price}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             <aside className="evidence-verdict card" data-reveal>
               <div className="topology-badge">

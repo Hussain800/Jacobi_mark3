@@ -183,6 +183,110 @@ export function useTyped() {
   }, []);
 }
 
+/* ─── Mechanism scroll disassembly ─────────────────────────────────── */
+
+export function useMechScroll() {
+  useEffect(() => {
+    const scene = document.getElementById("mech-scene");
+    const stack = document.getElementById("mech-stack");
+    if (!scene || !stack) return;
+    const dots = scene.querySelectorAll<HTMLElement>(".mech-progress span");
+    let raf = 0;
+    const update = () => {
+      const r = scene.getBoundingClientRect();
+      const total = scene.offsetHeight - window.innerHeight;
+      const p = Math.max(0, Math.min(1, -r.top / total));
+      stack.style.setProperty("--p", p.toFixed(3));
+      const step = Math.min(4, Math.floor(p * 5));
+      dots.forEach((d, i) => d.classList.toggle("on", i <= step));
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+}
+
+/* ─── Evidence-index bar ────────────────────────────────────────────── */
+
+export function useEvidenceIndexFill() {
+  useEffect(() => {
+    const fill = document.querySelector<HTMLElement>(".evi-fill");
+    if (!fill) return;
+    if (!("IntersectionObserver" in window)) {
+      fill.classList.add("in");
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fill.classList.add("in");
+          io.disconnect();
+        }
+      },
+      { threshold: 0.5 },
+    );
+    io.observe(fill);
+    return () => io.disconnect();
+  }, []);
+}
+
+/* ─── Evidence row bars ──────────────────────────────────────────────
+ *
+ * The original landing.js's evidence() builds rows imperatively and
+ * animates the .ev-bar-fill scaleX via a transition with delay. In our
+ * React port, the rows are rendered in JSX with `data-w` attributes;
+ * this hook reads each row's target scale and triggers the animation
+ * when the host comes into view.
+ */
+export function useEvidenceBars() {
+  useEffect(() => {
+    const reduce = prefersReducedMotion();
+    const host = document.getElementById("evidence-rows");
+    if (!host) return;
+    const fills = Array.from(host.querySelectorAll<HTMLElement>(".ev-bar-fill[data-w]"));
+    if (!fills.length) return;
+
+    const reveal = () => {
+      fills.forEach((fill, i) => {
+        const w = parseFloat(fill.getAttribute("data-w") || "0");
+        if (reduce) {
+          fill.style.transform = `scaleX(${w / 100})`;
+          return;
+        }
+        fill.style.transition = `transform 1s var(--ease) ${0.2 + i * 0.08}s`;
+        requestAnimationFrame(() => {
+          fill.style.transform = `scaleX(${w / 100})`;
+        });
+      });
+    };
+
+    if (!("IntersectionObserver" in window)) {
+      reveal();
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          reveal();
+          io.disconnect();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    io.observe(host);
+    return () => io.disconnect();
+  }, []);
+}
+
 /* ─── Globe + deploy readout ───────────────────────────────────────── */
 
 export function useGlobe() {

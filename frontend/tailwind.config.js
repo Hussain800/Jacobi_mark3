@@ -34,34 +34,59 @@ module.exports = {
           rose: "#cc5566",
         },
 
-        // ─── Phase 1 — new semantic design system (additive) ───
-        // Backgrounds. `ink` instead of `base` to avoid colliding with
-        // Tailwind's built-in `text-base` font-size utility.
-        ink:     "#07080c",   // bg-ink     · deep canvas
-        raised:  "#0c0e13",   // bg-raised  · cards & panels (flat, no glass)
-        line:    "#16191f",   // bg-line / border-line · hairlines
+        // ─── Phase 8 — Claude Design forensic intelligence palette ───
+        // Cool near-black surfaces (never pure black), cobalt accent,
+        // green = baseline/cheapest, red = exposed only, gold = Pro.
 
-        // Text
-        primary:   "#e8eaed", // text-primary
-        secondary: "#9ba1ad", // text-secondary
-        muted:     "#5b6270", // text-muted
+        // Surface scale
+        ink:     "#07080b",   // bg-ink     · deep canvas (was 07080c)
+        "ink-2": "#090b10",   // bg-ink-2   · slightly raised
+        raised:  "#0c0f15",   // bg-raised  · cards
+        "surface-2": "#11151d",
+        "surface-3": "#161b25",
+        line:    "#1a1f2a",   // border-line · hairline (was 16191f)
+        "line-2":"#262c39",   // border-line-2 · hover
+
+        // Text scale
+        primary:   "#eceef3", // text-primary
+        secondary: "#97a0b1", // text-secondary
+        muted:     "#5b6473", // text-muted
+        "muted-2": "#3d4452", // text-muted-2 · deepest reading
+
+        // Cobalt — the one color that "lights up". Primary accent for
+        // actions, links, focus rings, headings emphasis.
+        cobalt: {
+          DEFAULT: "#3d6bff",
+          bright:  "#6e92ff",
+          deep:    "#2a4fd6",
+          soft:    "rgba(61, 107, 255, 0.12)",
+          line:    "rgba(61, 107, 255, 0.30)",
+          glow:    "rgba(61, 107, 255, 0.45)",
+        },
 
         // Semantic — strict usage:
-        //   signal      → LIVE state, positive outcomes, primary action
-        //   overcharge  → discrimination / hidden premium / negative delta
-        //   warning     → demo mode, partial blocking, soft caution
+        //   signal      → cheapest / baseline / safe (was "good" in CSS)
+        //   overcharge  → exposed premium / discrimination (rose-red)
+        //   warning     → demo mode, partial blocking
+        //   gold        → Pro tier, very sparing
         signal: {
-          DEFAULT: "#00d97a",
-          soft:    "rgba(0, 217, 122, 0.10)",
-          glow:    "rgba(0, 217, 122, 0.22)",
+          DEFAULT: "#34d39b",
+          soft:    "rgba(52, 211, 155, 0.12)",
+          line:    "rgba(52, 211, 155, 0.40)",
+          glow:    "rgba(52, 211, 155, 0.45)",
         },
         overcharge: {
-          DEFAULT: "#ff5d6c",
-          soft:    "rgba(255, 93, 108, 0.10)",
+          DEFAULT: "#ff5468",
+          soft:    "rgba(255, 84, 104, 0.12)",
+          line:    "rgba(255, 84, 104, 0.32)",
         },
         warning: {
           DEFAULT: "#d4a040",
           soft:    "rgba(212, 160, 64, 0.10)",
+        },
+        gold: {
+          DEFAULT: "#d8b06a",
+          soft:    "rgba(216, 176, 106, 0.12)",
         },
       },
       fontSize: {

@@ -2,55 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ──────────────────────────────────────────────────────────────────
- * Surface
+/* ============================================================================
+ * Surface — Claude Design forensic intelligence
  *
- * Premium black-material substrate: pure ink anchored everywhere,
- * with a single soft radial light bleeding from the top to give depth.
- * No dot grids, no warm-cool gradient layers, no graph-paper texture.
- * The hero / cockpit content layers their own lighting on top.
- * ────────────────────────────────────────────────────────────────── */
+ * Cool near-black canvas, single soft top-right cobalt halo, restrained
+ * film grain. No graph paper, no gradient soup.
+ * ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
+:root {
+  /* mirror tailwind tokens for vanilla-CSS access */
+  --ink: #07080b;
+  --surface: #0c0f15;
+  --line: #1a1f2a;
+  --line-2: #262c39;
+  --text: #eceef3;
+  --text-2: #97a0b1;
+  --text-3: #5b6473;
+  --cobalt: #3d6bff;
+  --cobalt-bright: #6e92ff;
+  --cobalt-soft: rgba(61, 107, 255, 0.12);
+  --cobalt-line: rgba(61, 107, 255, 0.30);
+  --cobalt-glow: rgba(61, 107, 255, 0.45);
+  --over: #ff5468;
+  --good: #34d39b;
+  --gold: #d8b06a;
+
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+          'Helvetica Neue', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 body {
   margin: 0;
+  background: #06070c;
+  color: var(--text);
+  font-family: var(--sans);
+  font-feature-settings: "ss01", "cv01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #07080c;
-  background-image:
-    radial-gradient(ellipse 70% 45% at 50% -10%, rgba(255, 255, 255, 0.035) 0%, transparent 60%);
-  background-attachment: fixed;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
 
 ::selection {
-  background: rgba(0, 217, 122, 0.20);
-  color: #e8eaed;
+  background: var(--cobalt-soft);
+  color: #fff;
 }
 
-/* Very fine film grain — almost imperceptible. Restraint, not texture. */
+/* Film grain — almost imperceptible restraint, not texture */
 body::after {
   content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9997;
-  opacity: 0.022;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 256px 256px;
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 9998;
+  opacity: 0.025;
   mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 240px 240px;
 }
 
-/* ── Scrollbar — minimal hairline ── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* Scrollbar — hairline */
+::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(155, 161, 173, 0.10);
-  border-radius: 2px;
+  background: var(--line-2);
+  border-radius: 6px;
+  border: 3px solid var(--ink);
 }
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(155, 161, 173, 0.25);
+::-webkit-scrollbar-thumb:hover { background: #3a4254; }
+
+/* ============================================================================
+ * Reveal-on-scroll
+ * ========================================================================== */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.9s var(--ease-out), transform 0.9s var(--ease-out);
+  will-change: opacity, transform;
+}
+[data-reveal].in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { opacity: 1; transform: none; transition: none; }
+}
+
+/* Pulse-ring animation used by status chips */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 var(--cobalt-glow); }
+  70%  { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.pulse-ring {
+  animation: pulse-ring 2.4s var(--ease) infinite;
+}
+
+/* Caret blink for typed text */
+@keyframes blink-caret {
+  50% { opacity: 0; }
+}
+.blink-caret {
+  animation: blink-caret 1s steps(1) infinite;
+}
+
+/* Cue line for scroll indicator */
+@keyframes cue {
+  0%, 100% { transform: scaleY(0.35); transform-origin: top; opacity: 0.4; }
+  50%      { transform: scaleY(1); opacity: 1; }
+}
+.cue-line {
+  animation: cue 2.2s var(--ease) infinite;
 }
 
 @keyframes scanline {
-  0% { transform: translateY(-100%); }
+  0%   { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }

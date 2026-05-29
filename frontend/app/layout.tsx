@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import GlobalNav from "../components/global-nav";
+import RouteChrome from "../components/route-chrome";
 
 export const metadata: Metadata = {
   title: "JACOBI — Pricing Topology Probe",
@@ -33,8 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className="text-primary antialiased"
         style={{ background: "#06070c", fontFamily: "var(--sans)" }}
       >
-        <GlobalNav />
-        <div className="pt-[60px]">{children}</div>
+        <RouteChrome>{children}</RouteChrome>
       </body>
     </html>
   );

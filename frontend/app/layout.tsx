@@ -31,7 +31,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body
         className="text-primary antialiased"
-        style={{ background: "#06070c", fontFamily: "var(--sans)" }}
+        style={{
+          background: "#06070c",
+          fontFamily: "var(--sans)",
+          // Original jacobi.css applied this to body. We keep it on the
+          // real <body> (not the .jacobi-design wrapper div) so the
+          // wrapper doesn't become a scrolling ancestor and break
+          // `position: sticky` for .mech-pin.
+          overflowX: "hidden",
+        }}
       >
         <RouteChrome>{children}</RouteChrome>
       </body>

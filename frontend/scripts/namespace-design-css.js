@@ -209,7 +209,21 @@ function transformCss(input) {
   return out.join("");
 }
 
-const transformed = transformCss(css);
+let transformed = transformCss(css);
+
+/**
+ * Post-pass: strip `overflow*` declarations from the `body → .jacobi-design`
+ * rule. Original CSS had `body { overflow-x: hidden }` which, once remapped
+ * to a wrapper DIV, turns the wrapper into a scrolling ancestor and breaks
+ * `position: sticky` for descendants like .mech-pin.
+ *
+ * The fix: leave the wrapper at `overflow: visible` and let the real <body>
+ * (set in app/layout.tsx) own horizontal clipping.
+ */
+transformed = transformed.replace(
+  /(\.jacobi-design\s*\{[^}]*?)\s*overflow(?:-[xy])?\s*:\s*[^;}]+;?/g,
+  "$1",
+);
 
 const header =
   "/*\n" +

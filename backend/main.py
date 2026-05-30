@@ -196,135 +196,211 @@ def _detect_currency(text: str, url: str) -> tuple[str, float]:
     return "USD", 1.0
 
 
+# Price text patterns: "AED 11,600.00", "$1,234.56", "€42.50", "₹2,499", "INR 2499.00"
+# Captures: (currency_symbol_or_code, numeric_value)
+PRICE_TEXT_RE = re.compile(
+    r'(AED|QAR|SAR|OMR|KWD|BHD|INR|PKR|BDT|NPR|GBP|EUR|JPY|SGD|AUD|CAD|CHF|SEK|NOK|DKK|CNY|KRW|THB|MYR|IDR|PHP|VND|TRY|ZAR|BRL|MXN|RUB|PLN|CZK|HUF|ILS|EGP|NGN|USD|US\$|\$|£|€|¥|₹|₽|₩|₪|₫|₱|د\.إ|ر\.ع|ر\.ق|د\.ك|د\.ب|﷼)'
+    r'\s*'
+    r'(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)',
+    re.IGNORECASE,
+)
+
+
+def _parse_price_text(t: str) -> Optional[Tuple[float, str]]:
+    """Parse a string like 'AED 11,600.00' or '$1,234.56' into (numeric, currency_code).
+    Returns None if no recognizable price.
+    """
+    if not t:
+        return None
+    m = PRICE_TEXT_RE.search(t)
+    if not m:
+        return None
+    sym_or_code = m.group(1).upper().replace('US$', '$').replace(' ', '')
+    raw = m.group(2).replace(',', '').replace(' ', '')
+    try:
+        val = float(raw)
+    except ValueError:
+        return None
+    # Map symbol → code
+    code = CURRENCY_SYMBOL_MAP.get(sym_or_code, sym_or_code)
+    if sym_or_code == '$' or sym_or_code == 'USD':
+        code = 'USD'
+    return (val, code)
+
+
+def _to_usd(val: float, code: str) -> float:
+    if code == 'USD':
+        return val
+    rate = CURRENCY_RATES.get(code, 1.0)
+    return round(val * rate, 2)
+
+
 def parse_page_prices(html: str, url: str) -> List[float]:
+    """Extract the product price(s) from a page's HTML.
+
+    Strategy: prefer scoped, site-specific containers (Amazon's
+    #corePriceDisplay, Booking's [data-testid="price-and-discounted-price"])
+    and read the accessibility text (.a-offscreen) which carries the
+    canonical price + currency together. Fall back to JSON-LD and
+    regex only if scoped extraction fails.
+
+    Critical invariant: the SAME html should always produce the same
+    primary price. No "median of random numbers" guesses.
+    """
     results: List[float] = []
     url_lower = url.lower()
-    currency_code, rate = _detect_currency(html, url)
+    currency_code, _rate = _detect_currency(html, url)
     pr = PRICE_RANGES["default"]
     for domain, r in PRICE_RANGES.items():
         if domain in url_lower:
             pr = r
             break
 
-    def store(raw: float, cur: str = currency_code):
-        r = CURRENCY_RATES.get(cur, 1.0) if cur != "USD" else 1.0
-        conv = round(raw * r, 2)
-        if pr["min"] <= conv <= pr["max"]:
-            results.append(conv)
+    def store_usd(usd: float):
+        if usd and pr["min"] <= usd <= pr["max"]:
+            results.append(round(usd, 2))
 
-    # Try parsing with BeautifulSoup
+    def parse_and_store(text: str, fallback_currency: str = "USD"):
+        """Parse a raw price string, convert to USD, and store if in range."""
+        parsed = _parse_price_text(text)
+        if parsed:
+            val, code = parsed
+            store_usd(_to_usd(val, code))
+            return
+        # No currency symbol — try as bare number using fallback currency
+        n = _parse_number(text)
+        if n and n > 0:
+            store_usd(_to_usd(n, fallback_currency))
+
     try:
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "lxml")
 
-        def parse_price_text(el) -> Optional[str]:
-            if not el: return None
-            t = el.get_text(strip=True)
-            return t if t else None
+        # ── 1. SCOPED site-specific extraction (HIGHEST PRECISION) ──
+        # The strategy: find the MAIN PRODUCT PRICE container, then read
+        # the screen-reader accessibility text (.a-offscreen on Amazon,
+        # aria-label on Booking) which always carries currency + value
+        # together. Junk prices from related-items widgets are excluded
+        # because they live OUTSIDE these containers.
 
-        # JSON-LD structured data
-        for script in soup.select('script[type="application/ld+json"]'):
-            try:
-                data = json.loads(script.string)
-                items = []
-                if isinstance(data, dict):
-                    items.append(data)
-                    if "offers" in data:
-                        items.append(data["offers"])
-                    if "itemListElement" in data:
-                        items.extend(data["itemListElement"])
-                elif isinstance(data, list):
-                    items.extend(data)
-                for item in items:
-                    if not isinstance(item, dict): continue
-                    for key in ["price", "lowPrice", "highPrice", "priceSpecification"]:
-                        val = item.get(key, item if key == "priceSpecification" else None)
-                        if isinstance(val, dict):
-                            p = _parse_number(str(val.get("price", "0")))
-                            if p and p > 5:
-                                store(p, str(val.get("priceCurrency", currency_code)))
-                        elif val is not None:
-                            p = _parse_number(str(val))
-                            if p and p > 5:
-                                store(p, str(item.get("priceCurrency", currency_code)))
-            except Exception:
-                pass
+        if "amazon" in url_lower:
+            # Amazon's canonical price containers, in priority order.
+            # The product price is ALWAYS inside one of these. Anything
+            # outside is sidebars / "frequently bought" / accessories.
+            for container_id in [
+                "corePriceDisplay_desktop_feature_div",
+                "corePrice_feature_div",
+                "corePriceDisplay_mobile_feature_div",
+                "apex_desktop",
+                "apex_desktop_newAccordionRow",
+                "priceblock_ourprice",
+                "priceblock_dealprice",
+                "priceblock_saleprice",
+                "price_inside_buybox",
+                "newBuyBoxPrice",
+            ]:
+                container = soup.find(id=container_id)
+                if not container:
+                    continue
+                # .a-offscreen carries the accessibility-grade canonical
+                # price text including currency. Prefer it over the
+                # visible whole/fraction spans.
+                offscreen = container.select_one(".a-offscreen")
+                if offscreen and offscreen.get_text(strip=True):
+                    parse_and_store(offscreen.get_text(strip=True))
+                    if results:
+                        # Got the main price — done. Skip the noise.
+                        break
 
-        # Domain-specific CSS selectors
-        if "booking.com" in url_lower:
+        elif "booking.com" in url_lower:
+            # Booking puts the displayed price in a data-testid container.
+            # The text inside has the value + currency.
             for sel in [
                 '[data-testid="price-and-discounted-price"]',
                 '[data-testid="price-for-x-nights"]',
-                '[data-testid*="rate"]',
-                '[data-testid*="room"]',
-                '[data-testid*="price"]',
-                'div[data-testid="hprt-table"]',
-                '[class*="bui-price"]',
-                '[data-price-currency]',
-                '[class*="prco-"]',
-                '[class*="-price-"]',
-                '[itemprop="price"]',
                 '.bui-price-display__value',
-                '.sr_gs_price',
-                '.avble',
-                '.hotel_price',
-                '.price_link',
-                'span[class*="price"]',
-                'div[class*="price"]',
             ]:
-                for el in soup.select(sel):
-                    t = parse_price_text(el)
-                    if t and len(t) < 100:
-                        n = _parse_number(t)
-                        if n and pr["min"] <= n <= pr["max"] * 2:
-                            detected = currency_code
-                            for sym, c in CURRENCY_SYMBOL_MAP.items():
-                                if sym in t: detected = c; break
-                            store(n, detected)
-
-        elif "amazon" in url_lower:
-            for sel in ['span.a-price span.a-offscreen', 'span.a-price-whole', '.a-price .a-offscreen', '.a-color-base']:
-                for el in soup.select(sel):
-                    t = parse_price_text(el)
-                    if t:
-                        n = _parse_number(t)
-                        if n: store(n, "USD")
+                for el in soup.select(sel)[:8]:  # cap to avoid related-items noise
+                    txt = el.get_text(" ", strip=True)
+                    if txt and len(txt) < 80:
+                        parse_and_store(txt)
 
         elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
-            for sel in ['[class*="fare"]', '[class*="price"]', '[data-testid*="price"]', '.total-amount', '.amount']:
-                for el in soup.select(sel):
-                    t = parse_price_text(el)
-                    if t:
-                        n = _parse_number(t)
-                        if n and n > 10: store(n, currency_code)
-
-        else:
             for sel in [
-                '[data-price]', '[itemprop="price"]', '.price', '.amount',
-                '.product-price', '.sale-price', '[class*="price"]',
-                '[data-testid*="price"]', '.total', '[class*="ProductPrice"]',
-                '[class*="product-price"]', '[class*="sale-price"]',
+                '[data-testid*="fare-price"]',
+                '[data-testid*="price-display"]',
+                '[class*="fare-price"]',
+                '.total-amount',
+            ]:
+                for el in soup.select(sel)[:8]:
+                    txt = el.get_text(" ", strip=True)
+                    if txt and len(txt) < 80:
+                        parse_and_store(txt, fallback_currency=currency_code)
+
+        # ── 2. JSON-LD structured data ──
+        # ONLY run if scoped extraction got nothing. On Amazon, JSON-LD
+        # also includes related products / accessories — running it after
+        # we already have the main product price would pollute the result.
+        if not results:
+            for script in soup.select('script[type="application/ld+json"]'):
+                try:
+                    data = json.loads(script.string or "{}")
+                except Exception:
+                    continue
+                items = []
+                if isinstance(data, dict):
+                    items.append(data)
+                    if "offers" in data and isinstance(data["offers"], (dict, list)):
+                        items.extend(data["offers"]) if isinstance(data["offers"], list) else items.append(data["offers"])
+                elif isinstance(data, list):
+                    items.extend(data)
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    for price_key in ("price", "lowPrice", "highPrice"):
+                        if price_key in item:
+                            raw = str(item[price_key])
+                            n = _parse_number(raw)
+                            if n and n > 0:
+                                cur = str(item.get("priceCurrency", currency_code)).upper()
+                                store_usd(_to_usd(n, cur))
+
+        # ── 3. OpenGraph / meta tag price (last resort) ──
+        if not results:
+            for sel in [
+                'meta[property="product:price:amount"]',
+                'meta[property="og:price:amount"]',
+                'meta[itemprop="price"]',
             ]:
                 for el in soup.select(sel):
-                    t = parse_price_text(el)
-                    if t and len(t) < 60:
-                        n = _parse_number(t)
-                        if n and n > 5: store(n, currency_code)
+                    content = el.get("content", "")
+                    if not content:
+                        continue
+                    n = _parse_number(content)
+                    if n and n > 0:
+                        cur_el = soup.select_one('meta[property="product:price:currency"], meta[property="og:price:currency"]')
+                        cur = (cur_el.get("content") if cur_el else currency_code) or currency_code
+                        store_usd(_to_usd(n, cur.upper()))
     except Exception:
         pass
 
     # Deduplicate
     results = sorted(set(round(p, 2) for p in results))
 
-    # Trim outliers if enough results
-    if len(results) >= 6:
+    # ── Safety: trim extreme outliers (top/bottom 10%) only when we
+    # have plenty of prices and they're widely distributed. Prevents
+    # one stray price from skewing a comparison. ──
+    if len(results) >= 8:
         cut = max(1, len(results) // 10)
         results = results[cut:-cut]
 
-    # Aggressive regex fallback when BS finds too few
-    if len(results) < 2:
-        visible = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-        visible = re.sub(r'<style[^>]*>.*?</style>', '', visible, flags=re.DOTALL | re.IGNORECASE)
+    # Aggressive regex fallback ONLY when nothing else worked. With
+    # proper scoped extraction + JSON-LD + og:price above, this should
+    # almost never fire. When it does, we pick the most frequent price
+    # (which is almost always the product price — it appears in the
+    # buy box, the breadcrumb, the cart, etc.) rather than the median.
+    if not results:
+        visible = _visible_text(html)
 
         # All currency patterns with symbols and codes
         currency_patterns = [
@@ -341,48 +417,110 @@ def parse_page_prices(html: str, url: str) -> List[float]:
             (r'£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 1.270, 5, 50000),
         ]
 
+        from collections import Counter
+        raw_hits: List[float] = []
         for pat, conv_rate, min_val, max_val in currency_patterns:
             for m in re.finditer(pat, visible):
                 try:
                     v = float(m.group(1).replace(",", ""))
                     usd = v * conv_rate
                     if min_val <= v <= max_val and pr["min"] <= usd <= pr["max"]:
-                        results.append(round(usd, 2))
+                        raw_hits.append(round(usd, 2))
                 except ValueError:
                     continue
 
-        # Last resort: find any reasonable number near currency context
-        if len(results) < 2:
-            for m in re.finditer(r'(?:price|total|fare|amount|cost|rate|night|room|person)\s*:?\s*\$?\s*(\d{2,5}(?:\.\d{2})?)', visible, re.IGNORECASE):
-                try:
-                    v = float(m.group(1).replace(",", ""))
-                    if pr["min"] <= v <= pr["max"]:
-                        results.append(round(v, 2))
-                except ValueError:
-                    continue
-
-        # If nothing found at all, try parsing numbers from any visible text as last resort
-        if len(results) < 1:
-            currency_code_names = "|".join(CURRENCY_RATES.keys())
-            for m in re.finditer(rf'(?:{currency_code_names})\s*(\d{{2,6}}(?:\.\d{{2}})?)', visible, re.IGNORECASE):
-                try:
-                    code = m.group(0).split()[0]
-                    v = float(m.group(1).replace(",", ""))
-                    rate_c = CURRENCY_RATES.get(code.upper(), 1.0)
-                    usd = v * rate_c
-                    if pr["min"] <= usd <= pr["max"]:
-                        results.append(round(usd, 2))
-                except ValueError:
-                    continue
+        if raw_hits:
+            # The PRODUCT price almost always appears 2+ times on the
+            # page (buy-box + breadcrumb + cart preview + JSON-LD).
+            # Picking the most frequent value vastly out-performs the
+            # median of a noisy distribution.
+            most_common = Counter(raw_hits).most_common(3)
+            for price, _count in most_common:
+                results.append(price)
 
     return sorted(set(round(p, 2) for p in results))
 
 
+def _visible_text(html: str) -> str:
+    """Extract VISIBLE rendered text from HTML — strips <script>, <style>,
+    <!-- comments -->, and HTML tags. Without this, bot-detection matches
+    on stuff like `<!-- leaving comment so file is not blocked --> in
+    legitimate HTML and false-positives the whole probe."""
+    try:
+        from bs4 import BeautifulSoup, Comment
+        soup = BeautifulSoup(html, "lxml")
+        for el in soup(["script", "style", "noscript", "head"]):
+            el.decompose()
+        for c in soup.find_all(string=lambda t: isinstance(t, Comment)):
+            c.extract()
+        return soup.get_text(" ", strip=True).lower()
+    except Exception:
+        # Best-effort regex strip if BS4 fails.
+        t = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
+        t = re.sub(r"<script[^>]*>.*?</script>", "", t, flags=re.DOTALL | re.IGNORECASE)
+        t = re.sub(r"<style[^>]*>.*?</style>", "", t, flags=re.DOTALL | re.IGNORECASE)
+        t = re.sub(r"<[^>]+>", " ", t)
+        return t.lower()
+
+
+# Bot signals must be strong phrases that actually appear on bot-block
+# landing pages — not common substrings. "blocked" alone is a false
+# positive (appears in product reviews, in JS code, in HTML comments).
+HONEYPOT_PHRASES = [
+    "verify you are a human",
+    "please confirm you are human",
+    "please verify that you are not a robot",
+    "i'm not a robot",
+    "captcha",
+    "complete the captcha",
+    "access denied",
+    "your access to this site has been limited",
+    "your request has been blocked",
+    "your ip has been blocked",
+    "automated query",
+    "unusual traffic from your computer",
+    "rate limit exceeded",
+    "too many requests from your network",
+    "to continue, please verify",
+    "checking your browser before accessing",
+    "this challenge will help us ensure",
+]
+
+
 def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
-    t = text.lower()
-    for signal in HONEYPOT_SIGNALS:
-        if signal in t:
-            return True, signal
+    """Return (blocked, signal_phrase). Operates on VISIBLE rendered text
+    only — won't false-positive on dev comments or JS strings inside
+    legitimate pages.
+
+    Two layers:
+      1. Explicit honeypot phrases in visible text.
+      2. Suspiciously thin page heuristic — a 1KB HTML response with no
+         visible text is almost always a block / JS-only shell that we
+         can't probe meaningfully via direct HTTP.
+    """
+    visible = _visible_text(text)
+
+    # 1. Explicit phrases (most reliable signal).
+    short = len(visible) < 4000
+    head = visible[:4000]
+    for phrase in HONEYPOT_PHRASES:
+        if phrase in head:
+            return True, phrase
+        if short and phrase in visible:
+            return True, phrase
+
+    # 2. Heuristic thin-page check.
+    #   - Empty body (0 bytes) means the upstream rejected us outright.
+    #   - <800 bytes of HTML with <80 chars visible = either a block page
+    #     or a JS-only shell. Either way we can't extract a price.
+    if not text:
+        return True, "empty response"
+    if len(text) < 800 and len(visible) < 80:
+        return True, "empty page (blocked / JS-only shell)"
+    if len(text) < 12000 and len(visible) < 200:
+        # Booking.com's blocker returns ~8KB of pure-JS shell.
+        return True, "JS-only shell (likely blocked)"
+
     return False, None
 
 

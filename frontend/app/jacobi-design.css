@@ -590,32 +590,35 @@
   box-shadow: 0 30px 60px -30px rgba(0,0,0,0.55);
   will-change: transform, opacity;
 }
-/* Vertical fan-out:
-   At p=0 all layers stacked at center (back layers slightly dimmed so depth reads).
-   At p=1 layers spread top-to-bottom with subtle Z-depth so it still feels 3D.
-   Each layer fades in as it separates — gives the disassembly a clear story. */
+/* Vertical fan-out — staggered reveal.
+   At p=0 ONLY the surface (l1) is visible; back layers are opacity 0 so
+   no ghost text bleeds through. As scroll progresses, each subsequent
+   layer fades in (clamp keeps the curve clean) AND translates into its
+   own vertical position with subtle Z-depth for a real 3D feel. */
 .jacobi-design .mech-layer.l1 {
   transform: translate3d(0, calc(var(--p) * -190px), 0);
+  opacity: 1;
   z-index: 5;
 }
 .jacobi-design .mech-layer.l2 {
   transform: translate3d(0, calc(var(--p) * -95px), calc(var(--p) * 30px));
-  opacity: calc(0.35 + var(--p) * 0.65);
+  /* Fade in fast once scroll begins. 0% at p=0, 100% by p=0.4. */
+  opacity: clamp(0, calc(var(--p) * 2.5), 1);
   z-index: 4;
 }
 .jacobi-design .mech-layer.l3 {
   transform: translate3d(0, 0, calc(var(--p) * 55px));
-  opacity: calc(0.25 + var(--p) * 0.75);
+  opacity: clamp(0, calc((var(--p) - 0.15) * 2.5), 1);
   z-index: 3;
 }
 .jacobi-design .mech-layer.l4 {
   transform: translate3d(0, calc(var(--p) * 95px), calc(var(--p) * 80px));
-  opacity: calc(0.15 + var(--p) * 0.85);
+  opacity: clamp(0, calc((var(--p) - 0.3) * 2.5), 1);
   z-index: 2;
 }
 .jacobi-design .mech-layer.l5 {
   transform: translate3d(0, calc(var(--p) * 190px), calc(var(--p) * 105px));
-  opacity: calc(0.08 + var(--p) * 0.92);
+  opacity: clamp(0, calc((var(--p) - 0.45) * 2.5), 1);
   z-index: 1;
 }
 

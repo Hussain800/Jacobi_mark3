@@ -21,14 +21,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Favicon: tiny [ ] bracket mark in cobalt on the brand canvas.
             Matches the BrandLockup wordmark (JAC[ ]BI) so the tab icon
             isn't a stale diamond/SVG from before the lockup existed. */}
+        {/* Favicon — the [] composed-bracket mark drawn as two SVG paths
+            so it matches the wordmark exactly (no font dependency). */}
         <link
           rel="icon"
-          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080b'/><text x='16' y='23' text-anchor='middle' font-family='Major Mono Display, JetBrains Mono, monospace' font-size='20' font-weight='400' fill='%236e92ff'>[ ]</text></svg>"
+          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080b'/><g fill='none' stroke='%236e92ff' stroke-width='3' stroke-linecap='square'><path d='M 16 6 L 8 6 L 8 26 L 16 26'/><path d='M 18 6 L 26 6 L 26 26 L 18 26'/></g></svg>"
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&family=Major+Mono+Display&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>

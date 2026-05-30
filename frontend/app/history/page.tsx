@@ -85,8 +85,16 @@ export default function HistoryPage() {
     (async () => {
       try {
         // Primary: ask the backend for this user's probes (user-scoped, RLS-safe).
+        // Refresh the session if needed — see lib/billing.ts authHeaders() for
+        // the full reasoning. tl;dr: getSession() doesn't refresh stale tokens.
         const sb = createClient();
-        const { data: { session } } = await sb.auth.getSession();
+        let { data: { session } } = await sb.auth.getSession();
+        if (!session?.access_token) {
+          try {
+            const { data: refreshed } = await sb.auth.refreshSession();
+            session = refreshed.session;
+          } catch { /* truly signed out */ }
+        }
         const token = session?.access_token;
         const apiBase = getClientApiBase();
         const headers: Record<string, string> = {};

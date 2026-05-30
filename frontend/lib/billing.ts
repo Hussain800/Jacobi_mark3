@@ -18,9 +18,25 @@ export type Plan = {
 
 async function authHeaders(): Promise<Record<string, string>> {
   const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // getSession() is a LOCAL READ — it does NOT refresh expired tokens.
+  // Supabase access tokens expire after ~1 hour; on a long-lived tab this
+  // can return either null or a stale token. Handing the backend a stale
+  // token gets the user a 401 ("Sign in to upgrade.") even though they
+  // look signed-in in the nav (nav uses getUser(), which auto-revalidates).
+  //
+  // Pattern: try getSession() first; if no live access_token, force a
+  // refreshSession() and try again. Only return empty headers if there's
+  // truly no recoverable session.
+  let { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    try {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      session = refreshed.session;
+    } catch {
+      // Refresh failed — leave session null. Caller gets 401 and can
+      // prompt sign-in cleanly.
+    }
+  }
   const token = session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

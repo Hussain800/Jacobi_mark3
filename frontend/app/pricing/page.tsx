@@ -46,7 +46,15 @@ export default function PricingPage() {
 
   useEffect(() => {
     const sb = createClient();
+    // Reactive auth state — without onAuthStateChange, signedIn was captured
+    // once on mount and never updated. That stranded the page in the wrong
+    // state after sign-in / refresh / sign-out in another tab, which made
+    // "Go Pro" silently 401 on the backend even though the user was signed
+    // in. Listener keeps the button text and onSubscribe gate consistent.
     sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(!!session?.user);
+    });
     (async () => {
       try {
         const sync = await syncSubscription();
@@ -57,6 +65,9 @@ export default function PricingPage() {
       } catch {}
       fetchPlan().then(setPlan).catch(() => {});
     })();
+    return () => {
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function onSubscribe() {

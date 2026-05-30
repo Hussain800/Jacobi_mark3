@@ -385,8 +385,16 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     try {
       // SaaS auth: attach Supabase access token so the backend can identify
       // the user, run the quota check, and stamp user_id on the saved probe.
+      // getSession() is a local read; refresh if the token is missing/stale
+      // so a long-lived tab doesn't surface as a spurious "Sign in" prompt.
       const sb = createClient();
-      const { data: { session } } = await sb.auth.getSession();
+      let { data: { session } } = await sb.auth.getSession();
+      if (!session?.access_token) {
+        try {
+          const { data: refreshed } = await sb.auth.refreshSession();
+          session = refreshed.session;
+        } catch { /* user truly signed out — backend will 401 */ }
+      }
       const token = session?.access_token;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;

@@ -34,9 +34,24 @@ const ENTERPRISE_EMAIL = "wearejacobi@outlook.com";
 const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
 
+// Backend pre-warm helper. Render's free tier spins down after 15 min
+// idle, costing 30–60 s of cold-start latency on the next request. We
+// fire this on page mount AND on Pro-button hover so the click itself
+// rarely pays the boot tax. Fire-and-forget; failures are fine — the
+// goal of the request is the wake-up side effect.
+function warmBackend() {
+  try {
+    const apiBase =
+      (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_URL : "") ||
+      "http://localhost:8000";
+    fetch(`${apiBase}/health`, { method: "GET", cache: "no-store" }).catch(() => {});
+  } catch { /* SSR or pre-hydration — skip silently */ }
+}
+
 export default function PricingPage() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<"loading" | "waking">("loading");
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
 
@@ -73,6 +88,12 @@ export default function PricingPage() {
   async function onSubscribe() {
     setError(null);
     setBusy(true);
+    setBusyLabel("loading");
+    // After 3 s, switch the button label to "Waking server…" so the user
+    // knows we're not stuck — this is the Render free-tier cold-start
+    // window (~30–60 s). The pre-warm on page mount usually means we
+    // never hit this branch.
+    const wakeTimer = setTimeout(() => setBusyLabel("waking"), 3000);
     try {
       if (!signedIn) {
         const sb = createClient();
@@ -87,17 +108,23 @@ export default function PricingPage() {
     } catch (e: unknown) {
       setError((e as { message?: string })?.message || "Checkout failed. Try again.");
     } finally {
+      clearTimeout(wakeTimer);
       setBusy(false);
+      setBusyLabel("loading");
     }
   }
 
   async function onManage() {
     setBusy(true);
+    setBusyLabel("loading");
+    const wakeTimer = setTimeout(() => setBusyLabel("waking"), 3000);
     try {
       const url = await startPortal();
       if (url) window.location.href = url;
     } finally {
+      clearTimeout(wakeTimer);
       setBusy(false);
+      setBusyLabel("loading");
     }
   }
 
@@ -207,17 +234,23 @@ export default function PricingPage() {
                   <button
                     className="btn btn-primary plan-cta"
                     onClick={onManage}
+                    onMouseEnter={warmBackend}
                     disabled={busy}
                   >
-                    {busy ? "Opening…" : "Manage billing"}
+                    {busy
+                      ? busyLabel === "waking" ? "Waking server…" : "Opening…"
+                      : "Manage billing"}
                   </button>
                 ) : (
                   <button
                     className="btn btn-primary plan-cta"
                     onClick={onSubscribe}
+                    onMouseEnter={warmBackend}
                     disabled={busy}
                   >
-                    {busy ? "Loading…" : signedIn ? "Go Pro" : "Sign in to subscribe"}
+                    {busy
+                      ? busyLabel === "waking" ? "Waking server…" : "Loading…"
+                      : signedIn ? "Go Pro" : "Sign in to subscribe"}
                   </button>
                 )}
                 {error && (

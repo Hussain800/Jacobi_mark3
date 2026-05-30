@@ -737,7 +737,11 @@ class BrightDataMCPClient:
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if response.status_code == 200:
-                return {"success": True, "text": response.text, "elapsed_ms": elapsed_ms}
+                body = response.text or ""
+                if len(body) < 500:
+                    print(f"[BD-FALLBACK] BD empty response ({len(body)}B) for {identity.get('id','?')} -> direct HTTP", flush=True)
+                    return await self._direct_http_fetch(url, identity, timeout_s)
+                return {"success": True, "text": body, "elapsed_ms": elapsed_ms}
             # Auth / billing / zone / validation → silently fall back.
             if self._should_fallback(response.status_code, response.text):
                 print(f"[BD-FALLBACK] BD {response.status_code} for {identity.get('id','?')}: "
@@ -950,13 +954,14 @@ async def run_full_probe(url: str, name: str) -> dict:
 
 
 async def _run_probe_engine(session: dict, url: str) -> dict:
-    """Run the 24-agent probe engine.
+    """Run the 24-agent probe engine with progressive probing.
 
-    All 24 agents run in parallel with semaphore-limited concurrency.
-    BrightData mode: 25s timeout, 12 concurrent.
-    Direct HTTP mode: 15s timeout, 12 concurrent.
-    Early termination: if 8+ agents all return identical prices, remaining
-    agents are skipped (uniform pricing detected).
+    Phase 1: 8 fast agents (US-data proxies) run in parallel. If prices
+    are uniform (< 2% spread), finalize immediately and skip Phase 2.
+    This gives ~5s results for non-discriminating sites like Amazon.
+
+    Phase 2: Only launched when Phase 1 detects meaningful price variance.
+    Runs the remaining 16 agents for full statistical gradient analysis.
     """
     overall_start = time.time()
     bd = BrightDataMCPClient()
@@ -978,7 +983,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 25.0
-            sem_size = 12
+            sem_size = 16
         else:
             probe_timeout_s = 15.0
             sem_size = 12
@@ -987,6 +992,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
         async def _limited_agent(cfg):
             async with sem:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
+
         tasks = [_limited_agent(c) for c in AGENT_CONFIGS]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:

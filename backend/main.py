@@ -978,27 +978,19 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 60.0
-            wave_gap_s = WAVE_STAGGER_S
-            for wi in range(3):
-                configs = WAVE_CONFIGS.get(wi, [])
-                if not configs:
-                    continue
-                tasks = [launch_single_agent(bd, url, c, probe_timeout_s) for c in configs]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for r in results:
-                    _ingest_agent(r)
-                if wi < 2 and wave_gap_s > 0:
-                    await asyncio.sleep(wave_gap_s)
+            sem_size = 8
         else:
             probe_timeout_s = 15.0
-            sem = asyncio.Semaphore(12)
-            async def _limited_agent(cfg):
-                async with sem:
-                    return await launch_single_agent(bd, url, cfg, probe_timeout_s)
-            tasks = [_limited_agent(c) for c in AGENT_CONFIGS]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                _ingest_agent(r)
+            sem_size = 12
+
+        sem = asyncio.Semaphore(sem_size)
+        async def _limited_agent(cfg):
+            async with sem:
+                return await launch_single_agent(bd, url, cfg, probe_timeout_s)
+        tasks = [_limited_agent(c) for c in AGENT_CONFIGS]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            _ingest_agent(r)
 
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]

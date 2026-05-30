@@ -801,6 +801,25 @@ async def health():
         and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in {"placeholder", "none", "todo", "tbd"}
     )
     fully_live = bd_key_ok and bd_zone_ok
+
+    # Supabase config sanity — exposes WHETHER env vars look right without
+    # leaking secrets. If supabase_url_shape is "bad_path", every Bearer
+    # token will silently fail JWT verify because get_optional_user() will
+    # GET <bad-url>/auth/v1/user and hit a 404. Common cause: someone
+    # pasted the Supabase REST URL (https://x.supabase.co/rest/v1) into
+    # SUPABASE_URL instead of the project URL (https://x.supabase.co).
+    from auth_user import _supabase_url, _supabase_anon_key
+    sb_url = _supabase_url()
+    sb_anon = _supabase_anon_key()
+    if not sb_url:
+        sb_shape = "missing"
+    elif sb_url.endswith("/rest/v1") or "/rest/v1" in sb_url or sb_url.endswith("/"):
+        sb_shape = "bad_path"
+    elif sb_url.startswith("https://") and sb_url.endswith(".supabase.co"):
+        sb_shape = "ok"
+    else:
+        sb_shape = "unknown"
+
     return {
         "status": "healthy",
         "service": "jacobi-backend",
@@ -809,6 +828,8 @@ async def health():
         # Back-compat: older monitors look at this single boolean.
         "brightdata_configured": fully_live,
         "probe_mode": "live" if fully_live else "direct_http_fallback",
+        "supabase_url_shape": sb_shape,
+        "supabase_anon_key_configured": bool(sb_anon),
     }
 
 

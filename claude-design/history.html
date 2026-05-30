@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — History</title>
+<link rel="stylesheet" href="assets/jacobi.css" />
+</head>
+<body data-screen-label="History">
+
+<div id="nav-root"></div>
+
+<main class="page">
+  <section class="section page-top">
+    <div class="wrap">
+      <div class="sec-head" data-reveal>
+        <span class="eyebrow"><span class="dot">●</span> Logbook</span>
+        <h1 class="display sec-title">Your <span class="serif-i" style="color:var(--cobalt-bright)">history</span></h1>
+        <p class="sec-lede sec">Every probe you've run, kept on this device. Re-open any case to replay the&nbsp;deployment.</p>
+      </div>
+
+      <div class="logbook" id="logbook"></div>
+    </div>
+  </section>
+</main>
+
+<div id="footer-root"></div>
+
+<script src="assets/chrome.js"></script>
+<script>
+(function () {
+  const GROUPS = [
+    { day: 'Today', items: [
+      ['Leela Palace Bangalore', 'booking.com', 'aggressive', 71, 82, '14:22'],
+      ['Sony WH-1000XM5', 'amazon.com', 'selective', 18, 41, '11:08'],
+    ]},
+    { day: 'Yesterday', items: [
+      ['DXB → KTM Flights', 'google.com', 'aggressive', 118, 79, '19:51'],
+      ['Knickerbocker NYC', 'booking.com', 'progressive', 96, 64, '16:40'],
+      ['Tokyo Hotels search', 'booking.com', 'progressive', 52, 61, '09:12'],
+    ]},
+    { day: 'Earlier this week', items: [
+      ['United · ORD → LHR', 'united.com', 'aggressive', 144, 88, 'Mon'],
+      ['Best Buy · MacBook Air', 'bestbuy.com', 'uniform', 0, 12, 'Mon'],
+      ['Marriott · Manhattan', 'marriott.com', 'progressive', 61, 56, 'Sun'],
+    ]},
+  ];
+  const COL = { uniform: '#3ad79f', selective: '#d8b06a', progressive: '#ff9d52', aggressive: '#ff5468' };
+  const host = document.getElementById('logbook');
+  GROUPS.forEach(g => {
+    const sec = document.createElement('div');
+    sec.className = 'log-group'; sec.setAttribute('data-reveal', '');
+    sec.innerHTML = `<div class="log-day label-mono">${g.day}</div>`;
+    const list = document.createElement('div'); list.className = 'log-list';
+    g.items.forEach(it => {
+      const [name, h, topo, spread, idx, time] = it;
+      const c = COL[topo];
+      const a = document.createElement('a');
+      a.className = 'log-row'; a.href = 'probe.html';
+      a.innerHTML =
+        `<span class="log-time mono">${time}</span>
+         <span class="log-target"><span class="bt-name">${name}</span><span class="bt-host">${h}</span></span>
+         <span class="topo-pill" style="color:${c};border-color:${c}55;background:${c}12"><span class="d" style="background:${c}"></span>${topo}</span>
+         <span class="log-spread mono">${spread === 0 ? '—' : '+$' + spread}</span>
+         <span class="log-idx mono">${idx}<span class="muted">/100</span></span>
+         <span class="log-arrow">→</span>`;
+      list.appendChild(a);
+    });
+    sec.appendChild(list); host.appendChild(sec);
+  });
+})();
+</script>
+</body>
+</html>

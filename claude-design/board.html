@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — Leaderboard</title>
+<link rel="stylesheet" href="assets/jacobi.css" />
+</head>
+<body data-screen-label="Leaderboard">
+
+<div id="nav-root"></div>
+
+<main class="page">
+  <section class="section page-top">
+    <div class="wrap">
+      <div class="sec-head" data-reveal>
+        <span class="eyebrow"><span class="dot">●</span> Global board</span>
+        <h1 class="display sec-title">The <span class="serif-i" style="color:var(--cobalt-bright)">leaderboard</span></h1>
+        <p class="sec-lede sec">Every public probe, ranked by how aggressively the target prices by identity. Updated as the network reports&nbsp;in.</p>
+      </div>
+
+      <div class="board-stats" data-reveal>
+        <div class="bstat"><div class="bstat-num serif tnum"><span data-count="48217">0</span></div><div class="label-mono">probes logged</div></div>
+        <div class="bstat"><div class="bstat-num serif tnum">+$<span data-count="119">0</span></div><div class="label-mono">median spread</div></div>
+        <div class="bstat"><div class="bstat-num serif tnum"><span data-count="68">0</span>%</div><div class="label-mono">price by identity</div></div>
+        <div class="bstat"><div class="bstat-num serif" style="color:var(--over)">Aggressive</div><div class="label-mono">worst topology</div></div>
+      </div>
+
+      <div class="board-scroll" data-reveal>
+        <div class="board-table" id="board-table">
+          <div class="bt-head">
+            <span>#</span><span>Target</span><span>Topology</span><span>Discrimination index</span><span>Spread</span><span>Agents</span><span>Probed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="footer-root"></div>
+
+<script src="assets/chrome.js"></script>
+<script>
+(function () {
+  const ROWS = [
+    ['United · ORD → LHR', 'united.com', 'aggressive', 88, 144, '22/24', '2m'],
+    ['Leela Palace Bangalore', 'booking.com', 'aggressive', 82, 71, '22/24', '14m'],
+    ['Expedia · DXB → KTM', 'expedia.com', 'aggressive', 79, 118, '20/24', '38m'],
+    ['Knickerbocker NYC', 'booking.com', 'progressive', 64, 96, '21/24', '2h'],
+    ['Hotels · Tokyo search', 'hotels.com', 'progressive', 61, 52, '23/24', '5h'],
+    ['Skyscanner · LHR → JFK', 'skyscanner.net', 'progressive', 58, 84, '19/24', '3h'],
+    ['Marriott · Manhattan', 'marriott.com', 'progressive', 56, 61, '24/24', '9h'],
+    ['Delta · ATL → LAX', 'delta.com', 'selective', 44, 39, '22/24', '7h'],
+    ['Sony WH-1000XM5', 'amazon.com', 'selective', 41, 18, '24/24', '1h'],
+    ['Best Buy · MacBook Air', 'bestbuy.com', 'uniform', 12, 0, '24/24', '12h'],
+  ];
+  const COL = { uniform: '#3ad79f', selective: '#d8b06a', progressive: '#ff9d52', aggressive: '#ff5468' };
+  const tbl = document.getElementById('board-table');
+  ROWS.forEach((r, i) => {
+    const [name, host, topo, idx, spread, agents, time] = r;
+    const c = COL[topo];
+    const row = document.createElement('div');
+    row.className = 'bt-row'; row.setAttribute('data-reveal', '');
+    row.innerHTML =
+      `<span class="bt-rank">${String(i + 1).padStart(2, '0')}</span>
+       <span class="bt-target"><span class="bt-name">${name}</span><span class="bt-host">${host}</span></span>
+       <span class="topo-pill" style="color:${c};border-color:${c}55;background:${c}12"><span class="d" style="background:${c}"></span>${topo}</span>
+       <span class="bt-index"><span class="bt-index-bar"><span class="bt-index-fill" style="width:${idx}%"></span></span><span class="bt-index-val">${idx}</span></span>
+       <span class="bt-spread ${spread === 0 ? 'zero' : ''}">${spread === 0 ? '—' : '+$' + spread}</span>
+       <span class="bt-agents">${agents}</span>
+       <span class="bt-time">${time} ago</span>`;
+    tbl.appendChild(row);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,281 +1,281 @@
+"use client";
+
+/**
+ * Leaderboard / Board — Claude Design port.
+ *
+ * Decision note (per CEO question "do we even need this?"):
+ *   YES. JACOBI's whole pitch is "expose hidden pricing discrimination."
+ *   A public board makes the exposure shareable and journalism-friendly.
+ *   It's also a free distribution / SEO surface (every probe is a
+ *   shareable record). We do not show the user's URL unless they opted
+ *   to publish (default is public per /api/leaderboard).
+ *
+ * Data flow:
+ *   - Fetch `${apiBase}/api/leaderboard`
+ *   - Show real rows when present
+ *   - Show an honest empty state ("No probes have been published yet.
+ *     Run one to be the first on the board.") when none
+ *
+ * The fake "demo" rows from the static Claude Design prototype are
+ * NOT shipped here — we don't fabricate numbers.
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Script from "next/script";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
+import { getClientApiBase } from "../../lib/api-base";
+import "../jacobi-design.css";
 
-interface LeaderboardEntry {
-  target_url: string;
-  target_name: string;
-  topology_class: string;
-  discrimination_index: number;
-  max_price_spread: number;
-  baseline_price: number;
-  successful_agents: number;
-  total_agents: number;
-  timestamp: string;
+interface BoardEntry {
+  target_url?: string;
+  target_name?: string;
+  topology_class?: string;
+  discrimination_index?: number;
+  max_price_spread?: number;
+  baseline_price?: number | null;
+  successful_agents?: number;
+  total_agents?: number;
+  timestamp?: string;
+  // older response shape
+  name?: string;
+  savings?: number;
+  url?: string;
 }
 
-interface LeaderboardResponse {
-  entries: LeaderboardEntry[];
-  total_probes: number;
-  last_updated: string;
+interface BoardResponse {
+  entries?: BoardEntry[];
+  total_probes?: number;
+  last_updated?: string;
 }
 
-const FALLBACK_ENTRIES: LeaderboardEntry[] = [
-  {
-    target_url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html",
-    target_name: "Leela Palace Bangalore",
-    topology_class: "progressive",
-    discrimination_index: 87.1,
-    max_price_spread: 57,
-    baseline_price: 245,
-    successful_agents: 22,
-    total_agents: 24,
-    timestamp: "2026-05-25T20:00:00Z",
-  },
-  {
-    target_url: "https://www.booking.com/hotel/us/the-knickerbocker.html",
-    target_name: "Knickerbocker NYC",
-    topology_class: "aggressive",
-    discrimination_index: 92.4,
-    max_price_spread: 185,
-    baseline_price: 350,
-    successful_agents: 21,
-    total_agents: 24,
-    timestamp: "2026-05-24T14:30:00Z",
-  },
-  {
-    target_url: "https://www.amazon.com/s?k=wireless+headphones",
-    target_name: "Wireless Headphones (Amazon)",
-    topology_class: "selective",
-    discrimination_index: 34.2,
-    max_price_spread: 18,
-    baseline_price: 65,
-    successful_agents: 24,
-    total_agents: 24,
-    timestamp: "2026-05-23T09:15:00Z",
-  },
-  {
-    target_url: "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB",
-    target_name: "DXB to KTM Flights",
-    topology_class: "uniform",
-    discrimination_index: 8.5,
-    max_price_spread: 34,
-    baseline_price: 420,
-    successful_agents: 20,
-    total_agents: 24,
-    timestamp: "2026-05-22T16:45:00Z",
-  },
-  {
-    target_url: "https://www.booking.com/searchresults.html?ss=Tokyo",
-    target_name: "Tokyo Hotels Search",
-    topology_class: "progressive",
-    discrimination_index: 63.8,
-    max_price_spread: 42,
-    baseline_price: 120,
-    successful_agents: 23,
-    total_agents: 24,
-    timestamp: "2026-05-21T11:00:00Z",
-  },
-];
+const TOPO_COLOR: Record<string, string> = {
+  uniform:     "#3ad79f",
+  selective:   "#d8b06a",
+  progressive: "#ff9d52",
+  aggressive:  "#ff5468",
+};
 
-function clsColor(c: string) {
-  switch (c) {
-    case "uniform": return "text-emerald-400";
-    case "selective": return "text-blue-400";
-    case "progressive": return "text-orange-400";
-    case "aggressive": return "text-rose-400";
-    default: return "text-white/30";
-  }
-}
-
-function clsBg(c: string) {
-  switch (c) {
-    case "uniform": return "bg-emerald-400/10 border-emerald-400/20";
-    case "selective": return "bg-blue-400/10 border-blue-400/20";
-    case "progressive": return "bg-orange-400/10 border-orange-400/20";
-    case "aggressive": return "bg-rose-400/10 border-rose-400/20";
-    default: return "bg-white/[0.03] border-white/[0.06]";
-  }
-}
-
-function formatDate(ts: string) {
+function host(url: string | undefined): string {
+  if (!url) return "—";
   try {
-    const d = new Date(ts);
-    return d.toLocaleDateString("en-US", {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-    });
+    return new URL(url).host;
   } catch {
-    return ts;
+    return url.replace(/^https?:\/\//, "").split("/")[0];
   }
 }
 
-function truncate(s: string, max = 30) {
-  return s.length > max ? s.slice(0, max) + "\u2026" : s;
+function timeAgo(ts: string | undefined): string {
+  if (!ts) return "—";
+  const t = new Date(ts).getTime();
+  if (!t) return "—";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60)        return `${Math.round(s)}s`;
+  if (s < 3600)      return `${Math.round(s / 60)}m`;
+  if (s < 86400)     return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
 }
 
-async function fetchLeaderboard(): Promise<LeaderboardResponse> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  try {
-    const res = await fetch(`${apiBase}/api/leaderboard?limit=20&min_agents=5`, {
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch {
-    return {
-      entries: FALLBACK_ENTRIES,
-      total_probes: FALLBACK_ENTRIES.length,
-      last_updated: new Date().toISOString(),
-    };
-  }
+function normalize(raw: BoardEntry): {
+  name: string; host: string; topology: string;
+  index: number; spread: number;
+  agents: string; time: string;
+} {
+  const name = raw.target_name || raw.name || (raw.target_url ? host(raw.target_url) : "Probe");
+  const hostname = host(raw.target_url || raw.url);
+  const topology = (raw.topology_class || "uniform").toLowerCase();
+  const index = Math.round(raw.discrimination_index ?? 0);
+  const spread = Math.round(raw.max_price_spread ?? raw.savings ?? 0);
+  const agents = `${raw.successful_agents ?? "—"}/${raw.total_agents ?? 24}`;
+  const time = `${timeAgo(raw.timestamp)} ago`;
+  return { name, host: hostname, topology, index, spread, agents, time };
 }
 
-export default async function LeaderboardPage() {
-  const data = await fetchLeaderboard();
-  const entries = data.entries;
-  const maxDi = entries.length > 0
-    ? Math.max(...entries.map(e => e.discrimination_index))
-    : 100;
+export default function LeaderboardPage() {
+  const [data, setData] = useState<BoardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const apiBase = getClientApiBase();
+
+  // Without this, [data-reveal] elements stay opacity:0 → page reads as blank.
+  useReveals();
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${apiBase}/api/leaderboard?limit=30`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => {
+        if (!active) return;
+        const list: BoardEntry[] = Array.isArray(d) ? d : d.entries || [];
+        setData({ entries: list, total_probes: d.total_probes, last_updated: d.last_updated });
+      })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [apiBase]);
+
+  const rows = useMemo(
+    () => (data?.entries || []).map(normalize),
+    [data?.entries],
+  );
+
+  /* Aggregate header stats — computed honestly from real rows */
+  const stats = useMemo(() => {
+    const total = data?.total_probes ?? rows.length;
+    const spreads = rows.map(r => r.spread).filter(n => n > 0).sort((a, b) => a - b);
+    const median = spreads.length
+      ? spreads[Math.floor(spreads.length / 2)]
+      : 0;
+    const aggressive = rows.filter(r => r.topology === "aggressive").length;
+    const aggressivePct = rows.length ? Math.round((aggressive / rows.length) * 100) : 0;
+    const worst = rows.reduce<string>(
+      (m, r) => (r.index > 0 && (TOPO_COLOR[r.topology] ? r.index : 0) > 0 && (m === "" || (TOPO_COLOR[r.topology] && r.topology === "aggressive")) ? r.topology : m),
+      "",
+    );
+    return { total, median, aggressivePct, worst };
+  }, [rows, data?.total_probes]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      {/* Nav header */}
-      <header className="h-12 border-b border-white/[0.06] flex items-center px-5 bg-black/80 backdrop-blur-xl shrink-0">
-        <Link href="/" className="flex items-center gap-2 mr-6">
-          <div className="w-5 h-5 rounded border border-emerald-400/30 flex items-center justify-center">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1.2">
-              <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-              <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
-            </svg>
-          </div>
-          <span className="text-sm font-medium tracking-tight text-white/90">JACOBI</span>
-        </Link>
-        <Link href="/chat" className="text-[11px] font-mono text-white/40 hover:text-white/80 transition-colors">
-          Back to probe
-        </Link>
-        <div className="ml-auto text-[9px] font-mono text-white/15">
-          {data.total_probes} probe{data.total_probes !== 1 ? "s" : ""} tracked
-        </div>
-      </header>
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-light tracking-tight text-white/90">Leaderboard</h1>
-            <p className="text-[11px] font-mono text-white/30 mt-1">
-              Probes ranked by discrimination index &mdash; most discriminatory first
-            </p>
-          </div>
-          <div className="text-[9px] font-mono text-white/15 text-right leading-relaxed">
-            <div>Last updated</div>
-            <div className="text-white/25">{formatDate(data.last_updated)}</div>
-          </div>
-        </div>
+      <DesignNav />
 
-        {entries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-12 h-12 rounded-full border border-white/[0.10] flex items-center justify-center mb-5">
-              <svg width="20" height="20" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1" className="opacity-40">
-                <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.4" />
-              </svg>
-            </div>
-            <p className="text-sm text-white/40 font-mono mb-4">No probes recorded yet.</p>
-            <Link
-              href="/chat"
-              className="px-4 py-2 text-sm font-mono text-white/70 border border-white/[0.12] rounded-lg hover:border-white/40 hover:text-white/90 transition-all"
-            >
-              Run your first probe &rarr;
-            </Link>
-          </div>
-        ) : (
-          <div className="border border-white/[0.06] rounded-xl overflow-hidden bg-white/[0.02]">
-            {/* Table header */}
-            <div className="hidden lg:grid grid-cols-[40px_2fr_1fr_1.5fr_1fr_1fr_1fr] gap-3 px-5 py-3 border-b border-white/[0.06] text-[9px] font-mono text-white/30 uppercase tracking-[0.1em]">
-              <span>#</span>
-              <span>Target</span>
-              <span>Topology</span>
-              <span>Discrimination Index</span>
-              <span>Spread</span>
-              <span>Agents</span>
-              <span>Date</span>
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Global board
+              </span>
+              <h1 className="display sec-title">
+                The{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  leaderboard
+                </span>
+              </h1>
+              <p className="sec-lede sec">
+                Every public probe, ranked by how aggressively the target
+                prices by identity. Updated as the network reports&nbsp;in.
+              </p>
             </div>
 
-            {entries.map((e, i) => {
-              const barPct = maxDi > 0 ? (e.discrimination_index / maxDi) * 100 : 0;
-              const barColor = e.discrimination_index >= 70 ? "bg-rose-400" : e.discrimination_index >= 40 ? "bg-orange-400" : e.discrimination_index >= 15 ? "bg-amber-400" : "bg-emerald-400";
-
-              return (
-                <div
-                  key={`${e.target_url}-${i}`}
-                  className="border-b border-white/[0.03] last:border-b-0 hover:bg-white/[0.03] transition-colors"
-                >
-                  {/* Desktop row */}
-                  <div className="hidden lg:grid grid-cols-[40px_2fr_1fr_1.5fr_1fr_1fr_1fr] gap-3 px-5 py-3.5 items-center">
-                    <span className="text-[11px] font-mono text-white/30 font-light">{i + 1}</span>
-                    <div className="min-w-0">
-                      <div className="text-[12px] text-white/70 font-mono truncate" title={e.target_url}>
-                        {truncate(e.target_name || e.target_url, 30)}
-                      </div>
-                    </div>
-                    <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border inline-block w-fit ${clsBg(e.topology_class)} ${clsColor(e.topology_class)}`}>
-                      {e.topology_class}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden max-w-[120px]">
-                        <div className={`h-full rounded-full ${barColor}/60`} style={{ width: `${barPct}%` }} />
-                      </div>
-                      <span className="text-[11px] font-mono text-white/80 w-12 text-right">{e.discrimination_index.toFixed(1)}</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-white/60">
-                      ${e.max_price_spread.toFixed(0)}
-                    </span>
-                    <span className="text-[10px] font-mono text-white/40">
-                      {e.successful_agents}/{e.total_agents}
-                    </span>
-                    <span className="text-[10px] font-mono text-white/30">
-                      {formatDate(e.timestamp)}
-                    </span>
-                  </div>
-
-                  {/* Mobile card */}
-                  <div className="lg:hidden px-4 py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="text-[10px] font-mono text-white/30 shrink-0">{i + 1}.</span>
-                        <span className="text-[12px] text-white/70 font-mono truncate">
-                          {truncate(e.target_name || e.target_url, 25)}
-                        </span>
-                      </div>
-                      <span className={`text-[8px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${clsBg(e.topology_class)} ${clsColor(e.topology_class)}`}>
-                        {e.topology_class}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden max-w-[100px]">
-                        <div className={`h-full rounded-full ${barColor}/60`} style={{ width: `${barPct}%` }} />
-                      </div>
-                      <span className="text-[10px] font-mono text-white/80">DI {e.discrimination_index.toFixed(1)}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[10px] font-mono text-white/40">
-                      <span>Spread: ${e.max_price_spread.toFixed(0)}</span>
-                      <span>Agents: {e.successful_agents}/{e.total_agents}</span>
-                      <span className="ml-auto">{formatDate(e.timestamp)}</span>
-                    </div>
-                  </div>
+            {/* Stats — only shown when there is real data */}
+            {!loading && rows.length > 0 && (
+              <div className="board-stats" data-reveal>
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">{stats.total.toLocaleString()}</div>
+                  <div className="label-mono">probes logged</div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">
+                    {stats.median > 0 ? `+$${stats.median}` : "—"}
+                  </div>
+                  <div className="label-mono">median spread</div>
+                </div>
+                <div className="bstat">
+                  <div className="bstat-num serif tnum">{stats.aggressivePct}%</div>
+                  <div className="label-mono">aggressive topology</div>
+                </div>
+                <div className="bstat">
+                  <div
+                    className="bstat-num serif"
+                    style={{ color: stats.worst ? TOPO_COLOR[stats.worst] : "var(--text-3)" }}
+                  >
+                    {stats.worst ? stats.worst.charAt(0).toUpperCase() + stats.worst.slice(1) : "—"}
+                  </div>
+                  <div className="label-mono">worst topology</div>
+                </div>
+              </div>
+            )}
 
-        <div className="mt-6 text-center">
-          <Link
-            href="/chat"
-            className="text-[11px] font-mono text-white/40 hover:text-white/70 transition-colors"
-          >
-            &larr; Back to probe
-          </Link>
-        </div>
-      </div>
+            {/* Loading */}
+            {loading && (
+              <div style={{ padding: "80px 0", textAlign: "center", color: "var(--text-3)", fontFamily: "var(--mono)", fontSize: 12 }}>
+                Loading board…
+              </div>
+            )}
+
+            {/* Empty state — honest */}
+            {!loading && rows.length === 0 && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  No published probes yet
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  {error
+                    ? "The leaderboard service didn't respond. If you have backend access, check /api/leaderboard."
+                    : "The board fills as people publish their probes. Run one to be the first on the board."}
+                </p>
+                <Link href="/chat" className="btn btn-primary">
+                  Run a probe →
+                </Link>
+              </div>
+            )}
+
+            {/* Table */}
+            {!loading && rows.length > 0 && (
+              <div className="board-scroll" data-reveal>
+                <div className="board-table">
+                  <div className="bt-head">
+                    <span>#</span>
+                    <span>Target</span>
+                    <span>Topology</span>
+                    <span>Discrimination index</span>
+                    <span>Spread</span>
+                    <span>Agents</span>
+                    <span>Probed</span>
+                  </div>
+                  {rows.map((r, i) => {
+                    const c = TOPO_COLOR[r.topology] || "var(--text-3)";
+                    return (
+                      <div key={i} className="bt-row" data-reveal>
+                        <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="bt-target">
+                          <span className="bt-name">{r.name}</span>
+                          <span className="bt-host">{r.host}</span>
+                        </span>
+                        <span
+                          className="topo-pill"
+                          style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
+                        >
+                          <span className="d" style={{ background: c }} />
+                          {r.topology}
+                        </span>
+                        <span className="bt-index">
+                          <span className="bt-index-bar">
+                            <span className="bt-index-fill" style={{ width: `${r.index}%` }} />
+                          </span>
+                          <span className="bt-index-val">{r.index}</span>
+                        </span>
+                        <span className={`bt-spread ${r.spread === 0 ? "zero" : ""}`}>
+                          {r.spread === 0 ? "—" : `+$${r.spread}`}
+                        </span>
+                        <span className="bt-agents">{r.agents}</span>
+                        <span className="bt-time">{r.time}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <DesignFooter />
     </div>
   );
 }

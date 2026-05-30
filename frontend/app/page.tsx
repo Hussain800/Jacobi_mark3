@@ -1,355 +1,587 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import {
-  ArrowRight, Zap, Search, Globe, Smartphone, Cookie,
-  ExternalLink, Crosshair, Terminal, Network,
-} from "lucide-react";
-import {
-  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
-} from "recharts";
-import MatricesCursor from "../components/MatricesCursor";
-import { useScrollReveal } from "../components/ScrollReveal";
-import Tactical3DNetwork from "../components/Tactical3DNetwork";
+/**
+ * Landing page — Phase B faithful Claude Design integration.
+ *
+ * Same DOM/CSS as /design-preview, but:
+ *   - chrome.js + landing.js are no longer loaded; their nav/footer/reveal/
+ *     counter/typed behaviors are owned by React components / hooks here.
+ *   - Hero form + CTA form submit to /chat?url=<encoded URL>.
+ *   - Nav links route to real Next.js paths (/chat, /history, /leaderboard,
+ *     /pricing) and reflect active route via usePathname.
+ *   - Sign-in is wired to Supabase OAuth via DesignNavAuth.
+ *   - scene.js (WebGL bg) + globe.js (Three.js earth) + Three.js CDN
+ *     still load verbatim from /public.
+ */
 
-/* ─── Simulation data (preserved from agents) ───────────────────────── */
+import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Script from "next/script";
+import "./jacobi-design.css";
+import DesignNav from "../components/design/DesignNav";
+import DesignFooter from "../components/design/DesignFooter";
+import {
+  useCounters,
+  useEvidenceBars,
+  useEvidenceIndexFill,
+  useGlobe,
+  useMechScroll,
+  useReveals,
+  useTyped,
+} from "../components/design/landing-interactions";
 
-const SIMS = [
-  {
-    name: "UA182 JFK to LHR", url: "https://united.com/flights/jfk-lhr-ua182",
-    baseline: 640, min: 498, spread: 142, severity: "severe",
-    classLabel: "Algorithmic Personalized Exploitation",
-    data: [
-      { label: "Rural Iowa (VPN)", price: 498 },
-      { label: "Bangalore (VPN)", price: 512 },
-      { label: "London (Direct)", price: 590 },
-      { label: "Manhattan (Direct)", price: 640 },
-      { label: "Tokyo (Direct)", price: 625 },
-    ],
-    advice: "Route through a rural Iowa proxy. Clear cookie footprints before searching.",
-  },
-  {
-    name: "Paris Grand Hotel", url: "https://booking.com/hotels/paris-grand-suite",
-    baseline: 385, min: 300, spread: 85, severity: "moderate",
-    classLabel: "Static Price Discrimination",
-    data: [
-      { label: "Android Mobile", price: 300 },
-      { label: "Linux Firefox", price: 320 },
-      { label: "Windows Edge", price: 360 },
-      { label: "macOS Safari", price: 385 },
-    ],
-    advice: "Spoof user-agent to Android Mobile. Save $85.",
-  },
-  {
-    name: "SaaSDB Enterprise", url: "https://saasdb.io/pricing/enterprise",
-    baseline: 120, min: 120, spread: 0, severity: "none",
-    classLabel: "Uniform Pricing",
-    data: [{ label: "Any Profile", price: 120 }],
-    advice: "No profile-based markup detected. Direct purchase is safe.",
-  },
+/* ─── Phase card icons (ported from landing.js's ICONS map) ───────── */
+
+const PhaseIcons = {
+  target: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="16" cy="16" r="11" />
+      <circle cx="16" cy="16" r="6" />
+      <circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none" />
+      <path d="M16 1v6M16 25v6M1 16h6M25 16h6" strokeLinecap="round" />
+    </svg>
+  ),
+  swarm: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="16" cy="16" r="3" />
+      <circle cx="6" cy="7" r="2" />
+      <circle cx="26" cy="7" r="2" />
+      <circle cx="6" cy="25" r="2" />
+      <circle cx="26" cy="25" r="2" />
+      <path d="M8 8.5 13.5 14M24 8.5 18.5 14M8 23.5 13.5 18M24 23.5 18.5 18" strokeLinecap="round" />
+    </svg>
+  ),
+  patterns: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M4 24 11 15l5 4 8-11" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="11" cy="15" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="19" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="24" cy="8" r="1.8" fill="currentColor" stroke="none" />
+      <path d="M4 28h24" strokeLinecap="round" opacity=".4" />
+    </svg>
+  ),
+  verdict: (
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M16 3 27 8v8c0 7-4.6 11-11 13C9.6 27 5 23 5 16V8z" strokeLinejoin="round" />
+      <path d="M11 16l3.5 3.5L21 12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+};
+
+/* ─── Evidence sample (verbatim from landing.js evidence()) ───────── */
+
+const EVIDENCE_SAMPLE: Array<{
+  profile: string;
+  price: number;
+  state: "over" | "good" | "normal";
+  tag?: "top" | "baseline";
+}> = [
+  { profile: "iPhone · Manhattan · direct", price: 642, state: "over",   tag: "top" },
+  { profile: "Safari · Tokyo · direct",     price: 612, state: "normal" },
+  { profile: "Edge · London · direct",      price: 596, state: "normal" },
+  { profile: "Firefox · Bangalore · VPN",   price: 512, state: "normal" },
+  { profile: "Chrome · rural Iowa · VPN",   price: 498, state: "good",   tag: "baseline" },
 ];
 
-const DISCRIMINATION_FACTORS = [
-  { icon: Globe, label: "Location", desc: "High-income ZIP codes see higher prices. A VPN to a lower-income area changes the price instantly." },
-  { icon: Smartphone, label: "Device", desc: "Premium devices signal willingness to pay. Android users often see lower prices than iPhone users." },
-  { icon: Cookie, label: "Cookies", desc: "Search history and loyalty status feed real-time pricing models. Clear them and the price drops." },
-  { icon: ExternalLink, label: "Referrer", desc: "Coming from Kayak? The site knows you are comparing. Prices adjust accordingly." },
-];
-
-/* ─── Hooks ─────────────────────────────────────────────────────────── */
-
-function useInView(threshold = 0.1) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setInView(true); obs.unobserve(el); }
-    }, { threshold });
-    obs.observe(el); return () => obs.disconnect();
-  }, [threshold]);
-  return [ref, inView] as const;
-}
-
-/* ─── Severity badge ────────────────────────────────────────────────── */
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const m: Record<string, string> = {
-    severe: "text-rose-300 border-rose-400/25 bg-rose-400/5",
-    moderate: "text-amber-300 border-amber-400/25 bg-amber-400/5",
-    none: "text-emerald-300 border-emerald-400/25 bg-emerald-400/5",
-  };
-  return <span className={`text-[11px] font-mono px-2 py-0.5 rounded-sm border uppercase tracking-wider ${m[severity] || ""}`}>{severity}</span>;
-}
-
-/* ─── Main Page ─────────────────────────────────────────────────────── */
+const EV_LO = Math.min(...EVIDENCE_SAMPLE.map((s) => s.price));
+const EV_HI = Math.max(...EVIDENCE_SAMPLE.map((s) => s.price));
+const evColorFor = (s: "over" | "good" | "normal") =>
+  s === "over" ? "var(--over)" : s === "good" ? "var(--good)" : "rgba(151,160,177,0.55)";
+const evPriceColorFor = (s: "over" | "good" | "normal") =>
+  s === "over" ? "var(--over)" : s === "good" ? "var(--good)" : "var(--text-2)";
 
 export default function LandingPage() {
-  const [mounted, setMounted] = useState(false);
-  const [activeSim, setActiveSim] = useState(0);
-  const [demoInView, setDemoInView] = useState(false);
-  const demoRef = useRef<HTMLDivElement>(null);
-  const heroRef = useScrollReveal({ direction: "none" });
-  const probRef = useScrollReveal({ direction: "up", distance: 24 });
-  const howRef = useScrollReveal({ direction: "up", distance: 24, delay: 80 });
+  const router = useRouter();
+  const heroInputRef = useRef<HTMLInputElement>(null);
+  const ctaInputRef  = useRef<HTMLInputElement>(null);
+  const [heroUrl, setHeroUrl] = useState("");
+  const [ctaUrl,  setCtaUrl]  = useState("");
 
-  useEffect(() => { setMounted(true); }, []);
+  /* Mount the design-prototype interactions on this page.
+     Each hook respects prefers-reduced-motion. */
+  useReveals();
+  useCounters();
+  useTyped();
+  useGlobe();
+  useMechScroll();
+  useEvidenceBars();
+  useEvidenceIndexFill();
 
-  useEffect(() => {
-    const el = demoRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setDemoInView(true); obs.unobserve(el); }
-    }, { threshold: 0.15 });
-    obs.observe(el); return () => obs.disconnect();
-  }, []);
-
-  const sim = SIMS[activeSim];
-  const chartColors = sim.data.map(d => {
-    if (d.price <= sim.min * 1.05) return "#00d992";
-    if (d.price <= sim.baseline) return "#60a5fa";
-    return "#fb7185";
-  });
+  const launch = useCallback(
+    (raw: string) => {
+      let v = raw.trim();
+      if (!v) return false;
+      if (!/^https?:\/\//i.test(v)) v = `https://${v}`;
+      router.push(`/chat?url=${encodeURIComponent(v)}`);
+      return true;
+    },
+    [router],
+  );
 
   return (
-    <>
-      <style>{`
-        html { scroll-behavior: smooth; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-        .fade-up { animation: fadeUp 0.7s cubic-bezier(0.22,1,0.36,1) both; }
-        @media (prefers-reduced-motion: reduce) { .fade-up { animation: none; opacity: 1; transform: none; } }
-      `}</style>
+    <div className="jacobi-design">
+      {/* Three.js global — must load before globe.js */}
+      <Script
+        src="https://unpkg.com/three@0.150.1/build/three.min.js"
+        strategy="afterInteractive"
+      />
+      {/* scene.js paints the WebGL background; globe.js exposes
+          window.JacobiGlobe used by useGlobe(); effects.js adds the
+          dual-element cursor, magnetic primary CTAs, hero parallax,
+          and [data-tilt] tilt. */}
+      <Script src="/jacobi-design/scene.js"    strategy="afterInteractive" />
+      <Script src="/jacobi-design/globe-v2.js" strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js"  strategy="afterInteractive" />
 
-      <div className="min-h-screen bg-[#07080c] text-[#d4d4d4] font-mono overflow-x-hidden selection:bg-emerald-400/20 selection:text-white">
-        <MatricesCursor />
+      <DesignNav />
 
-        {/* ═══════════════ HERO ═══════════════ */}
-        <section className="relative min-h-screen flex items-center px-6 lg:px-12 overflow-hidden">
-          {/* Ambient gradient behind agents */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-[10%] left-[5%] w-[500px] h-[500px] rounded-full bg-emerald-400/3 blur-[120px]" />
-            <div className="absolute bottom-[20%] right-[10%] w-[300px] h-[300px] rounded-full bg-blue-400/2 blur-[100px]" />
-          </div>
-
-          {/* Right: 24-agent 3D network (sits in background) */}
-          <div className="absolute right-0 top-0 w-full lg:w-[55%] h-full pointer-events-none">
-            <Tactical3DNetwork isActive={true} />
-          </div>
-
-          <div className="relative z-10 max-w-xl" style={{ animation: mounted ? "fadeUp 0.9s cubic-bezier(0.22,1,0.36,1) both" : "none" }}>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-sm border border-emerald-400/20 bg-emerald-400/4 mb-10">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] text-emerald-400/70 tracking-widest uppercase">24 agents &middot; 4 axes</span>
+      {/* ════════════ HERO ════════════ */}
+      <header className="hero" id="hero">
+        <div className="hero-grid wrap">
+          <div className="hero-copy">
+            <div className="chip" data-reveal>
+              <span className="pulse" />{" "}
+              24 identities · 4 vectors · evidence-grade
             </div>
 
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[0.92] text-white mb-6">
-              They see
-              <br />
-              <span className="text-emerald-400">you coming</span>
+            <h1 className="hero-h1" data-reveal>
+              Your browser is a{" "}
+              <span className="serif-i hero-accent">bargaining&nbsp;tool</span>
+              <span className="hero-sub-rule" />
             </h1>
 
-            <p className="text-sm sm:text-base text-[#888] leading-relaxed mb-8 max-w-md">
-              Jacobi deploys 24 adversarial agents to detect hidden pricing discrimination.
-              Each agent probes as a different shopper. The price difference is the truth.
+            <p className="hero-typed mono" data-reveal>
+              <span id="typed" />
+              <span className="caret">▌</span>
             </p>
 
-            <div className="flex items-center gap-3 mb-12">
-              <Link
-                href="/chat"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-sm bg-emerald-400 text-[#07080c] font-bold text-xs hover:bg-emerald-300 transition-all duration-300 active:scale-[0.97]"
-              >
-                <Crosshair className="w-3.5 h-3.5" />
-                Start probing
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-              <a
-                href="#how"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-sm border border-white/10 text-[#888] text-xs hover:text-white hover:border-white/30 transition-all duration-300"
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                How it works
-              </a>
-            </div>
-
-            {/* Trust bar — replaced hero-metrics */}
-            <div className="flex items-center gap-5 text-[10px] text-[#555]">
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400/60" />BrightData</span>
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-blue-400/60" />DeepSeek AI</span>
-              <span className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400/60" />OpenCode</span>
-            </div>
-          </div>
-        </section>
-
-        {/* ═══════════════ THE PROBLEM ═══════════════ */}
-        <section className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28" ref={probRef.ref} style={probRef.style}>
-          <div className="max-w-6xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">The problem</span>
-            <p className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-white leading-[1.1] max-w-3xl mb-16">
-              The internet prices you by who it thinks you are.
+            <p className="hero-para sec" data-reveal>
+              JACOBI deploys 24 shopper profiles against your URL and
+              surfaces the pricing&nbsp;discrimination algorithms hide behind
+              your digital&nbsp;fingerprint.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-14 gap-y-10">
-              {DISCRIMINATION_FACTORS.map((f, i) => (
-                <div key={i} className="flex items-start gap-4" style={{ animation: mounted ? `fadeUp 0.6s both` : "none", animationDelay: `${i * 0.12}s` }}>
-                  <div className="shrink-0 w-10 h-10 rounded-sm bg-emerald-400/5 border border-emerald-400/15 flex items-center justify-center">
-                    <f.icon className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-white mb-1">{f.label}</div>
-                    <div className="text-xs text-[#777] leading-relaxed">{f.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-14 border border-white/[0.04] bg-white/[0.01] p-6 max-w-xl">
-              <p className="text-xs text-[#999] leading-relaxed">
-                &ldquo;The same flight can cost $320 or $380 depending on your location, device, and cookies. That is not a bug. It is the algorithm.&rdquo;
-              </p>
-              <p className="text-[10px] text-[#555] mt-3 font-mono">verified across 10,000+ probes</p>
-            </div>
-          </div>
-        </section>
-
-        {/* ═══════════════ LIVE PROBE SIMULATOR ═══════════════ */}
-        <section ref={demoRef} className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28 bg-white/[0.005]">
-          <div className="max-w-6xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">Live simulation</span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
-              See pricing discrimination in action
-            </h2>
-            <p className="text-xs text-[#777] mb-10 max-w-lg">
-              Select a scenario to see how different shopper profiles get different prices for the same product.
-            </p>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Scenario selector */}
-              <div className="flex flex-col gap-2">
-                {SIMS.map((s, i) => (
-                  <button key={i} onClick={() => setActiveSim(i)}
-                    className={`text-left px-4 py-3 border text-xs font-mono transition-all duration-300 ${
-                      activeSim === i
-                        ? "border-emerald-400/30 bg-emerald-400/5 text-white"
-                        : "border-white/[0.04] text-[#666] hover:text-[#999] hover:border-white/[0.10]"}`}>
-                    <div className="text-[9px] tracking-wider uppercase mb-1 opacity-50">{s.classLabel}</div>
-                    <div className="font-semibold">{s.name}</div>
-                    <div className="text-[10px] mt-1 opacity-40">Spread: ${s.spread}</div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Chart */}
-              <div className="lg:col-span-2 border border-white/[0.04] bg-white/[0.01] p-6">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <div className="text-sm font-semibold text-white mb-1">{sim.name}</div>
-                    <SeverityBadge severity={sim.severity} />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[9px] text-[#555] uppercase tracking-wider">Savings opportunity</div>
-                    <div className="text-2xl font-bold text-emerald-400">${sim.spread}</div>
-                  </div>
-                </div>
-
-                {(demoInView || mounted) && (
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={sim.data} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.02)" />
-                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.04)" }} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }} axisLine={{ stroke: "rgba(255,255,255,0.04)" }} />
-                        <Tooltip contentStyle={{ background: "#0a0b10", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "2px", fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#d4d4d4" }} />
-                        <Bar dataKey="price" radius={[1, 1, 0, 0]}>
-                          {sim.data.map((_, i) => <Cell key={i} fill={chartColors[i]} />)}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-
-                <div className="mt-5 flex items-start gap-3 border border-white/[0.04] bg-white/[0.01] p-4">
-                  <div className="w-5 h-5 rounded-full bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[9px] text-emerald-400 font-bold">!</span>
-                  </div>
-                  <p className="text-xs text-[#888] leading-relaxed">{sim.advice}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ═══════════════ HOW IT WORKS ═══════════════ */}
-        <section id="how" className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28" ref={howRef.ref} style={howRef.style}>
-          <div className="max-w-3xl mx-auto">
-            <span className="text-[10px] text-[#555] tracking-[0.2em] uppercase mb-4 block">How it works</span>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-16">
-              From URL to verdict in seconds.
-            </h2>
-
-            <div className="space-y-12">
-              {[
-                { num: "01", title: "Paste a URL", desc: "Any product or booking page. Flights, hotels, e-commerce." },
-                { num: "02", title: "24 agents deploy", desc: "Each agent assumes a unique profile across location, device, cookies, and referrer." },
-                { num: "03", title: "AI analyzes", desc: "DeepSeek and Gemini compare prices across all 24 profiles for significant differentials." },
-                { num: "04", title: "Get the verdict", desc: "Plain English: exactly how much you are overpaying and exactly what to do about it." },
-              ].map((s, i) => (
-                <div key={i} className="flex items-start gap-6 group" style={{ animation: mounted ? `fadeUp 0.6s both` : "none", animationDelay: `${i * 0.15}s` }}>
-                  <div className="shrink-0 w-10 h-10 rounded-sm border border-white/[0.06] bg-white/[0.01] flex items-center justify-center group-hover:border-emerald-400/30 group-hover:bg-emerald-400/5 transition-all duration-300">
-                    <span className="text-[11px] text-[#555] group-hover:text-emerald-400 transition-colors">{s.num}</span>
-                  </div>
-                  <div className="pt-1.5">
-                    <div className="text-sm font-semibold text-white mb-1">{s.title}</div>
-                    <div className="text-xs text-[#777] leading-relaxed">{s.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ═══════════════ CTA ═══════════════ */}
-        <section className="border-t border-white/[0.04] px-6 lg:px-12 py-20 lg:py-28">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
-              Stop overpaying.
-            </h2>
-            <p className="text-xs text-[#777] mb-8 max-w-xs mx-auto">
-              One URL is all it takes. Jacobi probes, analyzes, and tells you exactly what to do.
-            </p>
-            <Link
-              href="/chat"
-              className="inline-flex items-center gap-3 px-8 py-4 rounded-sm bg-emerald-400 text-[#07080c] font-bold text-xs hover:bg-emerald-300 transition-all duration-300 active:scale-[0.97]"
+            <form
+              className="probe-instrument"
+              data-reveal
+              id="probe-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!launch(heroUrl)) heroInputRef.current?.focus();
+              }}
             >
-              <Crosshair className="w-4 h-4" />
-              Launch the probe
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </section>
-
-        {/* ═══════════════ FOOTER ═══════════════ */}
-        <footer className="border-t border-white/[0.04] px-6 lg:px-12 py-10">
-          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-sm border border-emerald-400/30 flex items-center justify-center">
-                <Crosshair className="w-3 h-3 text-emerald-400" />
+              <div className="pi-row">
+                <span className="pi-meta">
+                  <span className="pi-glyph">⌖</span> 24 agents
+                </span>
+                <input
+                  ref={heroInputRef}
+                  id="probe-input"
+                  className="pi-input"
+                  type="text"
+                  inputMode="url"
+                  value={heroUrl}
+                  onChange={(e) => setHeroUrl(e.target.value)}
+                  placeholder="paste a flight, hotel or product URL"
+                  spellCheck="false"
+                  autoComplete="off"
+                  aria-label="Paste a URL to probe"
+                />
+                <button className="pi-submit" type="submit">
+                  Inspect <span className="pi-arrow">→</span>
+                </button>
               </div>
-              <span className="text-sm font-semibold text-white">JACOBI</span>
-              <span className="text-[9px] text-[#555]">pricing transparency</span>
-            </div>
-            <div className="flex items-center gap-6 text-[11px]">
-              <Link href="/chat" className="text-[#666] hover:text-white transition-colors">Probe</Link>
-              <Link href="/history" className="text-[#666] hover:text-white transition-colors">History</Link>
-              <a href="#how" className="text-[#666] hover:text-white transition-colors">How it works</a>
-            </div>
-            <div className="text-[9px] text-[#444]">
-              BrightData
+              <span className="pi-rule" />
+            </form>
+
+            <div className="hero-proof label-mono" data-reveal>
+              4 discrimination vectors <span className="sep">·</span>{" "}
+              verdict in seconds <span className="sep">·</span>{" "}
+              no login required
             </div>
           </div>
-        </footer>
-      </div>
-    </>
+
+          {/* globe */}
+          <div className="globe-stage" id="globe-stage" aria-hidden="true">
+            <canvas id="globe" className="globe-canvas" />
+            <div className="globe-readout mono">
+              <div className="gr-row">
+                <span className="gr-led" />
+                <span id="gr-status">sample deployment</span>
+              </div>
+              <div className="gr-row gr-count">
+                <span id="gr-count">00</span>
+                <span className="gr-of">/ 24 identities</span>
+              </div>
+              <div className="gr-meta">JFK → LHR · UA182 · residential mesh · demo cycle</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="hero-scrollcue label-mono">
+          <span>scroll</span>
+          <span className="cue-line" />
+        </div>
+      </header>
+
+      {/* ════════════ STAT BAND — honest, no fake aggregate numbers ═════════════ */}
+      <section className="statband divider-top">
+        <div className="wrap statband-grid">
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="24">0</span>
+            </div>
+            <div className="label-mono">Identities per probe</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="4">0</span>
+            </div>
+            <div className="label-mono">Discrimination vectors</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="3">0</span>
+            </div>
+            <div className="label-mono">Network tiers</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
+              ~60s
+            </div>
+            <div className="label-mono">Typical probe time</div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ MECHANISM ════════════ */}
+      <section className="section divider-top" id="mechanism">
+        <div className="wrap">
+          <div className="sec-head" data-reveal>
+            <span className="eyebrow">
+              <span className="dot">●</span> The mechanism
+            </span>
+            <h2 className="display sec-title">
+              The anatomy of a{" "}
+              <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                probe
+              </span>
+            </h2>
+            <p className="sec-lede sec">
+              Watch the price disassemble. Each axis of your digital identity
+              peels away to reveal what was actually driving the&nbsp;markup.
+            </p>
+          </div>
+
+          <div className="mech-scene" id="mech-scene">
+            <div className="mech-pin">
+              <div className="mech-stack" id="mech-stack">
+                <div className="mech-layer l1">
+                  <div className="ml-head">
+                    <span className="ml-tag">surface</span>
+                    <span className="ml-name">what you see</span>
+                  </div>
+                  <div className="ml-body">
+                    <div className="ml-axis">$640</div>
+                    <div className="ml-detail">
+                      UA182 · JFK → LHR · the price on your screen
+                    </div>
+                  </div>
+                </div>
+                <div className="mech-layer l2">
+                  <div className="ml-head">
+                    <span className="ml-tag">layer 01 · location</span>
+                    <span className="ml-name">IP geolocation</span>
+                  </div>
+                  <div className="ml-body">
+                    <div className="ml-axis serif-i">Manhattan</div>
+                    <div className="ml-detail">
+                      high-income · low elasticity →{" "}
+                      <span className="ml-delta-up">+41% premium</span>
+                    </div>
+                  </div>
+                  <div className="ml-price">
+                    $640 <span className="muted">← $454 baseline</span>
+                  </div>
+                </div>
+                <div className="mech-layer l3">
+                  <div className="ml-head">
+                    <span className="ml-tag">layer 02 · device</span>
+                    <span className="ml-name">user-agent · canvas</span>
+                  </div>
+                  <div className="ml-body">
+                    <div className="ml-axis serif-i">iPhone 15 Pro</div>
+                    <div className="ml-detail">
+                      premium device →{" "}
+                      <span className="ml-delta-up">+13% premium</span>
+                    </div>
+                  </div>
+                  <div className="ml-price">– $24 on Android</div>
+                </div>
+                <div className="mech-layer l4">
+                  <div className="ml-head">
+                    <span className="ml-tag">layer 03 · cookies</span>
+                    <span className="ml-name">visit history</span>
+                  </div>
+                  <div className="ml-body">
+                    <div className="ml-axis serif-i">Aged · 90-day</div>
+                    <div className="ml-detail">
+                      loyalty cohort →{" "}
+                      <span className="ml-delta-up">+4% loyalty tax</span>
+                    </div>
+                  </div>
+                  <div className="ml-price">– $11 on a fresh session</div>
+                </div>
+                <div className="mech-layer l5">
+                  <div className="ml-head">
+                    <span className="ml-tag">layer 04 · referrer</span>
+                    <span className="ml-name">traffic source</span>
+                  </div>
+                  <div className="ml-body">
+                    <div className="ml-axis serif-i">Direct</div>
+                    <div className="ml-detail">
+                      no comparison signal →{" "}
+                      <span className="ml-delta-up">+5% direct premium</span>
+                    </div>
+                  </div>
+                  <div className="ml-price">– $17 from Kayak</div>
+                </div>
+              </div>
+
+              <div className="mech-progress" aria-hidden="true">
+                <span data-step="0">surface</span>
+                <span data-step="1">location</span>
+                <span data-step="2">device</span>
+                <span data-step="3">cookies</span>
+                <span data-step="4">referrer</span>
+              </div>
+
+              <div className="mech-caption" aria-hidden="true">
+                <strong>Scroll.</strong> The price you see is five decisions
+                deep. JACOBI peels them&nbsp;back.
+              </div>
+            </div>
+          </div>
+
+          <div className="phases" style={{ marginTop: "40px" }}>
+            <div className="phase card card-hairtop" data-reveal>
+              <div className="phase-n mono">01</div>
+              <div className="phase-ico" data-ico="target">{PhaseIcons.target}</div>
+              <h3 className="phase-title">Submit your target</h3>
+              <p className="phase-body sec">
+                Drop any product, flight, or booking URL into the scanner. If
+                it carries a price tag, JACOBI can find its real range.
+              </p>
+            </div>
+            <div className="phase card card-hairtop" data-reveal>
+              <div className="phase-n mono">02</div>
+              <div className="phase-ico" data-ico="swarm">{PhaseIcons.swarm}</div>
+              <h3 className="phase-title">The swarm launches</h3>
+              <p className="phase-body sec">
+                24 identities disperse across four discrimination axes —
+                location, device, cookies, referrer — striking the URL in
+                coordinated waves.
+              </p>
+            </div>
+            <div className="phase card card-hairtop" data-reveal>
+              <div className="phase-n mono">03</div>
+              <div className="phase-ico" data-ico="patterns">{PhaseIcons.patterns}</div>
+              <h3 className="phase-title">Patterns emerge</h3>
+              <p className="phase-body sec">
+                Every response is cross-referenced. Statistical outliers
+                become evidence. Pricing bias becomes readable data.
+              </p>
+            </div>
+            <div className="phase card card-hairtop" data-reveal>
+              <div className="phase-n mono">04</div>
+              <div className="phase-ico" data-ico="verdict">{PhaseIcons.verdict}</div>
+              <h3 className="phase-title">Read the verdict</h3>
+              <p className="phase-body sec">
+                A plain-English breakdown of what you'd save with a different
+                profile — and exactly which vector was used to overcharge&nbsp;you.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ EVIDENCE ════════════ */}
+      <section className="section divider-top" id="evidence">
+        <div className="wrap">
+          <div className="sec-head" data-reveal>
+            <span className="eyebrow">
+              <span className="dot">●</span> Evidence · full readout
+            </span>
+            <h2 className="display sec-title">
+              UA182 &nbsp;
+              <span className="muted" style={{ fontWeight: 500 }}>
+                JFK → LHR
+              </span>
+            </h2>
+            <p className="sec-lede sec">
+              Five identities, five prices. The same seat on the same flight —
+              and the gap between them.
+            </p>
+          </div>
+
+          <div className="evidence-grid">
+            <div className="evidence-rows" id="evidence-rows" data-reveal>
+              {EVIDENCE_SAMPLE.map((s, i) => {
+                const w = Math.max(6, ((s.price - EV_LO) / (EV_HI - EV_LO)) * 100);
+                return (
+                  <div key={i} className="ev-row">
+                    <div>
+                      <div className="ev-row-head">
+                        <span className="ev-profile">{s.profile}</span>
+                        {s.tag && (
+                          <span className={`ev-tag ${s.tag}`}>{s.tag}</span>
+                        )}
+                      </div>
+                      <div className="ev-bar">
+                        <div
+                          className="ev-bar-fill"
+                          data-w={w}
+                          style={{
+                            background: evColorFor(s.state),
+                            transform: "scaleX(0)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className="ev-price"
+                      style={{ color: evPriceColorFor(s.state) }}
+                    >
+                      ${s.price}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <aside className="evidence-verdict card" data-reveal>
+              <div className="topology-badge">
+                <span className="tb-dot" /> Progressive
+              </div>
+              <div className="ev-spread-label label-mono">Hidden premium</div>
+              <div className="ev-spread serif tnum">
+                +$<span data-count="144" data-evidence>0</span>
+              </div>
+              <div className="ev-spread-sub mono">29% over baseline · per ticket</div>
+
+              <div className="ev-index">
+                <div className="evi-top">
+                  <span className="label-mono">Discrimination index</span>
+                  <span className="evi-val mono">
+                    71<span className="muted">/100</span>
+                  </span>
+                </div>
+                <div className="evi-track">
+                  <div
+                    className="evi-fill"
+                    style={{ ["--w" as string]: "71%" } as React.CSSProperties}
+                  />
+                </div>
+              </div>
+
+              <p className="ev-note sec">
+                An <span style={{ color: "var(--over)" }}>iPhone in Manhattan</span> paid{" "}
+                <span style={{ color: "var(--over)" }}>$144 more</span> than an{" "}
+                <span className="good">Android in rural Iowa</span> — same cabin, same date.
+                The driver was <strong style={{ color: "var(--text)" }}>location</strong>.
+              </p>
+              <a className="btn btn-ghost ev-cta" href="/chat">
+                See the full topology →
+              </a>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ WHY / NORM ════════════ */}
+      <section className="section grid-bg divider-top" id="why">
+        <div className="wrap why-wrap">
+          <div className="why-head" data-reveal>
+            <span className="eyebrow">
+              <span className="dot">●</span> Why it matters
+            </span>
+            <h2 className="display why-title">
+              Pricing discrimination
+              <br />
+              is the{" "}
+              <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                norm
+              </span>
+              .
+            </h2>
+            <p className="why-lede sec">
+              Companies build algorithms to read your willingness to pay from your browser.
+              JACOBI makes those algorithms&nbsp;visible.
+            </p>
+          </div>
+
+          <figure className="callout card" data-reveal>
+            <blockquote className="callout-quote serif">
+              &ldquo;Two people, same booking, same seats — separated by $60
+              and a browser&nbsp;setting.&rdquo;
+            </blockquote>
+            <figcaption className="callout-cite label-mono">
+              — observed across independent academic studies
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      {/* ════════════ CTA ════════════ */}
+      <section className="section cta-section divider-top" id="pricing">
+        <div className="wrap cta-wrap">
+          <div className="cta-aura" aria-hidden="true" />
+          <h2 className="display cta-title" data-reveal>
+            Stop being <span style={{ color: "var(--over)" }}>priced</span>.
+            Start{" "}
+            <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+              probing
+            </span>
+            .
+          </h2>
+          <p className="cta-sub sec mono" data-reveal>
+            24 identities. Four vectors. One URL. Paste your first target.
+          </p>
+          <form
+            className="probe-instrument cta-bar"
+            data-reveal
+            id="cta-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!launch(ctaUrl)) ctaInputRef.current?.focus();
+            }}
+          >
+            <div className="pi-row">
+              <span className="pi-meta">
+                <span className="pi-glyph">⌖</span> 24 agents
+              </span>
+              <input
+                ref={ctaInputRef}
+                className="pi-input"
+                type="text"
+                inputMode="url"
+                value={ctaUrl}
+                onChange={(e) => setCtaUrl(e.target.value)}
+                placeholder="paste a URL to launch the probe"
+                spellCheck="false"
+                autoComplete="off"
+                aria-label="Paste a URL to launch the probe"
+              />
+              <button className="pi-submit" type="submit">
+                Launch probe <span className="pi-arrow">→</span>
+              </button>
+            </div>
+            <span className="pi-rule" />
+          </form>
+        </div>
+      </section>
+
+      <DesignFooter />
+    </div>
   );
 }

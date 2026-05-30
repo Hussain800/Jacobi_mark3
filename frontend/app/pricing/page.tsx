@@ -1,10 +1,35 @@
 "use client";
 
+/**
+ * Pricing — Claude Design port + new Enterprise tier.
+ *
+ * Three plans:
+ *   - Free       — 24 probes/month, 24 identities per probe, basic report,
+ *                  shareable link, limited history
+ *   - Pro $29/mo — 50 probes/month, 24 identities per probe, full forensic
+ *                  PDF, probe history, private share links, priority
+ *                  processing, board opt-in control
+ *   - Enterprise — custom volume, contact wearejacobi@outlook.com
+ *
+ * Pro keeps the existing Supabase + Stripe checkout flow (`startCheckout` /
+ * `startPortal` / `fetchPlan` from lib/billing.ts) so nothing about the
+ * paid path changes. Enterprise is a plain mailto.
+ *
+ * Wrapped in <div className="jacobi-design"> so jacobi-design.css's .plan
+ * card styles apply.
+ */
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Zap, Shield, BarChart3, Download, Clock, Crown } from "lucide-react";
+import Script from "next/script";
 import { createClient } from "../../lib/supabase/client";
 import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
+import "../jacobi-design.css";
+
+const ENTERPRISE_EMAIL = "wearejacobi@outlook.com";
 
 const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
@@ -15,11 +40,13 @@ export default function PricingPage() {
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
 
+  // Without this, every [data-reveal] element stays at opacity:0 and the
+  // page renders blank. (The landing page calls this; pricing did not.)
+  useReveals();
+
   useEffect(() => {
     const sb = createClient();
     sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
-    // Self-heal: pull from Stripe in case a previous checkout never had
-    // its webhook delivered. Cheap idempotent call.
     (async () => {
       try {
         const sync = await syncSubscription();
@@ -46,8 +73,8 @@ export default function PricingPage() {
       }
       const url = await startCheckout();
       if (url) window.location.href = url;
-    } catch (e: any) {
-      setError(e?.message || "Checkout failed. Try again.");
+    } catch (e: unknown) {
+      setError((e as { message?: string })?.message || "Checkout failed. Try again.");
     } finally {
       setBusy(false);
     }
@@ -66,152 +93,183 @@ export default function PricingPage() {
   const isPro = plan?.tier === "pro";
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white py-16 px-4">
-      <div className="max-w-5xl mx-auto">
-        {STRIPE_TEST_MODE && (
-          <div className="mb-8 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-[11px] font-mono text-amber-300/90">
-            <span className="font-semibold">Stripe Test Mode</span> · Use card{" "}
-            <code className="px-1.5 py-0.5 rounded bg-amber-400/10">4242 4242 4242 4242</code>{" "}
-            with any future expiry and any 3-digit CVC. No real charges.
-          </div>
-        )}
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-        <header className="text-center mb-12">
-          <h1 className="text-4xl sm:text-5xl font-light tracking-tight mb-3">Pricing</h1>
-          <p className="text-white/50 text-sm font-mono max-w-xl mx-auto">
-            Run probes to reveal hidden pricing discrimination. Start free, upgrade when you need more.
-          </p>
-        </header>
+      <DesignNav />
 
-        <div className="grid md:grid-cols-2 gap-5">
-          {/* FREE */}
-          <article className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-7 flex flex-col">
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-xs font-mono uppercase tracking-widest text-white/40">Free</span>
-              {plan?.tier === "free" && (
-                <span className="text-[10px] font-mono text-emerald-300/80 border border-emerald-400/30 rounded-full px-2 py-0.5">
-                  current
-                </span>
-              )}
-            </div>
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-5xl font-light">$0</span>
-              <span className="text-white/40 text-sm">/forever</span>
-            </div>
-            <ul className="space-y-3 text-sm text-white/70 mb-8 flex-1">
-              <Bullet>15 probes per month</Bullet>
-              <Bullet>24-agent probe (3 staggered waves, ~60–90s)</Bullet>
-              <Bullet>Topline discrimination index + spread</Bullet>
-              <Bullet>7-day history retention</Bullet>
-              <Bullet muted>No exports · No per-agent breakdown</Bullet>
-            </ul>
-            <Link
-              href="/chat"
-              className="block text-center rounded-full border border-white/[0.12] hover:border-white/30 text-sm font-mono py-2.5 transition-colors"
-            >
-              {plan?.tier === "free" ? "Open the probe" : "Start free"}
-            </Link>
-          </article>
-
-          {/* PRO */}
-          <article className="relative rounded-3xl border border-emerald-400/30 bg-gradient-to-b from-emerald-400/5 to-transparent p-7 flex flex-col">
-            <div className="absolute -top-3 left-7">
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-emerald-300 bg-[#050505] border border-emerald-400/40 rounded-full px-2.5 py-1">
-                <Crown className="w-3 h-3" /> Pro
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head pricing-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Pricing
               </span>
-            </div>
-            <div className="flex items-baseline gap-2 mb-1 mt-2">
-              <span className="text-xs font-mono uppercase tracking-widest text-emerald-300/80">Pro</span>
-              {isPro && (
-                <span className="text-[10px] font-mono text-emerald-300 border border-emerald-400/40 rounded-full px-2 py-0.5">
-                  active
+              <h1 className="display sec-title">
+                Run the truth,{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  free
                 </span>
-              )}
+                .
+              </h1>
+              <p className="sec-lede sec">
+                Start with 24 probes. Go Pro for 50. Enterprise teams
+                can contact us for custom volume.
+              </p>
+              {/* The Stripe test-mode banner that used to live here was
+                  removed per product direction: customer-facing UI should
+                  read as a real SaaS, not a sandbox. Test-mode is still
+                  enforced at the key level via STRIPE_TEST_MODE in code. */}
             </div>
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-5xl font-light">$29</span>
-              <span className="text-white/40 text-sm">/month</span>
-            </div>
-            <ul className="space-y-3 text-sm text-white/80 mb-8 flex-1">
-              <Bullet icon={<Zap className="w-3.5 h-3.5 text-emerald-300" />}>
-                <span className="text-white">Unlimited probes</span>
-              </Bullet>
-              <Bullet icon={<Clock className="w-3.5 h-3.5 text-emerald-300" />}>
-                Priority probing — single-wave concurrent <span className="text-white/50">(~15s)</span>
-              </Bullet>
-              <Bullet icon={<BarChart3 className="w-3.5 h-3.5 text-emerald-300" />}>
-                Full per-agent fingerprint breakdown
-              </Bullet>
-              <Bullet icon={<Download className="w-3.5 h-3.5 text-emerald-300" />}>
-                PDF, CSV, and JSON exports
-              </Bullet>
-              <Bullet icon={<Shield className="w-3.5 h-3.5 text-emerald-300" />}>
-                Unlimited probe history
-              </Bullet>
-            </ul>
-            {isPro ? (
-              <button
-                onClick={onManage}
-                disabled={busy}
-                className="block text-center rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.12] text-sm font-mono py-2.5 transition-colors disabled:opacity-50"
-              >
-                {busy ? "Opening…" : "Manage billing"}
-              </button>
-            ) : (
-              <button
-                onClick={onSubscribe}
-                disabled={busy}
-                className="block text-center rounded-full bg-emerald-400 hover:bg-emerald-300 text-black text-sm font-mono font-semibold py-2.5 transition-colors disabled:opacity-50"
-              >
-                {busy ? "Loading…" : signedIn ? "Subscribe — $29 / mo" : "Sign in to subscribe"}
-              </button>
-            )}
-            {error && (
-              <p className="text-rose-400 text-[11px] font-mono mt-3 text-center">{error}</p>
-            )}
-          </article>
-        </div>
 
-        <p className="text-center text-white/30 text-[11px] font-mono mt-10">
-          Cancel anytime from the customer portal. No commitment.
-        </p>
+            <div
+              className="plans"
+              style={{ gridTemplateColumns: "repeat(3, 1fr)" }}
+            >
+              {/* ── Free ─────────────────────────────────────────── */}
+              <div className="plan card" data-reveal>
+                <div className="plan-head">
+                  <span className="plan-name mono">
+                    Free
+                    {plan?.tier === "free" && (
+                      <span style={{
+                        marginLeft: 10, fontSize: 9, color: "var(--good)",
+                        border: "1px solid rgba(58,215,159,0.4)",
+                        borderRadius: 999, padding: "2px 7px",
+                        letterSpacing: "0.12em",
+                      }}>
+                        CURRENT
+                      </span>
+                    )}
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt">$0</span>
+                    <span className="plan-per mono">/ forever</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    Best for trying JACOBI — proof before you buy.
+                  </p>
+                </div>
+                <Link className="btn btn-ghost plan-cta" href="/chat">
+                  Start probing
+                </Link>
+                <ul className="plan-feats">
+                  <li><span className="pf-check">✓</span> <strong>24 probes</strong> / month</li>
+                  <li><span className="pf-check">✓</span> 24 synthetic identities per probe</li>
+                  <li><span className="pf-check">✓</span> Basic discrimination report</li>
+                  <li><span className="pf-check">✓</span> Shareable result link</li>
+                  <li><span className="pf-check">✓</span> Limited history</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Forensic PDF report</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Private share links</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Priority processing</li>
+                </ul>
+              </div>
 
-        <footer className="mt-16 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-5 h-5 rounded border border-emerald-400/30 flex items-center justify-center">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" strokeWidth="1.2">
-                <path d="M6 2 L10 6 L6 10 L2 6 Z" fill="none" />
-                <circle cx="6" cy="6" r="1.5" fill="#34d399" opacity="0.6" />
-              </svg>
+              {/* ── Pro ──────────────────────────────────────────── */}
+              <div className="plan card plan-pro" data-reveal>
+                <div className="plan-flag mono">Most popular</div>
+                <div className="plan-head">
+                  <span className="plan-name mono" style={{ color: "var(--cobalt-bright)" }}>
+                    Pro
+                    {isPro && (
+                      <span style={{
+                        marginLeft: 10, fontSize: 9, color: "var(--good)",
+                        border: "1px solid rgba(58,215,159,0.4)",
+                        borderRadius: 999, padding: "2px 7px",
+                        letterSpacing: "0.12em",
+                      }}>
+                        ACTIVE
+                      </span>
+                    )}
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt">$29</span>
+                    <span className="plan-per mono">/ month</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    Best for founders, analysts, journalists, and teams
+                    checking pricing regularly.
+                  </p>
+                </div>
+                {isPro ? (
+                  <button
+                    className="btn btn-primary plan-cta"
+                    onClick={onManage}
+                    disabled={busy}
+                  >
+                    {busy ? "Opening…" : "Manage billing"}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary plan-cta"
+                    onClick={onSubscribe}
+                    disabled={busy}
+                  >
+                    {busy ? "Loading…" : signedIn ? "Go Pro" : "Sign in to subscribe"}
+                  </button>
+                )}
+                {error && (
+                  <p style={{
+                    color: "var(--over)", fontSize: 11, marginTop: 8,
+                    textAlign: "center", fontFamily: "var(--mono)",
+                  }}>
+                    {error}
+                  </p>
+                )}
+                <ul className="plan-feats">
+                  <li><span className="pf-check pro">✓</span> <strong>50 probes / month</strong></li>
+                  <li><span className="pf-check pro">✓</span> 24 synthetic identities per probe</li>
+                  <li><span className="pf-check pro">✓</span> Full forensic PDF report</li>
+                  <li><span className="pf-check pro">✓</span> Probe history</li>
+                  <li><span className="pf-check pro">✓</span> Private share links</li>
+                  <li><span className="pf-check pro">✓</span> Priority processing</li>
+                  <li><span className="pf-check pro">✓</span> Board opt-in control</li>
+                </ul>
+              </div>
+
+              {/* ── Enterprise ───────────────────────────────────── */}
+              <div className="plan card" data-reveal>
+                <div className="plan-head">
+                  <span className="plan-name mono" style={{ color: "var(--gold)" }}>
+                    Enterprise
+                  </span>
+                  <div className="plan-price">
+                    <span className="serif plan-amt" style={{ fontSize: 40 }}>Contact</span>
+                    <span className="plan-per mono">/ custom</span>
+                  </div>
+                  <p className="plan-tag sec">
+                    For research teams, regulators, and journalism rooms
+                    that need bulk volume and a paper trail.
+                  </p>
+                </div>
+                <a
+                  className="btn btn-ghost plan-cta"
+                  href={`mailto:${ENTERPRISE_EMAIL}?subject=JACOBI%20Enterprise%20inquiry`}
+                  style={{ borderColor: "rgba(216,176,106,0.4)", color: "var(--gold)" }}
+                >
+                  Contact us →
+                </a>
+                <ul className="plan-feats">
+                  <li><span className="pf-check pro">✓</span> Everything in Pro</li>
+                  <li><span className="pf-check pro">✓</span> <strong>Custom probe volume</strong></li>
+                  <li><span className="pf-check pro">✓</span> Custom identity / topology sets</li>
+                  <li><span className="pf-check pro">✓</span> Team accounts + API access</li>
+                  <li><span className="pf-check pro">✓</span> Custom reporting</li>
+                  <li><span className="pf-check pro">✓</span> Dedicated support</li>
+                  <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
+                </ul>
+              </div>
             </div>
-            <span className="text-sm font-medium tracking-tight text-white/80">JACOBI</span>
+
+            <p className="pricing-foot label-mono" data-reveal>
+              Cancel anytime · prices in USD · billed via Stripe
+            </p>
           </div>
-          <div className="flex items-center gap-5 text-[11px] font-mono">
-            <Link href="/chat" className="text-white/40 hover:text-white/80 transition-colors">Probe</Link>
-            <Link href="/about" className="text-white/40 hover:text-white/80 transition-colors">About</Link>
-            <Link href="/leaderboard" className="text-white/40 hover:text-white/80 transition-colors">Leaderboard</Link>
-          </div>
-        </footer>
-      </div>
-    </main>
-  );
-}
+        </section>
+      </main>
 
-function Bullet({
-  children,
-  icon,
-  muted,
-}: {
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <li className={`flex items-start gap-2.5 ${muted ? "text-white/35" : ""}`}>
-      <span className="mt-1 shrink-0">
-        {icon ?? <Check className="w-3.5 h-3.5 text-white/40" />}
-      </span>
-      <span>{children}</span>
-    </li>
+      <DesignFooter />
+    </div>
   );
 }

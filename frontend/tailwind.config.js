@@ -9,6 +9,7 @@ module.exports = {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
+        // ─── Existing tokens (kept — do not remove until Phase ≥ 3) ───
         surface: {
           0: "#050505",
           1: "#0d0d0d",
@@ -31,6 +32,61 @@ module.exports = {
         accent: {
           amber: "#d4a040",
           rose: "#cc5566",
+        },
+
+        // ─── Phase 8 — Claude Design forensic intelligence palette ───
+        // Cool near-black surfaces (never pure black), cobalt accent,
+        // green = baseline/cheapest, red = exposed only, gold = Pro.
+
+        // Surface scale
+        ink:     "#07080b",   // bg-ink     · deep canvas (was 07080c)
+        "ink-2": "#090b10",   // bg-ink-2   · slightly raised
+        raised:  "#0c0f15",   // bg-raised  · cards
+        "surface-2": "#11151d",
+        "surface-3": "#161b25",
+        line:    "#1a1f2a",   // border-line · hairline (was 16191f)
+        "line-2":"#262c39",   // border-line-2 · hover
+
+        // Text scale
+        primary:   "#eceef3", // text-primary
+        secondary: "#97a0b1", // text-secondary
+        muted:     "#5b6473", // text-muted
+        "muted-2": "#3d4452", // text-muted-2 · deepest reading
+
+        // Cobalt — the one color that "lights up". Primary accent for
+        // actions, links, focus rings, headings emphasis.
+        cobalt: {
+          DEFAULT: "#3d6bff",
+          bright:  "#6e92ff",
+          deep:    "#2a4fd6",
+          soft:    "rgba(61, 107, 255, 0.12)",
+          line:    "rgba(61, 107, 255, 0.30)",
+          glow:    "rgba(61, 107, 255, 0.45)",
+        },
+
+        // Semantic — strict usage:
+        //   signal      → cheapest / baseline / safe (was "good" in CSS)
+        //   overcharge  → exposed premium / discrimination (rose-red)
+        //   warning     → demo mode, partial blocking
+        //   gold        → Pro tier, very sparing
+        signal: {
+          DEFAULT: "#34d39b",
+          soft:    "rgba(52, 211, 155, 0.12)",
+          line:    "rgba(52, 211, 155, 0.40)",
+          glow:    "rgba(52, 211, 155, 0.45)",
+        },
+        overcharge: {
+          DEFAULT: "#ff5468",
+          soft:    "rgba(255, 84, 104, 0.12)",
+          line:    "rgba(255, 84, 104, 0.32)",
+        },
+        warning: {
+          DEFAULT: "#d4a040",
+          soft:    "rgba(212, 160, 64, 0.10)",
+        },
+        gold: {
+          DEFAULT: "#d8b06a",
+          soft:    "rgba(216, 176, 106, 0.12)",
         },
       },
       fontSize: {

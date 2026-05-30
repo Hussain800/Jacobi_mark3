@@ -1,237 +1,339 @@
 "use client";
 
-import { useState, useEffect } from "react";
+/**
+ * History — the logbook of past probes, ported to the Claude Design system.
+ *
+ * Three states:
+ *   1. Logged-out  → sign-in CTA (Google via Supabase OAuth)
+ *   2. Logged-in, zero probes → honest empty state
+ *   3. Logged-in with probes  → table of probes from localStorage
+ *
+ * NOTE: per-user history is currently sourced from localStorage
+ * (`probe-conversations`) since that's how /chat persists results today.
+ * When the backend ships a `/api/history?user=…` endpoint, swap the
+ * loader in `loadHistory()`.
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Trash2, Clock, DollarSign, Globe, Shield } from "lucide-react";
+import Script from "next/script";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
+import { createClient } from "../../lib/supabase/client";
+import { getClientApiBase } from "../../lib/api-base";
+import "../jacobi-design.css";
 
 interface ConversationSummary {
   id: string;
+  session_id?: string;
   title: string;
   timestamp: number;
   targetUrl: string;
+  targetName?: string;
   baselinePrice?: number | null;
   savings?: number | null;
   topologyClass?: string;
 }
 
-function clsColor(cls: string): string {
-  switch (cls) {
-    case "uniform": return "text-blue-400";
-    case "selective": return "text-yellow-400";
-    case "progressive": return "text-orange-400";
-    case "aggressive": return "text-red-400";
-    default: return "text-gray-500";
-  }
+interface BackendHistoryRow {
+  session_id: string;
+  target_url: string;
+  target_name?: string;
+  timestamp: string;
+  status: string;
+  baseline_price?: number | null;
+  max_price_spread?: number | null;
+  topology_class?: string;
 }
 
-function clsBg(cls: string): string {
-  switch (cls) {
-    case "uniform": return "bg-blue-400/10 border-blue-400/20";
-    case "selective": return "bg-yellow-400/10 border-yellow-400/20";
-    case "progressive": return "bg-orange-400/10 border-orange-400/20";
-    case "aggressive": return "bg-red-400/10 border-red-400/20";
-    default: return "bg-white/[0.03] border-white/[0.06]";
-  }
+const TOPO_COLOR: Record<string, string> = {
+  uniform:     "#3ad79f",
+  selective:   "#d8b06a",
+  progressive: "#ff9d52",
+  aggressive:  "#ff5468",
+};
+
+function host(url: string): string {
+  try { return new URL(url).host; }
+  catch { return url.replace(/^https?:\/\//, "").split("/")[0]; }
 }
 
-function formatDate(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function truncateUrl(url: string, max: number = 50): string {
-  return url.length > max ? url.slice(0, max) + "..." : url;
+function timeAgo(ts: number): string {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60)    return `${Math.round(s)}s ago`;
+  if (s < 3600)  return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
 }
 
 export default function HistoryPage() {
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [sortAsc, setSortAsc] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  useReveals();
+
   useEffect(() => {
-    const raw = localStorage.getItem("probe-conversations");
-    if (raw) {
-      try {
-        const data = JSON.parse(raw);
-        setConversations(data);
-      } catch {
-        setConversations([]);
-      }
-    }
+    const sb = createClient();
+    sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
   }, []);
 
-  const sorted = [...conversations].sort((a, b) =>
-    sortAsc ? a.timestamp - b.timestamp : b.timestamp - a.timestamp
+  useEffect(() => {
+    if (signedIn !== true) return;
+    let alive = true;
+    (async () => {
+      try {
+        // Primary: ask the backend for this user's probes (user-scoped, RLS-safe).
+        const sb = createClient();
+        const { data: { session } } = await sb.auth.getSession();
+        const token = session?.access_token;
+        const apiBase = getClientApiBase();
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const r = await fetch(`${apiBase}/api/history?limit=50`, { headers });
+        if (r.ok) {
+          const rows: BackendHistoryRow[] = await r.json();
+          if (!alive) return;
+          const mapped: ConversationSummary[] = rows.map(row => ({
+            id: row.session_id,
+            session_id: row.session_id,
+            title: (row.target_name || row.target_url || "Probe").slice(0, 50),
+            timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
+            targetUrl: row.target_url,
+            targetName: row.target_name,
+            baselinePrice: row.baseline_price ?? null,
+            savings: row.max_price_spread ?? null,
+            topologyClass: row.topology_class,
+          }));
+          if (mapped.length > 0) {
+            setConversations(mapped);
+            return;
+          }
+        }
+      } catch { /* fall through to localStorage */ }
+
+      // Fallback ONLY when backend returns nothing — preserves per-device
+      // history of pre-auth probes captured during early access.
+      if (!alive) return;
+      const raw = localStorage.getItem("probe-conversations");
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data)) setConversations(data);
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, [signedIn]);
+
+  const sorted = useMemo(
+    () => [...conversations].sort((a, b) => b.timestamp - a.timestamp),
+    [conversations],
   );
 
-  const clearHistory = () => {
+  async function signIn() {
+    const sb = createClient();
+    await sb.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=/history` },
+    });
+  }
+
+  function clearHistory() {
     localStorage.removeItem("probe-conversations");
     setConversations([]);
     setConfirmClear(false);
-  };
+  }
 
   return (
-    <div className="min-h-screen text-white bg-[#0e0f14]">
-      {/* Page header */}
-      <div className="border-b border-white/[0.08]">
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          <h1 className="text-2xl font-medium tracking-tight text-white/90">Probe History</h1>
-          <p className="text-sm text-white/50 font-mono mt-1">
-            {conversations.length} probe{conversations.length !== 1 ? "s" : ""} recorded
-          </p>
-        </div>
-      </div>
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between mb-6">
-          <button
-            onClick={() => setSortAsc(!sortAsc)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono text-white/50 border border-white/[0.10] rounded hover:border-white/30 hover:text-white/70 transition-all"
-          >
-            <Clock className="w-3 h-3" />
-            {sortAsc ? "Oldest first" : "Newest first"}
-          </button>
+      <DesignNav />
 
-          {conversations.length > 0 && (
-            !confirmClear ? (
-              <button
-                onClick={() => setConfirmClear(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono text-red-400/60 border border-red-400/20 rounded hover:border-red-400/50 hover:text-red-400/90 hover:bg-red-400/5 transition-all"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear all history
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono text-red-400/60">Are you sure?</span>
-                <button
-                  onClick={clearHistory}
-                  className="px-3 py-1.5 text-[11px] font-mono text-white bg-red-500/80 rounded hover:bg-red-500 transition-all"
-                >
-                  Yes, delete all
-                </button>
-                <button
-                  onClick={() => setConfirmClear(false)}
-                  className="px-3 py-1.5 text-[11px] font-mono text-white/40 border border-white/[0.10] rounded hover:border-white/30 transition-all"
-                >
-                  Cancel
-                </button>
-              </div>
-            )
-          )}
-        </div>
-
-        {/* Empty state */}
-        {conversations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-12 h-12 rounded-full border border-white/[0.10] flex items-center justify-center mb-5">
-              <Shield className="w-5 h-5 text-white/30" />
-            </div>
-            <p className="text-sm text-white/40 font-mono mb-4">No probes recorded yet.</p>
-            <Link
-              href="/chat"
-              className="px-4 py-2 text-sm font-mono text-white/70 border border-white/[0.12] rounded-lg hover:border-white/40 hover:text-white/90 transition-all"
-            >
-              Start a probe →
-            </Link>
-          </div>
-        )}
-
-        {/* Table */}
-        {conversations.length > 0 && (
-          <div className="border border-white/[0.08] rounded-lg overflow-hidden bg-white/[0.02]">
-            {/* Table header */}
-            <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-white/[0.08] text-[10px] font-mono text-white/40 uppercase tracking-wider">
-              <span>Target</span>
-              <span>Date</span>
-              <span>Baseline</span>
-              <span>Savings</span>
-              <span>Topology</span>
-              <span>&nbsp;</span>
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Logbook
+              </span>
+              <h1 className="display sec-title">
+                Your{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  probe history
+                </span>
+              </h1>
+              <p className="sec-lede sec">
+                Every probe you've run, with topology, spread, and the receipts.
+              </p>
             </div>
 
-            {sorted.map((entry) => (
+            {/* ── Loading auth ────────────────────────────────────── */}
+            {signedIn === null && (
               <div
-                key={entry.id}
-                className="border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.04] transition-colors"
+                data-reveal
+                style={{
+                  padding: "80px 0",
+                  textAlign: "center",
+                  color: "var(--text-3)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 12,
+                }}
               >
-                {/* Desktop row */}
-                <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 items-center">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Globe className="w-3 h-3 text-white/30 shrink-0" />
-                    <span className="text-sm text-white/70 truncate font-mono" title={entry.targetUrl}>
-                      {truncateUrl(entry.targetUrl, 45)}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-white/40 font-mono">{formatDate(entry.timestamp)}</span>
-                  <span className="text-[11px] text-white/60 font-mono">
-                    {entry.baselinePrice != null ? `$${entry.baselinePrice.toFixed(0)}` : "—"}
-                  </span>
-                  <span className="text-[11px] text-emerald-400/80 font-mono">
-                    {entry.savings != null ? `$${entry.savings.toFixed(0)}` : "—"}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border inline-block w-fit ${clsBg(entry.topologyClass || "")} ${clsColor(entry.topologyClass || "")}`}
-                  >
-                    {entry.topologyClass || "—"}
-                  </span>
-                  <Link
-                    href="/chat"
-                    className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-mono text-white/50 border border-white/[0.10] rounded hover:border-white/30 hover:text-white/80 transition-all"
-                  >
-                    Load <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
-
-                {/* Mobile card */}
-                <div className="md:hidden px-5 py-3 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Globe className="w-3 h-3 text-white/30 shrink-0 mt-0.5" />
-                      <span className="text-sm text-white/70 truncate font-mono">{truncateUrl(entry.targetUrl, 35)}</span>
-                    </div>
-                    <span
-                      className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${clsBg(entry.topologyClass || "")} ${clsColor(entry.topologyClass || "")}`}
-                    >
-                      {entry.topologyClass || "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 text-[11px] font-mono text-white/40">
-                    <span>{formatDate(entry.timestamp)}</span>
-                    {entry.baselinePrice != null && <span>Base: ${entry.baselinePrice.toFixed(0)}</span>}
-                    {entry.savings != null && <span className="text-emerald-400/80">Save: ${entry.savings.toFixed(0)}</span>}
-                  </div>
-                  <Link
-                    href="/chat"
-                    className="inline-flex items-center gap-1 px-3 py-1 text-[10px] font-mono text-white/50 border border-white/[0.10] rounded hover:border-white/30 hover:text-white/80 transition-all"
-                  >
-                    Load in chat <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
+                Checking session…
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Footer */}
-        {conversations.length > 0 && (
-          <div className="mt-6 text-center">
-            <Link
-              href="/chat"
-              className="text-[11px] font-mono text-white/40 hover:text-white/70 transition-colors"
-            >
-              ← Back to probe
-            </Link>
+            {/* ── Logged out ──────────────────────────────────────── */}
+            {signedIn === false && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  Sign in to view history
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  Your probes are tied to your account. Sign in with Google to
+                  see your evidence trail across devices.
+                </p>
+                <button onClick={signIn} className="btn btn-primary">
+                  Sign in with Google →
+                </button>
+              </div>
+            )}
+
+            {/* ── Logged in, empty ────────────────────────────────── */}
+            {signedIn === true && sorted.length === 0 && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  The logbook is empty
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  Probe a URL to start building your evidence trail.
+                </p>
+                <Link href="/chat" className="btn btn-primary">
+                  Start a probe →
+                </Link>
+              </div>
+            )}
+
+            {/* ── Logged in, has probes ───────────────────────────── */}
+            {signedIn === true && sorted.length > 0 && (
+              <>
+                <div
+                  data-reveal
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 16,
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--text-3)",
+                  }}
+                >
+                  <span>{sorted.length} probe{sorted.length !== 1 ? "s" : ""} recorded</span>
+                  {!confirmClear ? (
+                    <button
+                      onClick={() => setConfirmClear(true)}
+                      className="btn btn-ghost"
+                      style={{ fontSize: 10, padding: "6px 12px" }}
+                    >
+                      Clear all
+                    </button>
+                  ) : (
+                    <span style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={clearHistory}
+                        className="btn btn-primary"
+                        style={{ fontSize: 10, padding: "6px 12px" }}
+                      >
+                        Confirm delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmClear(false)}
+                        className="btn btn-ghost"
+                        style={{ fontSize: 10, padding: "6px 12px" }}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  )}
+                </div>
+
+                <div className="board-scroll" data-reveal>
+                  <div className="board-table">
+                    <div className="bt-head">
+                      <span>#</span>
+                      <span>Target</span>
+                      <span>Topology</span>
+                      <span>Spread</span>
+                      <span>Probed</span>
+                      <span>&nbsp;</span>
+                      <span>&nbsp;</span>
+                    </div>
+                    {sorted.map((entry, i) => {
+                      const topo = (entry.topologyClass || "uniform").toLowerCase();
+                      const c = TOPO_COLOR[topo] || "var(--text-3)";
+                      const savings = entry.savings ?? 0;
+                      return (
+                        <div key={entry.id} className="bt-row" data-reveal>
+                          <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
+                          <span className="bt-target">
+                            <span className="bt-name">{entry.targetName || host(entry.targetUrl)}</span>
+                            <span className="bt-host">{host(entry.targetUrl)}</span>
+                          </span>
+                          <span
+                            className="topo-pill"
+                            style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
+                          >
+                            <span className="d" style={{ background: c }} />
+                            {topo}
+                          </span>
+                          <span className={`bt-spread ${savings === 0 ? "zero" : ""}`}>
+                            {savings > 0 ? `+$${Math.round(savings)}` : "—"}
+                          </span>
+                          <span className="bt-time">{timeAgo(entry.timestamp)}</span>
+                          <span>
+                            <Link
+                              href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`}
+                              className="btn btn-ghost"
+                              style={{ fontSize: 10, padding: "6px 12px" }}
+                            >
+                              Rerun
+                            </Link>
+                          </span>
+                          <span>&nbsp;</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-        )}
-      </div>
+        </section>
+      </main>
+
+      <DesignFooter />
     </div>
   );
 }

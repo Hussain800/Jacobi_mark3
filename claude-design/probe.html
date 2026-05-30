@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — Probe Cockpit</title>
+<link rel="stylesheet" href="assets/jacobi.css" />
+</head>
+<body data-screen-label="Probe Cockpit">
+
+<div id="nav-root"></div>
+
+<main class="probe-main">
+
+  <!-- ───────── COCKPIT (idle) ───────── -->
+  <section class="cockpit" id="cockpit" data-screen-label="Cockpit idle">
+    <div class="wrap cockpit-wrap">
+      <span class="eyebrow cockpit-eyebrow"><span class="dot">●</span> JACOBI · probe cockpit</span>
+      <h1 class="cockpit-h1 serif">
+        Paste a URL. <span class="cobalt-i">Twenty-four shoppers</span> go to work.
+      </h1>
+
+      <form class="probe-instrument cockpit-bar" id="cockpit-form">
+        <div class="pi-row">
+          <span class="pi-meta"><span class="pi-glyph">⌖</span> 24 agents</span>
+          <input id="cockpit-input" class="pi-input" type="text"
+                 placeholder="paste a flight, hotel or product URL" spellcheck="false" autocomplete="off" />
+          <button class="pi-submit" type="submit">Probe <span class="pi-arrow">→</span></button>
+        </div>
+        <span class="pi-rule"></span>
+      </form>
+
+      <div class="cases">
+        <div class="cases-divider"><span class="label-mono">or open a case</span></div>
+        <div class="cases-list" id="cases-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── DECK (live + result) ───────── -->
+  <section class="deck" id="deck" data-screen-label="Probe deck">
+    <div class="wrap">
+      <div class="deck-head">
+        <div class="deck-target">
+          <button class="deck-back" id="deck-back" aria-label="New probe">← new probe</button>
+          <div class="deck-target-url mono" id="deck-url">https://www.booking.com/…</div>
+        </div>
+        <div class="deck-state" id="deck-state">
+          <span class="chip"><span class="pulse"></span><span id="deck-phase">deploying</span></span>
+        </div>
+      </div>
+
+      <div class="deck-grid">
+        <!-- radial web -->
+        <div class="radial-stage" id="radial-stage">
+          <svg class="radial-svg" id="radial-svg" viewBox="0 0 900 900" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+          <div class="radial-readout mono">
+            <div class="rr-label label-mono">live deployment</div>
+            <div class="rr-count"><span id="rr-n">0</span><span class="rr-of">/24 agents</span></div>
+            <div class="rr-time"><span id="rr-t">0.0</span>s elapsed</div>
+            <div class="rr-waves" id="rr-waves"></div>
+          </div>
+        </div>
+
+        <!-- right rail: live telemetry → verdict -->
+        <aside class="rail" id="rail">
+          <!-- live telemetry -->
+          <div class="rail-live" id="rail-live">
+            <span class="label-mono">telemetry</span>
+            <div class="telemetry" id="telemetry"></div>
+          </div>
+
+          <!-- verdict (hidden until complete) -->
+          <div class="rail-verdict" id="rail-verdict" hidden>
+            <div class="topology-badge" id="topo-badge"><span class="tb-dot"></span> <span id="topo-label">Progressive</span></div>
+            <div class="ev-spread-label label-mono">Hidden premium</div>
+            <div class="ev-spread serif tnum">+$<span id="v-spread">0</span></div>
+            <div class="ev-spread-sub mono"><span id="v-pct">0</span>% over baseline · <span id="v-success">0/24</span> agents returned</div>
+
+            <div class="ev-index">
+              <div class="evi-top"><span class="label-mono">Discrimination index</span><span class="evi-val mono"><span id="v-index">0</span><span class="muted">/100</span></span></div>
+              <div class="evi-track"><div class="evi-fill" id="v-index-fill" style="--w:0%"></div></div>
+            </div>
+
+            <p class="verdict-text sec" id="verdict-text"></p>
+
+            <div class="impact" id="impact">
+              <span class="label-mono">Price impact by vector</span>
+              <div class="impact-bars" id="impact-bars"></div>
+            </div>
+
+            <div class="verdict-actions">
+              <button class="btn btn-primary" id="v-share">Copy result link</button>
+              <a class="btn btn-ghost" href="forensic-export.html">View forensic record →</a>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="footer-root"></div>
+
+<script src="assets/chrome.js"></script>
+<script src="assets/probe.js"></script>
+</body>
+</html>

@@ -27,6 +27,9 @@ from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe
+from auth_user import get_optional_user
+from profile_store import can_run_probe, increment_probe_count
+from fastapi import Depends
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
@@ -36,6 +39,9 @@ class TargetProbeInput(BaseModel):
     target_url: str = Field(..., description="Full URL of the target product page")
     target_name: str = Field(default="UA123 JFK→SFO", description="Human-readable target label")
     use_data_dir: Optional[str] = Field(default=None, description="Load pre-cached demo data instead of live probe")
+    # Opt-in flag for the public board. Default False → probe stays private to
+    # the user's account / history. Frontend cockpit exposes this as a toggle.
+    publish_to_board: bool = Field(default=False, description="If true, mark the resulting probe row is_public=true")
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -679,6 +685,11 @@ app.add_middleware(
 )
 
 app.include_router(export_router)
+# Stripe billing routes (/api/billing/checkout, /sync, /portal, /plan, /webhook).
+# Without this include, the frontend's startCheckout() call returns 404 and the
+# Stripe test flow never opens. Found during sanity check.
+from billing import router as billing_router
+app.include_router(billing_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None
@@ -690,26 +701,93 @@ async def health():
 
 
 @app.post("/api/probe")
-async def launch_probe(input: TargetProbeInput):
-    """Launch a pricing probe. Falls back to demo data if BrightData MCP fails."""
+async def launch_probe(
+    input: TargetProbeInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Launch a pricing probe.
+
+    Auth: caller may be signed in (Authorization: Bearer <supabase-jwt>) or
+    anonymous. Signed-in callers are quota-checked and the resulting probe
+    row is stamped with their user_id. Anonymous callers may run the static
+    demo session only — they cannot consume the 24-identity live engine.
+
+    Quota:
+      - Free  : FREE_MONTHLY_PROBES (24) per calendar month
+      - Pro   : PRO_MONTHLY_PROBES  (50) per calendar month
+      - Enterprise: unlimited (treated as Pro today; expand later)
+    Count is incremented only after the probe successfully launches and
+    save_probe writes a row (i.e. real work was done). Failed engine starts
+    do not consume credit.
+    """
+    # Static-demo escape hatch is allowed for everyone; it doesn't run the
+    # engine or save a row.
     if input.use_data_dir:
         return {"session_id": "demo_session_static", "status": "completed"}
+
+    # Auth gate: live probes require a signed-in user.
+    if not user or not user.get("id"):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth_required",
+                "message": "Sign in to run a live probe.",
+            },
+        )
+
+    # Quota gate.
+    try:
+        allowed, quota = await can_run_probe(user["id"])
+    except Exception as quota_err:
+        # Fail open ONLY if the quota subsystem itself errors — don't block
+        # paying users because Supabase blipped. Logged for ops.
+        print(f"[PROBE] quota check raised, failing open: {quota_err!r}")
+        allowed, quota = True, {"tier": "free", "used": 0, "limit": None}
+    if not allowed:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "quota_exceeded",
+                "message": (
+                    f"You've used {quota.get('used')} of {quota.get('limit')} "
+                    "probes this month. Upgrade to Pro for more."
+                ),
+                "tier": quota.get("tier"),
+                "used": quota.get("used"),
+                "limit": quota.get("limit"),
+            },
+        )
+
     try:
         session = await run_full_probe(input.target_url, input.target_name)
-        # Persist to Supabase
+        # Persist to Supabase, stamping the owning user so RLS + history work.
+        saved_id = None
         try:
-            await save_probe(session)
+            saved_id = await save_probe(
+                session,
+                user_id=user["id"],
+                is_public=bool(input.publish_to_board),
+            )
         except Exception as db_err:
             print(f"[MAIN] Supabase save skipped: {db_err}")
+        # Increment quota ONLY when a row was actually persisted. This stops
+        # transient DB errors from charging credit, and stops the static-demo
+        # path from ever counting.
+        if saved_id:
+            try:
+                await increment_probe_count(user["id"])
+            except Exception as inc_err:
+                print(f"[PROBE] increment_probe_count failed: {inc_err!r}")
         return {"session_id": session["session_id"], "status": session["status"]}
     except Exception as e:
-        # On MCP connection failure, return demo data with a warning
         err_msg = str(e)
         if "Connection closed" in err_msg or "MCP" in err_msg:
+            # Engine couldn't start → don't consume credit, surface as static
+            # demo so the user still sees *something*.
             return {
                 "session_id": "demo_session_static",
                 "status": "completed",
-                "warning": "Live probe unavailable (MCP connection issue). Showing simulated results.",
+                "warning": "Live probe unavailable. Showing reference data.",
             }
         raise HTTPException(status_code=500, detail=err_msg)
 
@@ -790,10 +868,31 @@ async def debug_probe(input: TargetProbeInput):
 
 @app.get("/api/leaderboard")
 async def get_leaderboard(limit: int = 10):
-    """Return top N probes by savings (max_price_spread)."""
+    """Return top N probes by savings (max_price_spread).
+
+    POST-HACKATHON TODO — board opt-in model:
+    Today this returns ALL persisted probes. Product direction is that user
+    probes should be PRIVATE by default and only appear here when the user
+    explicitly opts in (or the row is a curated demo).
+
+    Why not gated today: `probes` table has no `is_public` column, and
+    `user_id` may be missing on rows (see supabase_client.save_probe
+    fallback). Adding the column requires a migration + cockpit checkbox
+    + profile setting + curated-demo flag — too risky before submission.
+
+    Minimum-viable plan post-hackathon:
+      1. ALTER TABLE probes ADD COLUMN is_public BOOLEAN DEFAULT FALSE;
+      2. ALTER TABLE probes ADD COLUMN is_demo   BOOLEAN DEFAULT FALSE;
+      3. Filter below: .or_("is_public.eq.true,is_demo.eq.true").
+      4. Add "Add to public board" toggle on the cockpit (default off).
+
+    None of the returned fields contain user identity / email / payment —
+    but they DO reveal which sites a user probed, so the opt-in column
+    above is the real fix.
+    """
     try:
-        from supabase_client import get_probe_history
-        probes = await get_probe_history(limit=20)
+        from supabase_client import get_public_board
+        probes = await get_public_board(limit=max(limit, 20))
         # Sort by max_price_spread descending, take top N
         sorted_probes = sorted(
             [p for p in probes if p.get("max_price_spread")],
@@ -802,26 +901,48 @@ async def get_leaderboard(limit: int = 10):
         )[:limit]
         return [
             {
-                "name": p.get("target_name", p.get("target_url", "Unknown"))[:30],
+                "name": (p.get("target_name") or p.get("target_url") or "Unknown")[:30],
                 "savings": p["max_price_spread"],
                 "url": p.get("target_url", ""),
+                "topology_class": p.get("topology_class"),
+                "target_url": p.get("target_url", ""),
+                "target_name": p.get("target_name"),
+                "max_price_spread": p.get("max_price_spread"),
+                "timestamp": p.get("created_at"),
+                "total_agents": 24,
             }
             for p in sorted_probes
         ]
     except Exception as e:
         # Return empty leaderboard on any error (backend might not have Supabase configured)
+        print(f"[LEADERBOARD] returning empty: {e!r}")
         return []
 
 
 @app.get("/api/history")
-async def get_history(limit: int = 50):
-    """Return recent probe sessions. Tries Supabase first, falls back to in-memory store."""
-    sessions = []
+async def get_history(
+    limit: int = 50,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Return recent probe sessions for the signed-in caller.
 
-    # First try Supabase
+    SaaS semantics:
+      - Logged-out callers receive 401 (frontend shows sign-in CTA).
+      - Logged-in callers see ONLY their own probes (filtered by user_id).
+      - Anonymous in-memory SESSION_STORE fallback is no longer used here —
+        it would leak other users' data and conflicts with multi-tenant
+        privacy expectations.
+    """
+    if not user or not user.get("id"):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "auth_required", "message": "Sign in to view your history."},
+        )
+
+    sessions = []
     try:
-        from supabase_client import get_probe_history
-        db_probes = await get_probe_history(limit=limit)
+        from supabase_client import get_probe_history_for_user
+        db_probes = await get_probe_history_for_user(user["id"], limit=limit)
         for p in db_probes:
             sessions.append({
                 "session_id": p.get("id", ""),
@@ -840,26 +961,9 @@ async def get_history(limit: int = 50):
     except Exception:
         pass
 
-    # Fall back to in-memory store if Supabase returned nothing or failed
-    if not sessions:
-        for sid, session in SESSION_STORE.items():
-            if session.get("status") in ("completed", "failed"):
-                sessions.append({
-                    "session_id": sid,
-                    "target_url": session.get("target_url", ""),
-                    "target_name": session.get("target_name", ""),
-                    "timestamp": session.get("timestamp", ""),
-                    "status": session.get("status"),
-                    "baseline_price": session.get("baseline_price"),
-                    "max_price_spread": session.get("max_price_spread"),
-                    "topology_class": session.get("topology_class"),
-                    "discrimination_score": session.get("discrimination_score"),
-                    "elapsed_seconds": session.get("elapsed_seconds"),
-                    "successful_agents": session.get("successful_agents"),
-                    "total_agents": session.get("total_agents", 24),
-                })
-        sessions.sort(key=lambda s: str(s.get("timestamp", "")), reverse=True)
-
+    # Intentionally NO in-memory SESSION_STORE fallback here — the in-memory
+    # store doesn't carry user_id and would leak cross-tenant. If Supabase is
+    # down, the user sees an empty history rather than someone else's.
     return sessions[:limit]
 
 

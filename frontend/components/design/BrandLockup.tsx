@@ -1,11 +1,16 @@
 /**
- * BrandLockup — the JACOBI wordmark, rendered as `JAC[ ]BI` with the
- * bracketed-empty-set in cobalt blue. This is the official lockup —
- * no separate icon, no JACOBI text outside this component.
+ * BrandLockup — the JACOBI wordmark, rendered as JAC[ ]BI with the
+ * bracketed empty-set in cobalt blue.
  *
- * Letters are JetBrains Mono Bold (already loaded by the design system).
- * Wide letter-spacing gives it the tech-instrument feel from the brand
- * preview the user supplied.
+ * Typeface: "Major Mono Display" — Google Font, monospaced display face
+ * with the sharp / squared / instrument-grade letterforms in the brand
+ * reference (flat-top A, squared C, geometric bowls). Falls back to
+ * JetBrains Mono if the Google Font hasn't loaded yet.
+ *
+ * Bracketed empty-set: tighter spacing inside `[ ]` so the glyph reads
+ * as a single composed bracket-space-bracket unit while the outer JAC
+ * and BI keep the wide letter-spacing that gives the wordmark its
+ * tech-instrument presence.
  */
 
 import Link from "next/link";
@@ -26,21 +31,32 @@ export default function BrandLockup({ size = 18, noLink = false, className }: Pr
       style={{
         display: "inline-flex",
         alignItems: "center",
-        fontFamily: "var(--mono)",
-        fontWeight: 700,
+        fontFamily: '"Major Mono Display", "JetBrains Mono", ui-monospace, monospace',
+        fontWeight: 400,
         fontSize: `${size}px`,
-        letterSpacing: "0.32em",
+        letterSpacing: "0.22em",
         color: "var(--text)",
-        // optical-align the [] which is taller than the letters
+        // Optical balance — the brackets are visually taller than the
+        // letters at small sizes; nudge baseline so the row reads level.
         lineHeight: 1,
         whiteSpace: "nowrap",
       }}
       aria-label="JACOBI"
     >
       <span>JAC</span>
-      <span style={{ color: "var(--cobalt-bright)" }}>[</span>
-      <span style={{ color: "var(--cobalt-bright)" }}>&nbsp;</span>
-      <span style={{ color: "var(--cobalt-bright)" }}>]</span>
+      <span
+        style={{
+          color: "var(--cobalt-bright)",
+          // Tighter spacing inside the bracket so [ ] reads as one
+          // composed glyph instead of three loose characters.
+          letterSpacing: "0.04em",
+          padding: "0 0.06em",
+          display: "inline-flex",
+          alignItems: "center",
+        }}
+      >
+        [&nbsp;]
+      </span>
       <span>BI</span>
     </span>
   );

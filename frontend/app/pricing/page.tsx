@@ -161,10 +161,7 @@ export default function PricingPage() {
                   enforced at the key level via STRIPE_TEST_MODE in code. */}
             </div>
 
-            <div
-              className="plans"
-              style={{ gridTemplateColumns: "repeat(3, 1fr)" }}
-            >
+            <div className="plans">
               {/* ── Free ─────────────────────────────────────────── */}
               <div className="plan card" data-reveal>
                 <div className="plan-head">

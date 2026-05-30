@@ -23,12 +23,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             isn't a stale diamond/SVG from before the lockup existed. */}
         <link
           rel="icon"
-          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080b'/><text x='16' y='22' text-anchor='middle' font-family='JetBrains Mono, ui-monospace, monospace' font-size='18' font-weight='700' fill='%236e92ff'>[ ]</text></svg>"
+          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080b'/><text x='16' y='23' text-anchor='middle' font-family='Major Mono Display, JetBrains Mono, monospace' font-size='20' font-weight='400' fill='%236e92ff'>[ ]</text></svg>"
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&family=Major+Mono+Display&display=swap"
           rel="stylesheet"
         />
       </head>

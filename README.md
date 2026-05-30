@@ -1,25 +1,15 @@
 <div align="center">
 
-```txt
-
-      ██╗ █████╗  ██████╗ ██████╗ ██████╗ ██╗
-      ██║██╔══██╗██╔════╝██╔═══██╗██╔══██╗██║
-      ██║███████║██║     ██║   ██║██████╔╝██║
- ██   ██║██╔══██║██║     ██║   ██║██╔══██╗██║
- ╚█████╔╝██║  ██║╚██████╗╚██████╔╝██████╔╝██║
-  ╚════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝
-
-```
+![JACOBI Banner](docs/assets/banner.png)
 
 # ⚡ JACOBI — Adversarial Pricing Topology Probe
 
 ### *24 agents. 5 variables. One URL. Uncover the price you were never meant to see.*
 
-[![MIT](https://img.shields.io/badge/license-MIT-emerald?style=flat-square&labelColor=000)](LICENSE)
-[![BrightData](https://img.shields.io/badge/powered%20by-BrightData-00ff41?style=flat-square&labelColor=000)](https://brightdata.com)
-
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=000&logo=python&logoColor=white)](https://python.org)
-[![Next.js](https://img.shields.io/badge/next.js-14-000?style=flat-square&labelColor=000&logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![MIT](https://img.shields.io/badge/license-MIT-00d992?style=flat-square&labelColor=000)](LICENSE)
+[![BrightData](https://img.shields.io/badge/powered%20by-BrightData-60a5fa?style=flat-square&labelColor=000)](https://brightdata.com)
+[![Python](https://img.shields.io/badge/python-3.11%2B-ffd43b?style=flat-square&labelColor=000&logo=python&logoColor=white)](https://python.org)
+[![Next.js](https://img.shields.io/badge/next.js-14-ffffff?style=flat-square&labelColor=000&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&labelColor=000&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Gemini](https://img.shields.io/badge/AI-Gemini%202.0-8E75C3?style=flat-square&labelColor=000)](https://deepmind.google/gemini)
 
@@ -32,13 +22,14 @@
 [🧪 The 5 Variables](#-the-5-variables) •
 [📊 Topology Classification](#-topology-classification) •
 [🔧 Configuration](#-configuration) •
-[🧩 Extension](#-chrome-extension)
+[🧩 Extension](#-chrome-extension) •
+[⛓️ Ledger](#-decentralized-ledger-sepolia-testnet)
 
 ---
 
 </div>
 
-> **JACOBI** deploys 24 adversarial probe agents simultaneously — each with a unique digital fingerprint — against any pricing page. It detects when the price you see is _not_ the price someone else gets, and tells you exactly what to do about it.
+> **JACOBI** deploys 24 adversarial probe agents simultaneously — each with a unique digital fingerprint — against any pricing page. It detects when the price you see is *not* the price someone else gets, and tells you exactly what to do about it.
 
 ---
 
@@ -47,8 +38,8 @@
 <div align="center">
 
 | | Capability | Detail |
-|---|---|---|
-| 🕵️ | **24 Parallel Agents** | 3 staggered waves × 8 agents, each with unique geo/device/cookie/referrer/network fingerprint |
+| :---: | :--- | :--- |
+| 🕵️ | **24 Parallel Agents** | 3 staggered waves $\times$ 8 agents, each with unique geo/device/cookie/referrer/network fingerprint |
 | 🌍 | **Global Multi-Geo** | Probes from US, UK, India, UAE, Singapore, and more — detects location-based price discrimination |
 | 📱 | **Cross-Device Detection** | Spoofs MacBook, iPhone, Android, iPad, Chromebook — premium devices see different prices |
 | 🍪 | **Cookie Profile Analysis** | Fresh vs aged cookies, loyalty program status, search history simulation |
@@ -70,14 +61,14 @@
 When you submit a URL, JACOBI returns:
 
 | Section | Description |
-|---------|-------------|
+|---|---|
 | **Topology Badge** | Color-coded classification: 🟢 uniform / 🟡 selective / 🟠 progressive / 🔴 aggressive |
 | **AI Analysis** | Gemini-generated plain-English verdict with actionable recommendations |
 | **Hidden Premium** | How much extra you're paying vs the cheapest achievable price |
 | **Network Fingerprint** | Price difference by proxy tier (datacenter → residential → mobile) |
 | **Price Impact** | Per-variable delta bars — which factor affects price the most |
 | **Comparison Table** | Full gradient breakdown: high vs low state, delta, significance |
-| **Agent Grid** | 6×4 grid of all 24 agents with live status and individual agent detail |
+| **Agent Grid** | $6 \times 4$ grid of all 24 agents with live status and individual agent detail |
 
 </details>
 
@@ -139,9 +130,9 @@ graph TB
     Verdict --> Frontend
     Frontend --> Extension["Chrome Extension<br/>Right-click 'Probe this price'"]
     
-    classDef frontend fill:#0f0,color:#000
-    classDef backend fill:#00f,color:#fff
-    classDef data fill:#f0f,color:#fff
+    classDef frontend fill:#00d992,color:#000
+    classDef backend fill:#60a5fa,color:#000
+    classDef data fill:#a78bfa,color:#000
 ```
 
 ### Data Flow
@@ -170,6 +161,7 @@ User                Frontend              Backend               BrightData
   │                     │                     │                     │              
   │  AI Verdict         │                     │                     │              
   │◄────────────────────┤                     │                     │              
+  │                     │                     │                     │              
 ```
 
 ---
@@ -219,7 +211,7 @@ JACOBI would not exist without **BrightData's** Unlocker API and proxy infrastru
 ## 🌐 API Reference
 
 | Endpoint | Method | Description | Rate Limited |
-|----------|--------|-------------|:-----------:|
+|:---|:---:|:---|:---:|
 | `/health` | `GET` | Backend health check | ❌ |
 | `/api/probe` | `POST` | Launch 24-agent pricing probe | ✅ 5/min/IP |
 | `/api/result/{id}` | `GET` | Poll probe results by session ID | ❌ |
@@ -240,7 +232,7 @@ JACOBI would not exist without **BrightData's** Unlocker API and proxy infrastru
 Each of the 24 agents uses a unique combination of these variables:
 
 | Variable | States | Impact |
-|:--------:|--------|:------:|
+|:---:|:---|:---:|
 | 🌍 **Location** | High-income (NY, London, Dubai) vs Low-income (rural Iowa, Mumbai, Mississippi) | **Highest** — up to 41% price difference |
 | 📱 **Device** | Premium (MacBook Pro, iPhone 15, Galaxy S24) vs Budget (Chromebook, Android budget) | **High** — up to 13% premium for luxury devices |
 | 🍪 **Cookies** | Fresh (first visit) vs Aged (90-day loyalty, abandoned cart) | **Medium** — up to 4% loyalty penalty |
@@ -256,7 +248,7 @@ After computing statistical gradients across all 24 agents, JACOBI classifies th
 ```
                     ┌──────────────┐
                     │   UNIFORM    │  ← No significant price differences found
-                    │   🟢 #00ff41  │
+                    │   🟢 #00d992  │
                     └──────┬───────┘
                            │
                     ┌──────▼───────┐
@@ -288,7 +280,7 @@ After computing statistical gradients across all 24 agents, JACOBI classifies th
 <br>
 
 | Variable | Required | Default | Description |
-|----------|:--------:|:-------:|-------------|
+|---|:---:|:---:|---|
 | `BRIGHTDATA_API_KEY` | ✅ | — | BrightData Unlocker API key |
 | `BRIGHTDATA_UNLOCKER_ZONE` | ❌ | `mcp_unlocker` | Unlocker zone name |
 | `GEMINI_API_KEY` | ❌ | — | Google Gemini AI for analysis |
@@ -375,7 +367,7 @@ python scratch/deploy_ledger.py
 ## 📈 Project Metrics
 
 | Metric | Value |
-|--------|:-----:|
+|---|:---:|
 | Frontend bundle (`/chat`) | **113 kB** (205 kB first load) |
 | Landing page | **3.43 kB** |
 | Probe duration (Google Flights) | **~90s** (20/24 agents) |

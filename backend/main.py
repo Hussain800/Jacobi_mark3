@@ -983,20 +983,40 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 25.0
-            sem_size = 16
+            sem_size = 3
+            phase1_count = 6
         else:
             probe_timeout_s = 15.0
-            sem_size = 12
+            sem_size = 6
+            phase1_count = 24
 
         sem = asyncio.Semaphore(sem_size)
         async def _limited_agent(cfg):
             async with sem:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
 
-        tasks = [_limited_agent(c) for c in AGENT_CONFIGS]
+        # Phase 1: run first N agents for quick price detection
+        phase1 = AGENT_CONFIGS[:phase1_count]
+        tasks = [_limited_agent(c) for c in phase1]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:
             _ingest_agent(r)
+
+        # Check if pricing is uniform (no need for more agents)
+        prices = [v for v in session["all_prices"].values() if v is not None]
+        uniform = False
+        if len(prices) >= 3:
+            bp = statistics.median(prices)
+            spread_pct = ((max(prices) - min(prices)) / bp * 100) if bp > 0 else 0
+            uniform = spread_pct < 2.0
+
+        # Phase 2: only if prices vary significantly and we want more data
+        if not uniform:
+            phase2 = AGENT_CONFIGS[phase1_count:]
+            tasks = [_limited_agent(c) for c in phase2]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                _ingest_agent(r)
 
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]

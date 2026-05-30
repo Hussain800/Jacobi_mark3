@@ -519,17 +519,17 @@ class BrightDataMCPClient:
             # Auth / billing / zone / validation → silently fall back.
             if self._should_fallback(response.status_code, response.text):
                 print(f"[BD-FALLBACK] BD {response.status_code} for {identity.get('id','?')}: "
-                      f"{response.text[:160]!r} → direct HTTP", flush=True)
+                      f"{response.text[:160]!r} -> direct HTTP", flush=True)
                 return await self._direct_http_fetch(url, identity, timeout_s)
             # Anything else (e.g. site-side block) → surface honestly.
             return {"success": False, "elapsed_ms": elapsed_ms,
                     "error": f"API returned {response.status_code}: {response.text[:200]}"}
         except asyncio.TimeoutError:
             # Treat BD timeouts as transport-level failures → fall back.
-            print(f"[BD-FALLBACK] BD timeout for {identity.get('id','?')} → direct HTTP", flush=True)
+            print(f"[BD-FALLBACK] BD timeout for {identity.get('id','?')} -> direct HTTP", flush=True)
             return await self._direct_http_fetch(url, identity, timeout_s)
         except Exception as e:
-            print(f"[BD-FALLBACK] BD exception for {identity.get('id','?')}: {e!r} → direct HTTP", flush=True)
+            print(f"[BD-FALLBACK] BD exception for {identity.get('id','?')}: {e!r} -> direct HTTP", flush=True)
             return await self._direct_http_fetch(url, identity, timeout_s)
 
     async def close(self):
@@ -632,7 +632,18 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> d
 
 
 async def run_full_probe(url: str, name: str) -> dict:
+    """Synchronous wrapper for callers that want the full result. The
+    /api/probe endpoint now launches the engine via run_probe_in_background()
+    instead, so this blocking variant is only used by scripts / tests."""
     sid, session = create_session(url, name)
+    return await _run_probe_engine(session, url)
+
+
+async def _run_probe_engine(session: dict, url: str) -> dict:
+    """The actual 24-agent engine — runs in-place on the provided session
+    dict. Separated from create_session() so /api/probe can return the
+    session_id immediately, then launch this in a background task so the
+    HTTP response isn't blocked by 12-50 seconds of fetching."""
     overall_start = time.time()
     bd = BrightDataMCPClient()
     await bd.start()
@@ -663,7 +674,21 @@ async def run_full_probe(url: str, name: str) -> dict:
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         if not valid:
-            session["status"] = "failed"; session["error"] = "No valid prices extracted."
+            # No usable prices. Pick the most actionable explanation
+            # based on what the engine actually observed.
+            session["status"] = "failed"
+            if session["detected_agents"] > 0:
+                session["error"] = (
+                    f"This site blocked our agents at the perimeter — "
+                    f"{session['detected_agents']}/24 hit a honeypot / captcha. "
+                    f"Try a different URL or use one of the case studies."
+                )
+            else:
+                session["error"] = (
+                    "Reached the page but couldn't find a comparable price field. "
+                    "The site may JS-render prices after page load. "
+                    "Try a hotel or product page with a clearly listed price."
+                )
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         bp = statistics.median(valid)
@@ -891,38 +916,64 @@ async def launch_probe(
             },
         )
 
+    # Create the session synchronously (fast, in-memory) and return its
+    # session_id IMMEDIATELY. The engine runs in a background task so the
+    # HTTP request doesn't block for 12-50 seconds while 24 agents fetch —
+    # which Render's edge proxy terminates after ~30s as "network error".
+    #
+    # The frontend already polls /api/result/{session_id} every 1s, so the
+    # async-launch pattern fits its existing flow.
+    sid, session = create_session(input.target_url, input.target_name)
+    asyncio.create_task(_complete_probe_in_background(
+        session=session,
+        url=input.target_url,
+        user_id=user["id"],
+        publish_to_board=bool(input.publish_to_board),
+    ))
+    return {"session_id": sid, "status": "running"}
+
+
+async def _complete_probe_in_background(
+    session: dict,
+    url: str,
+    user_id: str,
+    publish_to_board: bool,
+) -> None:
+    """Run the probe engine, persist the result, increment the quota.
+    Wrapped so the launch endpoint can fire-and-forget.
+
+    Every step is fail-soft so an exception in the persistence layer
+    doesn't poison the in-memory session — the user can still poll
+    /api/result and see whatever the engine produced.
+    """
     try:
-        session = await run_full_probe(input.target_url, input.target_name)
-        # Persist to Supabase, stamping the owning user so RLS + history work.
-        saved_id = None
-        try:
-            saved_id = await save_probe(
-                session,
-                user_id=user["id"],
-                is_public=bool(input.publish_to_board),
-            )
-        except Exception as db_err:
-            print(f"[MAIN] Supabase save skipped: {db_err}")
-        # Increment quota ONLY when a row was actually persisted. This stops
-        # transient DB errors from charging credit, and stops the static-demo
-        # path from ever counting.
-        if saved_id:
-            try:
-                await increment_probe_count(user["id"])
-            except Exception as inc_err:
-                print(f"[PROBE] increment_probe_count failed: {inc_err!r}")
-        return {"session_id": session["session_id"], "status": session["status"]}
+        await _run_probe_engine(session, url)
     except Exception as e:
-        err_msg = str(e)
-        if "Connection closed" in err_msg or "MCP" in err_msg:
-            # Engine couldn't start → don't consume credit, surface as static
-            # demo so the user still sees *something*.
-            return {
-                "session_id": "demo_session_static",
-                "status": "completed",
-                "warning": "Live probe unavailable. Showing reference data.",
-            }
-        raise HTTPException(status_code=500, detail=err_msg)
+        # Engine itself crashed. Mark the session as failed so the
+        # frontend's polling loop can surface a clean error state instead
+        # of hanging forever.
+        print(f"[PROBE-BG] engine crashed: {e!r}")
+        session["status"] = "failed"
+        session["error"] = "Probe engine error. Please retry."
+
+    # Persist to Supabase, stamping the owning user so RLS + history work.
+    saved_id = None
+    try:
+        saved_id = await save_probe(
+            session,
+            user_id=user_id,
+            is_public=publish_to_board,
+        )
+    except Exception as db_err:
+        print(f"[PROBE-BG] save_probe failed: {db_err!r}")
+
+    # Increment quota ONLY when a row was actually persisted. Transient
+    # DB errors don't charge credit.
+    if saved_id:
+        try:
+            await increment_probe_count(user_id)
+        except Exception as inc_err:
+            print(f"[PROBE-BG] increment_probe_count failed: {inc_err!r}")
 
 
 def build_agent_list(session: dict) -> list:

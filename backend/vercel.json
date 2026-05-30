@@ -1,15 +1,14 @@
 {
   "builds": [
-    { "src": "main.py", "use": "@vercel/python" }
+    {
+      "src": "main.py",
+      "use": "@vercel/python",
+      "config": { "maxDuration": 60 }
+    }
   ],
   "routes": [
     { "src": "/(.*)", "dest": "main.py" }
   ],
-  "functions": {
-    "main.py": {
-      "maxDuration": 60
-    }
-  },
   "env": {
     "BRIGHTDATA_API_KEY": "${BRIGHTDATA_API_KEY}",
     "GEMINI_API_KEY": "${GEMINI_API_KEY}",

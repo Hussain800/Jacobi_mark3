@@ -34,8 +34,7 @@ export default function PreviewBody() {
           <div className="hero-copy">
             <div className="chip" data-reveal>
               <span className="pulse" />{" "}
-              <span className="chip-num" data-count="1247892">0</span>
-              &nbsp;probes · running now
+              24 identities · 4 vectors · evidence-grade
             </div>
 
             <h1 className="hero-h1" data-reveal>
@@ -93,13 +92,13 @@ export default function PreviewBody() {
             <div className="globe-readout mono">
               <div className="gr-row">
                 <span className="gr-led" />
-                <span id="gr-status">deploying identities</span>
+                <span id="gr-status">sample deployment</span>
               </div>
               <div className="gr-row gr-count">
                 <span id="gr-count">00</span>
-                <span className="gr-of">/ 24 live</span>
+                <span className="gr-of">/ 24 identities</span>
               </div>
-              <div className="gr-meta">JFK → LHR · UA182 · residential mesh</div>
+              <div className="gr-meta">JFK → LHR · UA182 · residential mesh · demo cycle</div>
             </div>
           </div>
         </div>
@@ -115,29 +114,28 @@ export default function PreviewBody() {
         <div className="wrap statband-grid">
           <div className="stat" data-reveal>
             <div className="stat-num tnum">
-              <span data-count="1247892">0</span>
-            </div>
-            <div className="label-mono">URLs investigated</div>
-          </div>
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span className="muted-pre">$</span>
-              <span data-count="4823450">0</span>
-            </div>
-            <div className="label-mono">Overcharges exposed</div>
-          </div>
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span data-count="73">0</span>
-              <span className="muted-pre">%</span>
-            </div>
-            <div className="label-mono">Sites pricing by device</div>
-          </div>
-          <div className="stat" data-reveal>
-            <div className="stat-num tnum">
               <span data-count="24">0</span>
             </div>
             <div className="label-mono">Identities per probe</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="4">0</span>
+            </div>
+            <div className="label-mono">Discrimination vectors</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              <span data-count="3">0</span>
+            </div>
+            <div className="label-mono">Network tiers</div>
+          </div>
+          <div className="stat" data-reveal>
+            <div className="stat-num tnum">
+              ~<span data-count="60">0</span>
+              <span className="muted-pre">s</span>
+            </div>
+            <div className="label-mono">Probe runtime</div>
           </div>
         </div>
       </section>
@@ -385,7 +383,7 @@ export default function PreviewBody() {
               and a browser&nbsp;setting.&rdquo;
             </blockquote>
             <figcaption className="callout-cite label-mono">
-              — verified across 12,000+ probes
+              — observed across independent academic studies
             </figcaption>
           </figure>
         </div>
@@ -404,7 +402,7 @@ export default function PreviewBody() {
             .
           </h2>
           <p className="cta-sub sec mono" data-reveal>
-            Two million URLs investigated. Zero cost to you. Paste your first target.
+            24 identities. Four vectors. One URL. Paste your first target.
           </p>
           <form
             className="probe-instrument cta-bar"

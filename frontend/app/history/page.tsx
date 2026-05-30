@@ -1,19 +1,28 @@
 "use client";
 
 /**
- * History — the logbook of past probes.
+ * History — the logbook of past probes, ported to the Claude Design system.
  *
- * Aligned with the cockpit token system: bg-ink / bg-raised / border-line,
- * signal/overcharge/warning semantic colors. Reads as a forensic logbook,
- * not a generic SaaS card grid.
+ * Three states:
+ *   1. Logged-out  → sign-in CTA (Google via Supabase OAuth)
+ *   2. Logged-in, zero probes → honest empty state
+ *   3. Logged-in with probes  → table of probes from localStorage
  *
- * localStorage key `probe-conversations` is preserved.
+ * NOTE: per-user history is currently sourced from localStorage
+ * (`probe-conversations`) since that's how /chat persists results today.
+ * When the backend ships a `/api/history?user=…` endpoint, swap the
+ * loader in `loadHistory()`.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Trash2, Clock, Globe, FileText } from "lucide-react";
+import Script from "next/script";
+import DesignNav from "../../components/design/DesignNav";
+import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
+import { createClient } from "../../lib/supabase/client";
+import { getClientApiBase } from "../../lib/api-base";
+import "../jacobi-design.css";
 
 interface ConversationSummary {
   id: string;
@@ -27,287 +36,304 @@ interface ConversationSummary {
   topologyClass?: string;
 }
 
-function topologyTone(cls?: string) {
-  switch (cls) {
-    case "uniform":     return { text: "text-signal",     bg: "bg-signal/10",     border: "border-signal/30" };
-    case "selective":   return { text: "text-warning",    bg: "bg-warning/10",    border: "border-warning/30" };
-    case "progressive": return { text: "text-warning",    bg: "bg-warning/10",    border: "border-warning/30" };
-    case "aggressive":  return { text: "text-overcharge", bg: "bg-overcharge/10", border: "border-overcharge/30" };
-    default:            return { text: "text-muted",      bg: "bg-raised",        border: "border-line" };
-  }
+interface BackendHistoryRow {
+  session_id: string;
+  target_url: string;
+  target_name?: string;
+  timestamp: string;
+  status: string;
+  baseline_price?: number | null;
+  max_price_spread?: number | null;
+  topology_class?: string;
 }
 
-function formatDate(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const TOPO_COLOR: Record<string, string> = {
+  uniform:     "#3ad79f",
+  selective:   "#d8b06a",
+  progressive: "#ff9d52",
+  aggressive:  "#ff5468",
+};
+
+function host(url: string): string {
+  try { return new URL(url).host; }
+  catch { return url.replace(/^https?:\/\//, "").split("/")[0]; }
 }
 
-function truncate(s: string, max: number = 50): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
+function timeAgo(ts: number): string {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60)    return `${Math.round(s)}s ago`;
+  if (s < 3600)  return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
 }
 
 export default function HistoryPage() {
-  const reducedMotion = useReducedMotion();
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [sortAsc, setSortAsc] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  useReveals();
+
   useEffect(() => {
-    const raw = localStorage.getItem("probe-conversations");
-    if (raw) {
+    const sb = createClient();
+    sb.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+  }, []);
+
+  useEffect(() => {
+    if (signedIn !== true) return;
+    let alive = true;
+    (async () => {
+      try {
+        // Primary: ask the backend for this user's probes (user-scoped, RLS-safe).
+        const sb = createClient();
+        const { data: { session } } = await sb.auth.getSession();
+        const token = session?.access_token;
+        const apiBase = getClientApiBase();
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const r = await fetch(`${apiBase}/api/history?limit=50`, { headers });
+        if (r.ok) {
+          const rows: BackendHistoryRow[] = await r.json();
+          if (!alive) return;
+          const mapped: ConversationSummary[] = rows.map(row => ({
+            id: row.session_id,
+            session_id: row.session_id,
+            title: (row.target_name || row.target_url || "Probe").slice(0, 50),
+            timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
+            targetUrl: row.target_url,
+            targetName: row.target_name,
+            baselinePrice: row.baseline_price ?? null,
+            savings: row.max_price_spread ?? null,
+            topologyClass: row.topology_class,
+          }));
+          if (mapped.length > 0) {
+            setConversations(mapped);
+            return;
+          }
+        }
+      } catch { /* fall through to localStorage */ }
+
+      // Fallback ONLY when backend returns nothing — preserves per-device
+      // history of pre-auth probes captured during early access.
+      if (!alive) return;
+      const raw = localStorage.getItem("probe-conversations");
+      if (!raw) return;
       try {
         const data = JSON.parse(raw);
         if (Array.isArray(data)) setConversations(data);
-      } catch {
-        setConversations([]);
-      }
-    }
-  }, []);
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, [signedIn]);
 
   const sorted = useMemo(
-    () => [...conversations].sort((a, b) => (sortAsc ? a.timestamp - b.timestamp : b.timestamp - a.timestamp)),
-    [conversations, sortAsc],
-  );
-
-  // Discrimination intensity bar — relative to the max savings in the list
-  const maxSavings = useMemo(
-    () => Math.max(0, ...conversations.map((c) => c.savings ?? 0)),
+    () => [...conversations].sort((a, b) => b.timestamp - a.timestamp),
     [conversations],
   );
 
-  const clearHistory = () => {
+  async function signIn() {
+    const sb = createClient();
+    await sb.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=/history` },
+    });
+  }
+
+  function clearHistory() {
     localStorage.removeItem("probe-conversations");
     setConversations([]);
     setConfirmClear(false);
-  };
+  }
 
   return (
-    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20">
-      {/* Page header — restrained, no SaaS chrome */}
-      <header className="border-b border-line">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
-          <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-3">
-            Logbook
-          </div>
-          <h1 className="font-serif text-3xl sm:text-4xl tracking-tight text-primary">
-            Probe history
-          </h1>
-          <p className="font-mono text-[11px] text-muted mt-3">
-            {conversations.length} probe{conversations.length !== 1 ? "s" : ""} recorded · stored locally
-          </p>
-        </div>
-      </header>
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
 
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 py-8">
-        {/* Toolbar */}
-        {conversations.length > 0 && (
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={() => setSortAsc(!sortAsc)}
-              className="flex items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-secondary border border-line hover:border-secondary/50 hover:text-primary rounded-md transition-colors"
-            >
-              <Clock className="w-3 h-3" />
-              {sortAsc ? "Oldest first" : "Newest first"}
-            </button>
+      <DesignNav />
 
-            {!confirmClear ? (
-              <button
-                onClick={() => setConfirmClear(true)}
-                className="flex items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted hover:text-overcharge border border-line hover:border-overcharge/40 rounded-md transition-colors"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear all
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-overcharge">
-                  Confirm?
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Logbook
+              </span>
+              <h1 className="display sec-title">
+                Your{" "}
+                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
+                  probe history
                 </span>
-                <button
-                  onClick={clearHistory}
-                  className="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink bg-overcharge hover:brightness-110 rounded-md transition-all"
-                >
-                  Yes, delete
-                </button>
-                <button
-                  onClick={() => setConfirmClear(false)}
-                  className="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-secondary border border-line hover:border-secondary/50 rounded-md transition-colors"
-                >
-                  Cancel
+              </h1>
+              <p className="sec-lede sec">
+                Every probe you've run, with topology, spread, and the receipts.
+              </p>
+            </div>
+
+            {/* ── Loading auth ────────────────────────────────────── */}
+            {signedIn === null && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 0",
+                  textAlign: "center",
+                  color: "var(--text-3)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 12,
+                }}
+              >
+                Checking session…
+              </div>
+            )}
+
+            {/* ── Logged out ──────────────────────────────────────── */}
+            {signedIn === false && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  Sign in to view history
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  Your probes are tied to your account. Sign in with Google to
+                  see your evidence trail across devices.
+                </p>
+                <button onClick={signIn} className="btn btn-primary">
+                  Sign in with Google →
                 </button>
               </div>
             )}
-          </div>
-        )}
 
-        {/* Empty state */}
-        {conversations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-12 h-12 rounded-full border border-line flex items-center justify-center mb-6 bg-raised">
-              <FileText className="w-5 h-5 text-muted" />
-            </div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted mb-2">
-              The logbook is empty
-            </p>
-            <p className="font-mono text-[11px] text-secondary mb-6 max-w-sm">
-              Probe a URL to start building your evidence trail.
-            </p>
-            <Link
-              href="/chat"
-              className="inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
-            >
-              Start a probe
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        )}
+            {/* ── Logged in, empty ────────────────────────────────── */}
+            {signedIn === true && sorted.length === 0 && (
+              <div
+                data-reveal
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  The logbook is empty
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  Probe a URL to start building your evidence trail.
+                </p>
+                <Link href="/chat" className="btn btn-primary">
+                  Start a probe →
+                </Link>
+              </div>
+            )}
 
-        {/* Entries */}
-        {conversations.length > 0 && (
-          <div className="border border-line rounded-lg overflow-hidden bg-raised">
-            {/* Desktop column headers */}
-            <div className="hidden md:grid grid-cols-[2fr_1fr_1.2fr_1fr_auto] gap-4 px-5 py-3 border-b border-line font-mono text-[9px] uppercase tracking-[0.22em] text-muted">
-              <span>Target</span>
-              <span>Date</span>
-              <span>Spread</span>
-              <span>Topology</span>
-              <span>&nbsp;</span>
-            </div>
-
-            {sorted.map((entry, i) => {
-              const tone = topologyTone(entry.topologyClass);
-              const savings = entry.savings ?? 0;
-              const intensityPct = maxSavings > 0 ? (savings / maxSavings) * 100 : 0;
-              return (
-                <motion.div
-                  key={entry.id}
-                  initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-40px" }}
-                  transition={{
-                    duration: 0.5,
-                    delay: Math.min(i * 0.04, 0.4),
-                    ease: [0.22, 1, 0.36, 1],
+            {/* ── Logged in, has probes ───────────────────────────── */}
+            {signedIn === true && sorted.length > 0 && (
+              <>
+                <div
+                  data-reveal
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 16,
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--text-3)",
                   }}
-                  className="border-b border-line last:border-0 hover:bg-ink/40 transition-colors"
                 >
-                  {/* Desktop row */}
-                  <div className="hidden md:grid grid-cols-[2fr_1fr_1.2fr_1fr_auto] gap-4 px-5 py-4 items-center">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Globe className="w-3 h-3 text-muted shrink-0" />
-                      <div className="min-w-0">
-                        <div className="font-mono text-[12px] text-secondary truncate" title={entry.targetUrl}>
-                          {entry.targetName || truncate(entry.targetUrl, 50)}
-                        </div>
-                        {entry.targetName && (
-                          <div className="font-mono text-[10px] text-muted truncate mt-0.5">
-                            {truncate(entry.targetUrl, 60)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <span className="font-mono text-[11px] text-muted tabular-nums">
-                      {formatDate(entry.timestamp)}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <div className="h-1.5 flex-1 max-w-[120px] rounded-full bg-ink overflow-hidden">
-                        {savings > 0 && (
-                          <motion.div
-                            initial={{ width: 0 }}
-                            whileInView={{ width: `${Math.max(6, intensityPct)}%` }}
-                            viewport={{ once: true }}
-                            transition={{ duration: 0.8, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-                            className="h-full bg-signal"
-                          />
-                        )}
-                      </div>
-                      <span className="font-mono text-[11px] text-signal tabular-nums w-16 text-right">
-                        {entry.savings != null ? `−$${entry.savings.toFixed(0)}` : "—"}
-                      </span>
-                    </div>
-                    <span
-                      className={`font-mono text-[9px] uppercase tracking-[0.18em] px-2 py-1 rounded-full border inline-block w-fit ${tone.bg} ${tone.text} ${tone.border}`}
+                  <span>{sorted.length} probe{sorted.length !== 1 ? "s" : ""} recorded</span>
+                  {!confirmClear ? (
+                    <button
+                      onClick={() => setConfirmClear(true)}
+                      className="btn btn-ghost"
+                      style={{ fontSize: 10, padding: "6px 12px" }}
                     >
-                      {entry.topologyClass || "—"}
+                      Clear all
+                    </button>
+                  ) : (
+                    <span style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={clearHistory}
+                        className="btn btn-primary"
+                        style={{ fontSize: 10, padding: "6px 12px" }}
+                      >
+                        Confirm delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmClear(false)}
+                        className="btn btn-ghost"
+                        style={{ fontSize: 10, padding: "6px 12px" }}
+                      >
+                        Cancel
+                      </button>
                     </span>
-                    <Link
-                      href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-secondary border border-line hover:border-signal/50 hover:text-signal rounded-md transition-colors"
-                    >
-                      Rerun
-                      <ArrowRight className="w-3 h-3" />
-                    </Link>
-                  </div>
+                  )}
+                </div>
 
-                  {/* Mobile card */}
-                  <div className="md:hidden px-5 py-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Globe className="w-3 h-3 text-muted shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <div className="font-mono text-[12px] text-secondary truncate">
-                            {entry.targetName || truncate(entry.targetUrl, 35)}
-                          </div>
-                          <div className="font-mono text-[10px] text-muted truncate mt-0.5">
-                            {truncate(entry.targetUrl, 40)}
-                          </div>
+                <div className="board-scroll" data-reveal>
+                  <div className="board-table">
+                    <div className="bt-head">
+                      <span>#</span>
+                      <span>Target</span>
+                      <span>Topology</span>
+                      <span>Spread</span>
+                      <span>Probed</span>
+                      <span>&nbsp;</span>
+                      <span>&nbsp;</span>
+                    </div>
+                    {sorted.map((entry, i) => {
+                      const topo = (entry.topologyClass || "uniform").toLowerCase();
+                      const c = TOPO_COLOR[topo] || "var(--text-3)";
+                      const savings = entry.savings ?? 0;
+                      return (
+                        <div key={entry.id} className="bt-row" data-reveal>
+                          <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
+                          <span className="bt-target">
+                            <span className="bt-name">{entry.targetName || host(entry.targetUrl)}</span>
+                            <span className="bt-host">{host(entry.targetUrl)}</span>
+                          </span>
+                          <span
+                            className="topo-pill"
+                            style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
+                          >
+                            <span className="d" style={{ background: c }} />
+                            {topo}
+                          </span>
+                          <span className={`bt-spread ${savings === 0 ? "zero" : ""}`}>
+                            {savings > 0 ? `+$${Math.round(savings)}` : "—"}
+                          </span>
+                          <span className="bt-time">{timeAgo(entry.timestamp)}</span>
+                          <span>
+                            <Link
+                              href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`}
+                              className="btn btn-ghost"
+                              style={{ fontSize: 10, padding: "6px 12px" }}
+                            >
+                              Rerun
+                            </Link>
+                          </span>
+                          <span>&nbsp;</span>
                         </div>
-                      </div>
-                      <span
-                        className={`font-mono text-[8px] uppercase tracking-[0.18em] px-2 py-0.5 rounded-full border shrink-0 ${tone.bg} ${tone.text} ${tone.border}`}
-                      >
-                        {entry.topologyClass || "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-1.5 flex-1 rounded-full bg-ink overflow-hidden">
-                        {savings > 0 && (
-                          <div
-                            className="h-full bg-signal"
-                            style={{ width: `${Math.max(6, intensityPct)}%` }}
-                          />
-                        )}
-                      </div>
-                      <span className="font-mono text-[10px] text-signal tabular-nums w-14 text-right">
-                        {entry.savings != null ? `−$${entry.savings.toFixed(0)}` : "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-muted">
-                        {formatDate(entry.timestamp)}
-                      </span>
-                      <Link
-                        href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-signal border border-signal/40 rounded-md"
-                      >
-                        Rerun
-                        <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    </div>
+                      );
+                    })}
                   </div>
-                </motion.div>
-              );
-            })}
+                </div>
+              </>
+            )}
           </div>
-        )}
+        </section>
+      </main>
 
-        {conversations.length > 0 && (
-          <div className="mt-8 text-center">
-            <Link
-              href="/chat"
-              className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted hover:text-secondary transition-colors"
-            >
-              ← Back to probe cockpit
-            </Link>
-          </div>
-        )}
-      </div>
-    </main>
+      <DesignFooter />
+    </div>
   );
 }

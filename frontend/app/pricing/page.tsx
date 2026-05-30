@@ -4,10 +4,12 @@
  * Pricing — Claude Design port + new Enterprise tier.
  *
  * Three plans:
- *   - Free   — 15 probes/month, shareable links, public board access
- *   - Pro    — $29/mo, unlimited probes, forensic PDF, CSV/JSON exports,
- *              priority residential lanes, scheduled re-probes
- *   - Enterprise — bespoke, contact sales
+ *   - Free       — 24 probes/month, 24 identities per probe, basic report,
+ *                  shareable link, limited history
+ *   - Pro $29/mo — 50 probes/month, 24 identities per probe, full forensic
+ *                  PDF, probe history, private share links, priority
+ *                  processing, board opt-in control
+ *   - Enterprise — custom volume, contact wearejacobi@outlook.com
  *
  * Pro keeps the existing Supabase + Stripe checkout flow (`startCheckout` /
  * `startPortal` / `fetchPlan` from lib/billing.ts) so nothing about the
@@ -24,9 +26,10 @@ import { createClient } from "../../lib/supabase/client";
 import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
 import DesignNav from "../../components/design/DesignNav";
 import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
 import "../jacobi-design.css";
 
-const ENTERPRISE_EMAIL = "enterprise@jacobi.report";
+const ENTERPRISE_EMAIL = "wearejacobi@outlook.com";
 
 const STRIPE_TEST_MODE =
   (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
@@ -36,6 +39,10 @@ export default function PricingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+
+  // Without this, every [data-reveal] element stays at opacity:0 and the
+  // page renders blank. (The landing page calls this; pricing did not.)
+  useReveals();
 
   useEffect(() => {
     const sb = createClient();
@@ -107,14 +114,13 @@ export default function PricingPage() {
                 .
               </h1>
               <p className="sec-lede sec">
-                Start with 15 probes a month. Go Pro when you want the full
-                forensic record and exports. Get in touch for Enterprise terms.
+                Start with 24 probes. Go Pro for 50. Enterprise teams
+                can contact us for custom volume.
               </p>
-              {STRIPE_TEST_MODE && (
-                <div className="stripe-banner mono" data-reveal>
-                  <span className="sb-dot" /> Stripe test mode · no card charged
-                </div>
-              )}
+              {/* The Stripe test-mode banner that used to live here was
+                  removed per product direction: customer-facing UI should
+                  read as a real SaaS, not a sandbox. Test-mode is still
+                  enforced at the key level via STRIPE_TEST_MODE in code. */}
             </div>
 
             <div
@@ -142,21 +148,21 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ forever</span>
                   </div>
                   <p className="plan-tag sec">
-                    For the curious shopper who wants proof before they buy.
+                    Best for trying JACOBI — proof before you buy.
                   </p>
                 </div>
                 <Link className="btn btn-ghost plan-cta" href="/chat">
                   Start probing
                 </Link>
                 <ul className="plan-feats">
-                  <li><span className="pf-check">✓</span> 15 probes / month</li>
-                  <li><span className="pf-check">✓</span> Full 24-agent deployment</li>
-                  <li><span className="pf-check">✓</span> Topology classification + verdict</li>
-                  <li><span className="pf-check">✓</span> Shareable result links</li>
-                  <li><span className="pf-check">✓</span> Public leaderboard access</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Forensic PDF / CSV export</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Scheduled re-probes</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Priority residential lanes</li>
+                  <li><span className="pf-check">✓</span> <strong>24 probes</strong> / month</li>
+                  <li><span className="pf-check">✓</span> 24 synthetic identities per probe</li>
+                  <li><span className="pf-check">✓</span> Basic discrimination report</li>
+                  <li><span className="pf-check">✓</span> Shareable result link</li>
+                  <li><span className="pf-check">✓</span> Limited history</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Forensic PDF report</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Private share links</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Priority processing</li>
                 </ul>
               </div>
 
@@ -182,8 +188,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ month</span>
                   </div>
                   <p className="plan-tag sec">
-                    For the analyst who treats pricing as evidence — and
-                    needs the paper trail.
+                    Best for founders, analysts, journalists, and teams
+                    checking pricing regularly.
                   </p>
                 </div>
                 {isPro ? (
@@ -212,13 +218,13 @@ export default function PricingPage() {
                   </p>
                 )}
                 <ul className="plan-feats">
-                  <li><span className="pf-check pro">✓</span> <strong>Unlimited</strong> probes</li>
-                  <li><span className="pf-check pro">✓</span> Everything in Free</li>
-                  <li><span className="pf-check pro">✓</span> Forensic PDF export — one-page report</li>
-                  <li><span className="pf-check pro">✓</span> Raw CSV + JSON export</li>
-                  <li><span className="pf-check pro">✓</span> Scheduled re-probes + alerts</li>
-                  <li><span className="pf-check pro">✓</span> Identity fingerprint breakdown</li>
-                  <li><span className="pf-check pro">✓</span> Priority residential proxy lanes</li>
+                  <li><span className="pf-check pro">✓</span> <strong>50 probes / month</strong></li>
+                  <li><span className="pf-check pro">✓</span> 24 synthetic identities per probe</li>
+                  <li><span className="pf-check pro">✓</span> Full forensic PDF report</li>
+                  <li><span className="pf-check pro">✓</span> Probe history</li>
+                  <li><span className="pf-check pro">✓</span> Private share links</li>
+                  <li><span className="pf-check pro">✓</span> Priority processing</li>
+                  <li><span className="pf-check pro">✓</span> Board opt-in control</li>
                 </ul>
               </div>
 
@@ -234,7 +240,7 @@ export default function PricingPage() {
                   </div>
                   <p className="plan-tag sec">
                     For research teams, regulators, and journalism rooms
-                    that need bulk volume and a paper trail you can subpoena.
+                    that need bulk volume and a paper trail.
                   </p>
                 </div>
                 <a
@@ -246,12 +252,11 @@ export default function PricingPage() {
                 </a>
                 <ul className="plan-feats">
                   <li><span className="pf-check pro">✓</span> Everything in Pro</li>
-                  <li><span className="pf-check pro">✓</span> <strong>Bulk volume</strong> — thousands of probes / day</li>
-                  <li><span className="pf-check pro">✓</span> Dedicated proxy pool</li>
-                  <li><span className="pf-check pro">✓</span> Custom variable axes</li>
-                  <li><span className="pf-check pro">✓</span> Single sign-on (SAML/OIDC)</li>
-                  <li><span className="pf-check pro">✓</span> Audit-grade data retention</li>
-                  <li><span className="pf-check pro">✓</span> Direct line to engineering</li>
+                  <li><span className="pf-check pro">✓</span> <strong>Custom probe volume</strong></li>
+                  <li><span className="pf-check pro">✓</span> Custom identity / topology sets</li>
+                  <li><span className="pf-check pro">✓</span> Team accounts + API access</li>
+                  <li><span className="pf-check pro">✓</span> Custom reporting</li>
+                  <li><span className="pf-check pro">✓</span> Dedicated support</li>
                   <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
                 </ul>
               </div>

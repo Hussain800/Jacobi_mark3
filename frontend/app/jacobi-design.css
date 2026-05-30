@@ -264,10 +264,16 @@
   opacity: 0; transform: translateY(22px);
   transition: opacity .9s var(--ease-out), transform .9s var(--ease-out);
   will-change: opacity, transform;
+  /* CSS-only safety net — content NEVER stays at opacity:0 even if the
+     reveal observer never fires (e.g. on pages that forgot useReveals,
+     or strict-mode double-mount in dev). The .in class below overrides
+     this when the observer does fire, preserving the staggered effect. */
+  animation: jx-reveal-fallback .8s var(--ease-out) .3s forwards;
 }
-.jacobi-design [data-reveal].in { opacity: 1; transform: none; }
+.jacobi-design [data-reveal].in { opacity: 1; transform: none; animation: none; }
+@keyframes jx-reveal-fallback { to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .jacobi-design [data-reveal] { opacity: 1; transform: none; transition: none; }
+  .jacobi-design [data-reveal] { opacity: 1; transform: none; transition: none; animation: none; }
   .jacobi-design { scroll-behavior: auto; }
 }
 

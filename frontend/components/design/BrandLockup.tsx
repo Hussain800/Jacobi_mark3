@@ -38,17 +38,9 @@ export default function BrandLockup({ size = 18, noLink = false, className }: Pr
       aria-label="JACOBI"
     >
       <span>JAC</span>
-      <span
-        style={{
-          color: "var(--cobalt-bright)",
-          // tighter spacing inside the bracket — the brackets visually
-          // hug the empty-space so it reads as a single glyph
-          letterSpacing: "0em",
-          padding: "0 0.05em",
-        }}
-      >
-        [&nbsp;]
-      </span>
+      <span style={{ color: "var(--cobalt-bright)" }}>[</span>
+      <span style={{ color: "var(--cobalt-bright)" }}>&nbsp;</span>
+      <span style={{ color: "var(--cobalt-bright)" }}>]</span>
       <span>BI</span>
     </span>
   );

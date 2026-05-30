@@ -18,9 +18,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        {/* Favicon: tiny [ ] bracket mark in cobalt on the brand canvas.
+            Matches the BrandLockup wordmark (JAC[ ]BI) so the tab icon
+            isn't a stale diamond/SVG from before the lockup existed. */}
         <link
           rel="icon"
-          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23000'/><path d='M8 16 L16 8 L24 16 L16 24 Z' fill='none' stroke='%236e92ff' stroke-width='1.5' opacity='0.9'/><circle cx='16' cy='16' r='3' fill='%236e92ff' opacity='0.7'/></svg>"
+          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2307080b'/><text x='16' y='22' text-anchor='middle' font-family='JetBrains Mono, ui-monospace, monospace' font-size='18' font-weight='700' fill='%236e92ff'>[ ]</text></svg>"
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

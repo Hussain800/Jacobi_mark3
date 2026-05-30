@@ -27,12 +27,24 @@ def get_supabase():
     return _client
 
 
-async def save_probe(session_data: dict, user_id: Optional[str] = None) -> Optional[str]:
+async def save_probe(
+    session_data: dict,
+    user_id: Optional[str] = None,
+    is_public: bool = False,
+) -> Optional[str]:
     """Save a completed probe session to Supabase. Returns the probe ID.
 
-    If `user_id` is provided, tags the row so RLS / quota / history filter
-    correctly. Requires the migration that adds `probes.user_id`; if the column
-    is missing, retries the insert without it and logs a warning.
+    Args:
+      session_data: the full probe result.
+      user_id:      Supabase user UUID. Stamped on the row for RLS / history
+                    filtering. None means anonymous (which /api/probe forbids,
+                    but kept here for back-compat with manual scripts).
+      is_public:    If True, the row appears on the public board. Default
+                    False — user probes are private until they opt in.
+
+    Resilience:
+      - If `user_id` column is missing → retries without it.
+      - If `is_public` column is missing → retries without it.
     """
     client = get_supabase()
     if not client:
@@ -55,6 +67,8 @@ async def save_probe(session_data: dict, user_id: Optional[str] = None) -> Optio
         "agents": session_data.get("agents"),
         "status": session_data.get("status", "completed"),
         "raw_result": session_data,
+        "is_public": bool(is_public),
+        "is_demo": False,
     }
     if user_id:
         data["user_id"] = user_id
@@ -69,13 +83,18 @@ async def save_probe(session_data: dict, user_id: Optional[str] = None) -> Optio
         return await asyncio.to_thread(_insert, data)
     except Exception as e:
         msg = str(e)
-        if "user_id" in msg and "column" in msg:
-            # Migration not applied yet — retry without user_id
-            fallback = {k: v for k, v in data.items() if k != "user_id"}
+        # Progressively drop optional columns if the migration hasn't run yet.
+        fallback = dict(data)
+        retried = False
+        for col in ("is_public", "is_demo", "user_id"):
+            if col in msg and "column" in msg and col in fallback:
+                fallback.pop(col, None)
+                retried = True
+        if retried:
             try:
                 return await asyncio.to_thread(_insert, fallback)
             except Exception as e2:
-                print(f"[SUPABASE] Failed to save probe (no user_id col): {e2}")
+                print(f"[SUPABASE] Failed to save probe (fallback): {e2}")
                 return None
         print(f"[SUPABASE] Failed to save probe: {e}")
         return None
@@ -110,14 +129,19 @@ async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
 
 
 async def get_probe_history(limit: int = 10) -> list:
-    """Get recent probes with key fields (for leaderboard/admin)."""
+    """Get recent probes with key fields (for leaderboard/admin).
+
+    NOTE: this is NOT user-scoped. Used by /api/leaderboard which now filters
+    by is_public/is_demo at the endpoint level. For per-user history, call
+    get_probe_history_for_user().
+    """
     client = get_supabase()
     if not client:
         return []
 
     def _fetch():
         result = client.table("probes") \
-            .select("id,target_url,target_name,topology_class,baseline_price,max_price_spread,max_price_spread_pct,created_at") \
+            .select("id,target_url,target_name,topology_class,baseline_price,max_price_spread,max_price_spread_pct,is_public,is_demo,created_at") \
             .order("created_at", desc=True) \
             .limit(limit) \
             .execute()
@@ -126,5 +150,80 @@ async def get_probe_history(limit: int = 10) -> list:
     try:
         return await asyncio.to_thread(_fetch)
     except Exception as e:
+        msg = str(e)
+        # Migration 003 may not be applied yet → retry without is_public/is_demo
+        if ("is_public" in msg or "is_demo" in msg) and "column" in msg:
+            def _fetch_fallback():
+                result = client.table("probes") \
+                    .select("id,target_url,target_name,topology_class,baseline_price,max_price_spread,max_price_spread_pct,created_at") \
+                    .order("created_at", desc=True) \
+                    .limit(limit) \
+                    .execute()
+                return result.data or []
+            try:
+                return await asyncio.to_thread(_fetch_fallback)
+            except Exception as e2:
+                print(f"[SUPABASE] history fallback failed: {e2}")
+                return []
         print(f"[SUPABASE] Failed to fetch history: {e}")
+        return []
+
+
+async def get_probe_history_for_user(user_id: str, limit: int = 50) -> list:
+    """Get recent probes belonging to a specific signed-in user.
+
+    Uses the service-role client so it can read across RLS — the user_id
+    filter below is the security boundary.
+    """
+    client = get_supabase()
+    if not client:
+        return []
+
+    def _fetch():
+        result = client.table("probes") \
+            .select("id,target_url,target_name,topology_class,baseline_price,max_price_spread,max_price_spread_pct,created_at,raw_result") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        return result.data or []
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        print(f"[SUPABASE] history-for-user failed: {e}")
+        return []
+
+
+async def get_public_board(limit: int = 50) -> list:
+    """Return probes opted into the public board, or curated demo rows.
+
+    Filter: is_public = true  OR  is_demo = true.
+    If the migration that adds those columns hasn't run, returns empty list
+    (do NOT leak private user probes when the filter is missing).
+    """
+    client = get_supabase()
+    if not client:
+        return []
+
+    def _fetch():
+        # Build the OR filter using PostgREST grammar.
+        result = client.table("probes") \
+            .select("id,target_url,target_name,topology_class,baseline_price,max_price_spread,max_price_spread_pct,is_public,is_demo,created_at") \
+            .or_("is_public.eq.true,is_demo.eq.true") \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        return result.data or []
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        msg = str(e)
+        if ("is_public" in msg or "is_demo" in msg) and "column" in msg:
+            # Migration not applied → return empty rather than leak everything.
+            print("[SUPABASE] board columns missing — returning empty board "
+                  "(apply migration 003_board_visibility.sql to populate)")
+            return []
+        print(f"[SUPABASE] get_public_board failed: {e}")
         return []

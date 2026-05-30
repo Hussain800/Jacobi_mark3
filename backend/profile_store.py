@@ -20,14 +20,30 @@ _quota_lock = asyncio.Lock()
 
 
 def _free_monthly_limit() -> int:
+    # Default matches the hackathon-facing Free tier (24 probes / month).
+    # Override via FREE_MONTHLY_PROBES env var.
     try:
-        return int(os.getenv("FREE_MONTHLY_PROBES", "15"))
+        return int(os.getenv("FREE_MONTHLY_PROBES", "24"))
     except ValueError:
-        return 15
+        return 24
 
 
-# Back-compat alias for any callers/tests that import this constant.
+def _pro_monthly_limit() -> int:
+    # Default matches the hackathon-facing Pro tier (50 probes / month).
+    # NOTE: can_run_probe() currently treats tier=="pro" as unconditionally
+    # allowed (early-return True), so this constant is not enforced yet —
+    # it's the stored value on the profile so the UI can show "X / 50 used".
+    # Post-hackathon: change can_run_probe() to compare used vs limit for Pro
+    # too. Override via PRO_MONTHLY_PROBES env var.
+    try:
+        return int(os.getenv("PRO_MONTHLY_PROBES", "50"))
+    except ValueError:
+        return 50
+
+
+# Back-compat aliases for any callers/tests that import these constants.
 FREE_MONTHLY_LIMIT = _free_monthly_limit()
+PRO_MONTHLY_LIMIT = _pro_monthly_limit()
 
 
 def _service_client():
@@ -117,8 +133,16 @@ async def can_run_probe(user_id: str) -> tuple[bool, dict]:
         except Exception:
             pass
 
-    if tier == "pro":
+    # Enterprise: unlimited (custom volume; signaled by tier).
+    if tier == "enterprise":
         return True, {"tier": tier, "used": used, "limit": None, "reset_at": reset_at}
+    # Pro: enforced against PRO_MONTHLY_LIMIT (or profile.probes_limit if set).
+    if tier == "pro":
+        pro_cap = limit if limit and limit > 0 else PRO_MONTHLY_LIMIT
+        if used >= pro_cap:
+            return False, {"tier": tier, "used": used, "limit": pro_cap, "reset_at": reset_at}
+        return True, {"tier": tier, "used": used, "limit": pro_cap, "reset_at": reset_at}
+    # Free.
     if used >= limit:
         return False, {"tier": tier, "used": used, "limit": limit, "reset_at": reset_at}
     return True, {"tier": tier, "used": used, "limit": limit, "reset_at": reset_at}
@@ -176,7 +200,10 @@ async def apply_subscription_active(
         client.table("profiles").update({
             "subscription_tier": "pro",
             "stripe_customer_id": stripe_customer_id,
-            "probes_limit": 1_000_000,  # effectively unlimited; tier is the real gate
+            # Hackathon-facing limit. can_run_probe() doesn't yet enforce this
+            # for Pro (treats tier=="pro" as unconditional True). Stored so the
+            # UI / future enforcement has the correct ceiling.
+            "probes_limit": PRO_MONTHLY_LIMIT,
         }).eq("id", user_id).execute()
         client.table("subscriptions").upsert({
             "user_id": user_id,

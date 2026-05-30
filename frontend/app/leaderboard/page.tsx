@@ -25,6 +25,7 @@ import Link from "next/link";
 import Script from "next/script";
 import DesignNav from "../../components/design/DesignNav";
 import DesignFooter from "../../components/design/DesignFooter";
+import { useReveals } from "../../components/design/landing-interactions";
 import { getClientApiBase } from "../../lib/api-base";
 import "../jacobi-design.css";
 
@@ -98,6 +99,9 @@ export default function LeaderboardPage() {
   const [error, setError] = useState(false);
   const apiBase = getClientApiBase();
 
+  // Without this, [data-reveal] elements stay opacity:0 → page reads as blank.
+  useReveals();
+
   useEffect(() => {
     let active = true;
     fetch(`${apiBase}/api/leaderboard?limit=30`)
@@ -167,7 +171,9 @@ export default function LeaderboardPage() {
                   <div className="label-mono">probes logged</div>
                 </div>
                 <div className="bstat">
-                  <div className="bstat-num serif tnum">+${stats.median}</div>
+                  <div className="bstat-num serif tnum">
+                    {stats.median > 0 ? `+$${stats.median}` : "—"}
+                  </div>
                   <div className="label-mono">median spread</div>
                 </div>
                 <div className="bstat">

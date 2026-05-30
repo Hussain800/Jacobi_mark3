@@ -319,10 +319,11 @@ export function useGlobe() {
           const statusEl = document.getElementById("gr-status");
           const countEl  = document.getElementById("gr-count");
           if (!countEl) return;
-          if (statusEl) statusEl.textContent = "deploying identities";
+          // Honest labels: this is a cinematic demo cycle, not a live probe.
+          if (statusEl) statusEl.textContent = "sample deployment";
           if (reduce) {
             countEl.textContent = "24";
-            if (statusEl) statusEl.textContent = "topology mapped";
+            if (statusEl) statusEl.textContent = "identity grid prepared";
             return;
           }
           const total = AGENTS.length;
@@ -338,7 +339,7 @@ export function useGlobe() {
               if (countEl) countEl.textContent = String(n).padStart(2, "0");
             }
             if (p < 1) requestAnimationFrame(tick);
-            else if (statusEl) statusEl.textContent = "topology mapped";
+            else if (statusEl) statusEl.textContent = "identity grid prepared";
           }
           requestAnimationFrame(tick);
         }, 900);

@@ -28,6 +28,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "../../../lib/supabase/client";
 
 /* ─── Types & data ──────────────────────────────────────────────────── */
 
@@ -235,7 +236,18 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const [deckUrl, setDeckUrl] = useState("");
   const [deckPhaseLabel, setDeckPhaseLabel] = useState("deploying");
   const [useCache, setUseCache] = useState(false);
+  const [publishToBoard, setPublishToBoard] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
+  // exhausted). We surface that state as a structured block instead of a
+  // generic "Server error: 401" so the user sees a real next step.
+  const [rejection, setRejection] = useState<null | {
+    code: "auth_required" | "quota_exceeded" | "unknown";
+    message: string;
+    used?: number;
+    limit?: number | null;
+    tier?: string;
+  }>(null);
 
   const [report, setReport] = useState<TopologyReport | null>(null);
   const [returnedAgents, setReturnedAgents] = useState<BackendAgent[]>([]);
@@ -328,13 +340,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       setElapsed((performance.now() - startTimeRef.current) / 1000);
     }, 100);
 
+    setRejection(null);
     if (useCache) {
       runDemo(url, name);
       return;
     }
     runLive(url, name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useCache, apiBase]);
+  }, [useCache, apiBase, publishToBoard]);
 
   const runDemo = useCallback(async (url: string, name: string) => {
     const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -370,11 +383,40 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
   const runLive = useCallback(async (url: string, name: string) => {
     try {
+      // SaaS auth: attach Supabase access token so the backend can identify
+      // the user, run the quota check, and stamp user_id on the saved probe.
+      const sb = createClient();
+      const { data: { session } } = await sb.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const r1 = await fetch(`${apiBase}/api/probe`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_url: url, target_name: name }),
+        headers,
+        body: JSON.stringify({
+          target_url: url,
+          target_name: name,
+          publish_to_board: publishToBoard,
+        }),
       });
+
+      if (r1.status === 401 || r1.status === 402) {
+        // Structured rejection from the backend (auth_required / quota_exceeded).
+        let payload: { detail?: { code?: string; message?: string; used?: number; limit?: number | null; tier?: string } } = {};
+        try { payload = await r1.json(); } catch { /* ignore */ }
+        const d = payload.detail || {};
+        stopTimers();
+        setRejection({
+          code: (d.code as "auth_required" | "quota_exceeded") || (r1.status === 401 ? "auth_required" : "quota_exceeded"),
+          message: d.message || (r1.status === 401 ? "Sign in to run a live probe." : "Monthly probe limit reached."),
+          used: d.used,
+          limit: d.limit,
+          tier: d.tier,
+        });
+        setPhase("idle");
+        return;
+      }
       if (!r1.ok) throw new Error(`Server error: ${r1.status}`);
       const b1 = await r1.json();
       const sessionId: string = b1.session_id;
@@ -858,7 +900,23 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             <span className="pi-rule" />
           </form>
 
-          <div style={{ marginTop: 18, display: "flex", justifyContent: "center", gap: 14 }}>
+          <div style={{
+            marginTop: 18, display: "flex", justifyContent: "center",
+            gap: 22, flexWrap: "wrap",
+          }}>
+            <label style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)",
+              letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer",
+            }}>
+              <input
+                type="checkbox"
+                checked={publishToBoard}
+                onChange={e => setPublishToBoard(e.target.checked)}
+                style={{ accentColor: "var(--cobalt)" }}
+              />
+              Include on public board
+            </label>
             <label style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)",
@@ -870,9 +928,57 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 onChange={e => setUseCache(e.target.checked)}
                 style={{ accentColor: "var(--cobalt)" }}
               />
-              Demo mode
+              Use cached result
             </label>
           </div>
+
+          {/* Backend rejection — auth required or quota exhausted. */}
+          {rejection && (
+            <div
+              data-reveal
+              className="in"
+              style={{
+                marginTop: 24,
+                padding: "22px 24px",
+                border: "1px solid var(--cobalt-line)",
+                borderRadius: "var(--r)",
+                background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                maxWidth: 520, marginLeft: "auto", marginRight: "auto",
+                textAlign: "center",
+              }}
+            >
+              <div className="label-mono" style={{ color: "var(--cobalt-bright)", marginBottom: 10 }}>
+                {rejection.code === "auth_required" ? "Sign in required" : "Monthly limit reached"}
+              </div>
+              <p style={{ fontSize: 14, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 16 }}>
+                {rejection.message}
+                {rejection.code === "quota_exceeded" && rejection.limit ? (
+                  <>
+                    {" "}You're on the <strong>{rejection.tier || "Free"}</strong> plan
+                    ({rejection.used} / {rejection.limit} this month).
+                  </>
+                ) : null}
+              </p>
+              {rejection.code === "auth_required" ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    const sb = createClient();
+                    await sb.auth.signInWithOAuth({
+                      provider: "google",
+                      options: { redirectTo: `${window.location.origin}/auth/callback?next=/chat` },
+                    });
+                  }}
+                >
+                  Sign in with Google →
+                </button>
+              ) : (
+                <a href="/pricing" className="btn btn-primary">
+                  Upgrade to Pro →
+                </a>
+              )}
+            </div>
+          )}
 
           <div className="cases">
             <div className="cases-divider"><span className="label-mono">or open a case</span></div>

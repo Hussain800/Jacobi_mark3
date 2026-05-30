@@ -207,13 +207,13 @@ export default function LandingPage() {
             <div className="globe-readout mono">
               <div className="gr-row">
                 <span className="gr-led" />
-                <span id="gr-status">deploying identities</span>
+                <span id="gr-status">sample deployment</span>
               </div>
               <div className="gr-row gr-count">
                 <span id="gr-count">00</span>
-                <span className="gr-of">/ 24 live</span>
+                <span className="gr-of">/ 24 identities</span>
               </div>
-              <div className="gr-meta">JFK → LHR · UA182 · residential mesh</div>
+              <div className="gr-meta">JFK → LHR · UA182 · residential mesh · demo cycle</div>
             </div>
           </div>
         </div>

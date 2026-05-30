@@ -25,7 +25,9 @@ export default function RouteChrome({ children }: { children: React.ReactNode })
     pathname.startsWith("/design-preview") ||
     pathname.startsWith("/chat") ||
     pathname.startsWith("/pricing") ||
-    pathname.startsWith("/leaderboard");
+    pathname.startsWith("/leaderboard") ||
+    pathname.startsWith("/history") ||
+    pathname.startsWith("/share");
 
   if (isDesign) {
     return <>{children}</>;

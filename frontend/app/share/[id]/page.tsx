@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import Script from "next/script";
+import DesignNav from "../../../components/design/DesignNav";
+import DesignFooter from "../../../components/design/DesignFooter";
+import "../../jacobi-design.css";
 
 export const dynamic = "force-dynamic";
 
@@ -46,28 +49,40 @@ export default async function SharePage({
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-ink text-primary font-sans flex items-center justify-center px-5">
-        <div className="text-center max-w-sm">
-          <div className="w-12 h-12 rounded-full border border-line bg-raised flex items-center justify-center mx-auto mb-6" />
-          <div className="font-mono text-[10px] uppercase tracking-[0.32em] text-muted mb-3">
-            404
-          </div>
-          <h1 className="font-serif text-2xl text-primary mb-3">
-            Probe not found
-          </h1>
-          <p className="font-mono text-[11px] text-secondary leading-relaxed mb-8">
-            This share link has expired or the probe result is no longer
-            available.
-          </p>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
-          >
-            Back to JACOBI
-            <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
-      </main>
+      <div className="jacobi-design">
+        <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+        <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+        <DesignNav />
+        <main className="page">
+          <section className="section page-top">
+            <div className="wrap">
+              <div
+                style={{
+                  padding: "80px 24px",
+                  textAlign: "center",
+                  border: "1px dashed var(--line-2)",
+                  borderRadius: "var(--r)",
+                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
+                  maxWidth: 520,
+                  margin: "120px auto",
+                }}
+              >
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
+                  404 · probe not found
+                </div>
+                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 380, margin: "0 auto 22px", lineHeight: 1.6 }}>
+                  This share link has expired or the probe result is no longer
+                  available.
+                </p>
+                <Link href="/" className="btn btn-primary">
+                  Back to JACOBI →
+                </Link>
+              </div>
+            </div>
+          </section>
+        </main>
+        <DesignFooter />
+      </div>
     );
   }
 
@@ -94,32 +109,40 @@ function formatDate(ts: string) {
 
 function ShareResult({ data }: ShareResultProps) {
   return (
-    <main className="min-h-screen bg-ink text-primary font-sans selection:bg-signal/20 py-10 sm:py-14 px-5 sm:px-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Banner — establishes this is a shared public report */}
-        <div className="mb-6 border border-line rounded-lg bg-raised px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
-          <div className="flex-1 min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted mb-1">
-              Shared probe · public report
+    <div className="jacobi-design">
+      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
+      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+
+      <DesignNav />
+
+      <main className="page">
+        <section className="section page-top">
+          <div className="wrap">
+            <div className="sec-head" data-reveal>
+              <span className="eyebrow">
+                <span className="dot">●</span> Shared probe · public report
+              </span>
+              <h1 className="display sec-title" style={{ fontSize: "clamp(28px, 4vw, 44px)" }}>
+                {data.target_name || data.target_url}
+              </h1>
+              <p className="sec-lede sec" style={{ marginTop: 6 }}>
+                {formatDate(data.timestamp || "")}
+              </p>
+              <div style={{ marginTop: 18 }}>
+                <Link href="/chat" className="btn btn-primary">
+                  Run your own probe →
+                </Link>
+              </div>
             </div>
-            <div className="font-mono text-[12px] text-secondary truncate">
-              {data.target_name || data.target_url}
-            </div>
-            <div className="font-mono text-[10px] text-muted mt-1">
-              {formatDate(data.timestamp || "")}
+
+            <div data-reveal style={{ marginTop: 32 }}>
+              <ShareResultClient data={data} />
             </div>
           </div>
-          <Link
-            href="/chat"
-            className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink bg-signal hover:brightness-110 rounded-md transition-all"
-          >
-            Run your own probe
-            <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
+        </section>
+      </main>
 
-        <ShareResultClient data={data} />
-      </div>
-    </main>
+      <DesignFooter />
+    </div>
   );
 }

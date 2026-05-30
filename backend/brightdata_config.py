@@ -23,7 +23,7 @@ BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "")
 BRIGHTDATA_UNLOCKER_ZONE = (
     os.getenv("BRIGHTDATA_UNLOCKER_ZONE")
     or os.getenv("BRIGHTDATA_ZONE")
-    or "mcp_unlocker"
+    or ""
 )
 BRIGHTDATA_CUSTOM_HEADERS_ENABLED = os.getenv(
     "BRIGHTDATA_CUSTOM_HEADERS_ENABLED",

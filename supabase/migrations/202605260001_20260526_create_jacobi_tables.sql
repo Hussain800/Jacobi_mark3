@@ -59,12 +59,8 @@ ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 -- RLS policies
 CREATE POLICY "profiles_select_own" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
 CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-CREATE POLICY "probes_select_own" ON public.probes FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "probes_insert_own" ON public.probes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "probes_delete_own" ON public.probes FOR DELETE TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "subscriptions_select_own" ON public.subscriptions FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_probes_user_id ON public.probes(user_id);
 CREATE INDEX IF NOT EXISTS idx_probes_created_at ON public.probes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON public.subscriptions(user_id);

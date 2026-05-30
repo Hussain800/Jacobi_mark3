@@ -30,6 +30,7 @@ from supabase_client import save_probe
 from auth_user import get_optional_user
 from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
+from scheduler import ScheduleRequest
 
 load_dotenv()
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
@@ -812,21 +813,27 @@ async def get_result(session_id: str):
         return DEMO_RESULT
     session = SESSION_STORE.get(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        try:
+            from supabase_client import get_probe_by_session_id
+            session = await get_probe_by_session_id(session_id)
+        except Exception as e:
+            print(f"[RESULT] Supabase fetch failed: {e}")
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
     agents = build_agent_list(session)
     return dict(
-        session_id=session["session_id"], target_url=session["target_url"],
-        target_name=session["target_name"], timestamp=session["timestamp"],
-        status=session["status"], total_agents=session["total_agents"],
-        successful_agents=session["successful_agents"], failed_agents=session["failed_agents"],
-        detected_agents=session["detected_agents"], elapsed_seconds=session["elapsed_seconds"],
-        control_stability=session["control_stability"], baseline_price=session["baseline_price"],
-        mean_price=session["mean_price"], all_prices=session["all_prices"],
-        price_range=session["price_range"], max_price_spread=session["max_price_spread"],
-        max_price_spread_pct=session["max_price_spread_pct"], gradients=session["gradients"],
-        discrimination_index=session["discrimination_index"], topology_class=session["topology_class"],
-        summary=session["summary"],         max_discrimination_scenario=session["max_discrimination_scenario"],
-        min_discrimination_scenario=session["min_discrimination_scenario"], agents=agents,
+        session_id=session.get("session_id", session_id), target_url=session.get("target_url"),
+        target_name=session.get("target_name"), timestamp=session.get("timestamp"),
+        status=session.get("status"), total_agents=session.get("total_agents", 24),
+        successful_agents=session.get("successful_agents"), failed_agents=session.get("failed_agents"),
+        detected_agents=session.get("detected_agents"), elapsed_seconds=session.get("elapsed_seconds"),
+        control_stability=session.get("control_stability"), baseline_price=session.get("baseline_price"),
+        mean_price=session.get("mean_price"), all_prices=session.get("all_prices"),
+        price_range=session.get("price_range"), max_price_spread=session.get("max_price_spread"),
+        max_price_spread_pct=session.get("max_price_spread_pct"), gradients=session.get("gradients"),
+        discrimination_index=session.get("discrimination_index"), topology_class=session.get("topology_class"),
+        summary=session.get("summary"),         max_discrimination_scenario=session.get("max_discrimination_scenario"),
+        min_discrimination_scenario=session.get("min_discrimination_scenario"), agents=agents,
         discrimination_score=session.get("discrimination_score", 0),
         error=session.get("error"),
     )
@@ -867,38 +874,17 @@ async def debug_probe(input: TargetProbeInput):
 
 @app.get("/api/leaderboard")
 async def get_leaderboard(limit: int = 10):
-    """Return top N probes by savings (max_price_spread).
-
-    POST-HACKATHON TODO — board opt-in model:
-    Today this returns ALL persisted probes. Product direction is that user
-    probes should be PRIVATE by default and only appear here when the user
-    explicitly opts in (or the row is a curated demo).
-
-    Why not gated today: `probes` table has no `is_public` column, and
-    `user_id` may be missing on rows (see supabase_client.save_probe
-    fallback). Adding the column requires a migration + cockpit checkbox
-    + profile setting + curated-demo flag — too risky before submission.
-
-    Minimum-viable plan post-hackathon:
-      1. ALTER TABLE probes ADD COLUMN is_public BOOLEAN DEFAULT FALSE;
-      2. ALTER TABLE probes ADD COLUMN is_demo   BOOLEAN DEFAULT FALSE;
-      3. Filter below: .or_("is_public.eq.true,is_demo.eq.true").
-      4. Add "Add to public board" toggle on the cockpit (default off).
-
-    None of the returned fields contain user identity / email / payment —
-    but they DO reveal which sites a user probed, so the opt-in column
-    above is the real fix.
-    """
+    """Return top N probes by savings (max_price_spread)."""
     try:
+        from datetime import timezone
         from supabase_client import get_public_board
         probes = await get_public_board(limit=max(limit, 20))
-        # Sort by max_price_spread descending, take top N
         sorted_probes = sorted(
             [p for p in probes if p.get("max_price_spread")],
             key=lambda p: p["max_price_spread"],
             reverse=True
         )[:limit]
-        return [
+        entries = [
             {
                 "name": (p.get("target_name") or p.get("target_url") or "Unknown")[:30],
                 "savings": p["max_price_spread"],
@@ -912,10 +898,14 @@ async def get_leaderboard(limit: int = 10):
             }
             for p in sorted_probes
         ]
+        return {
+            "entries": entries,
+            "total_probes": len(probes),
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
     except Exception as e:
-        # Return empty leaderboard on any error (backend might not have Supabase configured)
         print(f"[LEADERBOARD] returning empty: {e!r}")
-        return []
+        return {"entries": []}
 
 
 @app.get("/api/history")
@@ -923,15 +913,7 @@ async def get_history(
     limit: int = 50,
     user: Optional[dict] = Depends(get_optional_user),
 ):
-    """Return recent probe sessions for the signed-in caller.
-
-    SaaS semantics:
-      - Logged-out callers receive 401 (frontend shows sign-in CTA).
-      - Logged-in callers see ONLY their own probes (filtered by user_id).
-      - Anonymous in-memory SESSION_STORE fallback is no longer used here —
-        it would leak other users' data and conflicts with multi-tenant
-        privacy expectations.
-    """
+    """Return recent probe sessions for the signed-in caller."""
     if not user or not user.get("id"):
         raise HTTPException(
             status_code=401,
@@ -960,9 +942,6 @@ async def get_history(
     except Exception:
         pass
 
-    # Intentionally NO in-memory SESSION_STORE fallback here — the in-memory
-    # store doesn't carry user_id and would leak cross-tenant. If Supabase is
-    # down, the user sees an empty history rather than someone else's.
     return sessions[:limit]
 
 
@@ -974,6 +953,12 @@ async def analyze_session(input: TargetProbeInput):
         report_data = DEMO_RESULT
     else:
         report_data = SESSION_STORE.get(session_id)
+        if not report_data:
+            try:
+                from supabase_client import get_probe_by_session_id
+                report_data = await get_probe_by_session_id(session_id)
+            except Exception:
+                pass
         if not report_data:
             raise HTTPException(status_code=404, detail="Session not found")
 
@@ -1007,6 +992,107 @@ async def analyze_demo():
         "gemini_report": gemini_report.model_dump() if gemini_report else None,
         "savings_verdict": verdict,
     }
+
+
+@app.get("/api/share/{session_id}")
+async def get_share(session_id: str):
+    """Fetch shared results, falling back to Supabase."""
+    if session_id == "demo_session_static":
+        return DEMO_RESULT
+    session = SESSION_STORE.get(session_id)
+    if not session:
+        try:
+            from supabase_client import get_probe_by_session_id
+            session = await get_probe_by_session_id(session_id)
+        except Exception as e:
+            print(f"[SHARE] Supabase fetch failed: {e}")
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+    agents = build_agent_list(session)
+    return dict(
+        session_id=session.get("session_id", session_id), target_url=session.get("target_url"),
+        target_name=session.get("target_name"), timestamp=session.get("timestamp"),
+        status=session.get("status"), total_agents=session.get("total_agents", 24),
+        successful_agents=session.get("successful_agents"), failed_agents=session.get("failed_agents"),
+        detected_agents=session.get("detected_agents"), elapsed_seconds=session.get("elapsed_seconds"),
+        control_stability=session.get("control_stability"), baseline_price=session.get("baseline_price"),
+        mean_price=session.get("mean_price"), all_prices=session.get("all_prices"),
+        price_range=session.get("price_range"), max_price_spread=session.get("max_price_spread"),
+        max_price_spread_pct=session.get("max_price_spread_pct"), gradients=session.get("gradients"),
+        discrimination_index=session.get("discrimination_index"), topology_class=session.get("topology_class"),
+        summary=session.get("summary"),         max_discrimination_scenario=session.get("max_discrimination_scenario"),
+        min_discrimination_scenario=session.get("min_discrimination_scenario"), agents=agents,
+        discrimination_score=session.get("discrimination_score", 0),
+        error=session.get("error"),
+    )
+
+
+@app.get("/api/badge/{session_id}")
+async def get_badge(session_id: str):
+    """Retrieve SVG badge representing pricing topology."""
+    from fastapi import Response
+    session = None
+    if session_id == "demo_session_static":
+        session = DEMO_RESULT
+    else:
+        session = SESSION_STORE.get(session_id)
+        if not session:
+            try:
+                from supabase_client import get_probe_by_session_id
+                session = await get_probe_by_session_id(session_id)
+            except Exception:
+                pass
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    topo = (session.get("topology_class") or "unknown").lower()
+    colors_map = {
+        "uniform": "#00d992",
+        "selective": "#facc15",
+        "progressive": "#fb923c",
+        "aggressive": "#f87171",
+    }
+    color = colors_map.get(topo, "#60a5fa")
+    
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="130" height="20">
+  <linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+  <mask id="a"><rect width="130" height="20" rx="3" fill="#fff"/></mask>
+  <g mask="url(#a)">
+    <path fill="#555" d="M0 0h55v20H0z"/>
+    <path fill="{color}" d="M55 0h75v20H55z"/>
+    <path fill="url(#b)" d="M0 0h130v20H0z"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+    <text x="27.5" y="15" fill="#010101" fill-opacity=".3">JACOBI</text>
+    <text x="27.5" y="14">JACOBI</text>
+    <text x="92.5" y="15" fill="#010101" fill-opacity=".3">{topo}</text>
+    <text x="92.5" y="14">{topo}</text>
+  </g>
+</svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@app.post("/api/schedule")
+async def add_schedule(req: ScheduleRequest):
+    """Add a monitoring schedule."""
+    from scheduler import create_schedule
+    if not req.target_url or req.target_url.strip() == "":
+        raise HTTPException(status_code=400, detail="Target URL cannot be empty")
+    config = await create_schedule(req.target_url, req.target_name, req.interval_minutes)
+    return {
+        "id": config.id,
+        "status": "scheduled",
+        "target_url": config.target_url,
+        "target_name": config.target_name,
+        "interval_minutes": config.interval_minutes,
+    }
+
+
+@app.get("/api/schedules")
+async def get_schedules():
+    """Retrieve active monitoring schedules."""
+    from scheduler import get_active_schedules
+    return get_active_schedules()
 
 
 @app.get("/_next/static/{rest:path}")

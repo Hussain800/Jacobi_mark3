@@ -32,8 +32,7 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 
-load_dotenv()
-BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY", "254d841d-f14d-4f4b-a394-3da0b03af036")
+from brightdata_config import BRIGHTDATA_API_KEY, BRIGHTDATA_UNLOCKER_ZONE
 
 
 class TargetProbeInput(BaseModel):
@@ -423,7 +422,7 @@ class BrightDataMCPClient:
         proxy_type = identity.get("proxy_type", "residential")
         try:
             payload = {
-                "zone": "mcp_unlocker",
+                "zone": BRIGHTDATA_UNLOCKER_ZONE,
                 "url": url,
                 "format": "raw",
                 "render": True,

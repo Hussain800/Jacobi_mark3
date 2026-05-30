@@ -102,23 +102,40 @@
 .jacobi-scene-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .jacobi-design .nav, .jacobi-design main, .jacobi-design header, .jacobi-design footer, .jacobi-design .footer, .jacobi-design .deck, .jacobi-design .cockpit, .jacobi-design .section, .jacobi-design .page { position: relative; z-index: 1; }
 
-/* Cursor — dual element (sharp dot + lagging ring, snap-morph on targets) */
+/* Cursor v3 — gravity-field: sharp 1:1 dot + soft glow + 4 swirling
+   particles. No ring around the cursor (was distracting + made buttons
+   feel mis-aligned). Click targets are never displaced. */
 .has-jx-cursor, .has-jx-cursor * { cursor: none !important; }
-.jx-cursor { position: fixed; inset: 0; pointer-events: none; z-index: 9990; opacity: 0; transition: opacity .4s var(--ease); mix-blend-mode: difference; }
+.jx-cursor {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9990; opacity: 0;
+  transition: opacity .4s var(--ease);
+}
 .jx-cursor-dot {
-  position: fixed; top: 0; left: 0; width: 6px; height: 6px; border-radius: 50%;
-  background: #e6eaf2; will-change: transform;
+  position: fixed; top: 0; left: 0; width: 4px; height: 4px; border-radius: 50%;
+  background: #f0f3fa; box-shadow: 0 0 6px rgba(110, 146, 255, 0.7);
+  will-change: transform; transition: width .2s, height .2s;
 }
-.jx-cursor-ring {
-  position: fixed; top: 0; left: 0; width: 36px; height: 36px; border-radius: 50%;
-  border: 1px solid rgba(230,234,242,0.85);
-  transition: width .28s var(--ease), height .28s var(--ease), border-radius .28s var(--ease), border-color .25s, opacity .25s;
-  will-change: transform, width, height, border-radius;
+.jx-cursor-glow {
+  position: fixed; top: 0; left: 0; width: 28px; height: 28px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(110, 146, 255, 0.18) 0%, rgba(110, 146, 255, 0.05) 50%, transparent 75%);
+  will-change: transform; transition: width .25s var(--ease), height .25s var(--ease);
 }
-.jx-cursor.snap .jx-cursor-ring { border-color: rgba(230,234,242,0.55); }
-.jx-cursor.press .jx-cursor-dot { transform-origin: center; animation: jx-press 280ms var(--ease); }
-.jx-cursor.press .jx-cursor-ring { transform-origin: center; animation: jx-press 280ms var(--ease); }
-@keyframes jx-press { 50% { filter: brightness(1.6); } }
+.jx-particle {
+  position: fixed; top: 0; left: 0; width: 3px; height: 3px; border-radius: 50%;
+  background: rgba(140, 170, 255, 0.6); will-change: transform;
+  transition: background .25s, width .2s, height .2s;
+}
+.jx-cursor.snap .jx-cursor-dot {
+  width: 6px; height: 6px; background: var(--cobalt-bright);
+  box-shadow: 0 0 12px var(--cobalt-glow);
+}
+.jx-cursor.snap .jx-cursor-glow {
+  width: 44px; height: 44px;
+  background: radial-gradient(circle, rgba(110, 146, 255, 0.3) 0%, rgba(110, 146, 255, 0.08) 50%, transparent 75%);
+}
+.jx-cursor.snap .jx-particle { background: rgba(110, 146, 255, 0.85); }
+.jx-cursor.press .jx-cursor-dot { animation: jx-press 280ms var(--ease); }
+@keyframes jx-press { 50% { transform: scale(0.6); filter: brightness(1.5); } }
 @media (hover: none) { .jx-cursor { display: none; } }
 
 ::selection { background: var(--cobalt-soft); color: #fff; }
@@ -549,17 +566,17 @@
 /* ============================================================================
    MECHANISM SCROLL DISASSEMBLY — 5 axes fan apart in 3D as you scroll
    ========================================================================== */
-.jacobi-design .mech-scene { position: relative; height: 360vh; }
+.jacobi-design .mech-scene { position: relative; height: 280vh; }
 .jacobi-design .mech-pin {
-  position: sticky; top: 80px; height: 76vh;
+  position: sticky; top: 60px; height: 88vh;
   display: flex; align-items: center; justify-content: center;
-  perspective: 1600px; perspective-origin: 50% 38%;
+  perspective: 1400px; perspective-origin: 50% 40%;
 }
 .jacobi-design .mech-stack {
   --p: 0;
   position: relative; width: min(560px, 78vw); aspect-ratio: 5 / 3;
   transform-style: preserve-3d;
-  transform: rotateX(calc(8deg + var(--p) * 6deg)) rotateY(calc(-4deg + var(--p) * 8deg));
+  transform: rotateX(calc(6deg + var(--p) * 4deg));
   transition: transform .3s var(--ease);
 }
 .jacobi-design .mech-layer {
@@ -571,14 +588,36 @@
   display: flex; flex-direction: column; justify-content: space-between;
   transform-style: preserve-3d; backface-visibility: hidden;
   box-shadow: 0 30px 60px -30px rgba(0,0,0,0.55);
-  transition: transform .25s var(--ease), opacity .25s var(--ease);
   will-change: transform, opacity;
 }
-.jacobi-design .mech-layer.l1 { transform: translateZ(calc(var(--p) *  20px)); }
-.jacobi-design .mech-layer.l2 { transform: translateZ(calc(var(--p) *  90px)) translateY(calc(var(--p) * -18px)) translateX(calc(var(--p) * -10px)); }
-.jacobi-design .mech-layer.l3 { transform: translateZ(calc(var(--p) * 170px)) translateY(calc(var(--p) * -32px)) translateX(calc(var(--p) *  14px)); }
-.jacobi-design .mech-layer.l4 { transform: translateZ(calc(var(--p) * 260px)) translateY(calc(var(--p) * -48px)) translateX(calc(var(--p) * -18px)); }
-.jacobi-design .mech-layer.l5 { transform: translateZ(calc(var(--p) * 360px)) translateY(calc(var(--p) * -62px)) translateX(calc(var(--p) *  20px)); }
+/* Vertical fan-out:
+   At p=0 all layers stacked at center (back layers slightly dimmed so depth reads).
+   At p=1 layers spread top-to-bottom with subtle Z-depth so it still feels 3D.
+   Each layer fades in as it separates — gives the disassembly a clear story. */
+.jacobi-design .mech-layer.l1 {
+  transform: translate3d(0, calc(var(--p) * -190px), 0);
+  z-index: 5;
+}
+.jacobi-design .mech-layer.l2 {
+  transform: translate3d(0, calc(var(--p) * -95px), calc(var(--p) * 30px));
+  opacity: calc(0.35 + var(--p) * 0.65);
+  z-index: 4;
+}
+.jacobi-design .mech-layer.l3 {
+  transform: translate3d(0, 0, calc(var(--p) * 55px));
+  opacity: calc(0.25 + var(--p) * 0.75);
+  z-index: 3;
+}
+.jacobi-design .mech-layer.l4 {
+  transform: translate3d(0, calc(var(--p) * 95px), calc(var(--p) * 80px));
+  opacity: calc(0.15 + var(--p) * 0.85);
+  z-index: 2;
+}
+.jacobi-design .mech-layer.l5 {
+  transform: translate3d(0, calc(var(--p) * 190px), calc(var(--p) * 105px));
+  opacity: calc(0.08 + var(--p) * 0.92);
+  z-index: 1;
+}
 
 .jacobi-design .ml-head { display: flex; align-items: center; justify-content: space-between; }
 .jacobi-design .ml-tag {
@@ -799,33 +838,54 @@
 }
 
 /* ---- Pricing -------------------------------------------------------------- */
-.jacobi-design .pricing-head { max-width: 720px; }
+.jacobi-design .pricing-head { max-width: 720px; margin-left: auto; margin-right: auto; text-align: center; }
+.jacobi-design .pricing-head .sec-lede { margin-left: auto; margin-right: auto; }
 .jacobi-design .stripe-banner { display: inline-flex; align-items: center; gap: 9px; margin-top: 24px; font-size: 11px; letter-spacing: 0.08em; color: var(--gold); border: 1px solid rgba(216,176,106,0.3); background: rgba(216,176,106,0.08); padding: 7px 14px; border-radius: 100px; }
 .jacobi-design .sb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px rgba(216,176,106,0.6); }
-.jacobi-design .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 940px; }
-.jacobi-design .plan { padding: 36px 34px 40px; display: flex; flex-direction: column; position: relative; }
+/* 3-column grid, centered on the page, generous max width so cards breathe. */
+.jacobi-design .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 1140px; margin: 56px auto 0; }
+.jacobi-design .plan {
+  padding: 36px 30px 40px;
+  display: flex; flex-direction: column;
+  position: relative;
+  text-align: center;       /* center ALL content inside each card */
+  align-items: center;
+}
 .jacobi-design .plan-pro { border-color: var(--cobalt-line); box-shadow: 0 0 0 1px var(--cobalt-line), 0 30px 80px -40px rgba(61,107,255,0.4); }
-.jacobi-design .plan-flag { position: absolute; top: -1px; right: 28px; transform: translateY(-50%); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #fff; background: var(--cobalt); padding: 5px 12px; border-radius: 100px; }
-.jacobi-design .plan-name { font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--text-2); }
-.jacobi-design .plan-price { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 14px; }
+.jacobi-design .plan-flag {
+  position: absolute; top: -1px; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+  color: #fff; background: var(--cobalt); padding: 5px 14px; border-radius: 100px;
+  white-space: nowrap;
+}
+.jacobi-design .plan-head { width: 100%; }
+.jacobi-design .plan-name { font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.jacobi-design .plan-price { display: flex; align-items: baseline; gap: 8px; margin: 18px 0 14px; justify-content: center; }
 .jacobi-design .plan-amt { font-size: 56px; color: var(--text); line-height: 1; letter-spacing: -0.02em; }
 .jacobi-design .plan-per { font-size: 13px; color: var(--text-3); }
-.jacobi-design .plan-tag { font-size: 14px; line-height: 1.55; min-height: 44px; }
-.jacobi-design .plan-cta { justify-content: center; margin: 24px 0 28px; }
+.jacobi-design .plan-tag { font-size: 14px; line-height: 1.55; min-height: 66px; max-width: 280px; margin: 0 auto; text-align: center; }
+.jacobi-design .plan-cta { justify-content: center; margin: 28px 0 32px; width: 100%; max-width: 240px; }
 .jacobi-design .plan-preview { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--cobalt-bright); margin: -16px 0 22px; padding-bottom: 4px; text-align: center; position: relative; }
 .jacobi-design .plan-preview::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 0; height: 1px; background: var(--cobalt-bright); transition: width .4s var(--ease); }
 .jacobi-design .plan-preview:hover::after { width: 60%; }
-.jacobi-design .plan-feats { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+/* Feature list — still left-aligned for readability inside the centered card. */
+.jacobi-design .plan-feats {
+  list-style: none; display: flex; flex-direction: column; gap: 14px;
+  text-align: left; width: 100%; max-width: 280px; margin: 0 auto;
+}
 .jacobi-design .plan-feats li { display: flex; align-items: flex-start; gap: 11px; font-size: 14px; color: var(--text-2); }
 .jacobi-design .plan-feats strong { color: var(--text); }
-.jacobi-design .pf-check { color: var(--good); font-size: 13px; line-height: 1.5; }
+.jacobi-design .pf-check { color: var(--good); font-size: 13px; line-height: 1.5; flex-shrink: 0; }
 .jacobi-design .pf-check.pro { color: var(--cobalt-bright); }
-.jacobi-design .pf-dash { color: var(--text-4); }
+.jacobi-design .pf-dash { color: var(--text-4); flex-shrink: 0; }
 .jacobi-design .muted-feat { color: var(--text-4); }
-.jacobi-design .pricing-foot { margin-top: 36px; text-align: center; }
+.jacobi-design .pricing-foot { margin-top: 48px; text-align: center; }
+@media (max-width: 980px) {
+  .jacobi-design .plans { grid-template-columns: 1fr; max-width: 480px; }
+}
 @media (max-width: 760px) {
   .jacobi-design .board-stats { grid-template-columns: repeat(2, 1fr); gap: 26px 18px; }
-  .jacobi-design .plans { grid-template-columns: 1fr; }
 }
 
 /* ============================================================================

@@ -185,7 +185,7 @@ PRICE_RANGES = {
     "united": {"min": 30, "max": 5000},
     "delta": {"min": 30, "max": 5000},
     "emirates": {"min": 30, "max": 10000},
-    "amazon": {"min": 1, "max": 5000},
+    "amazon": {"min": 1, "max": 50000},
     "default": {"min": 5, "max": 50000},
 }
 
@@ -510,16 +510,48 @@ HONEYPOT_PHRASES = [
 ]
 
 
+def _has_price_in_html(text: str) -> bool:
+    """Check if the RAW HTML (including script tags) contains price patterns.
+
+    Amazon, Booking, and many sites embed canonical prices inside
+    <script type="application/ld+json"> blocks. _visible_text() strips
+    those scripts, so the thin-page heuristic would false-positive on
+    valid pages that put prices in JSON-LD but have minimal visible text.
+
+    This helper searches the FULL raw HTML (not stripped) for price signals
+    before the thin-page heuristic fires.
+    """
+    if not text:
+        return False
+    # Check raw text for price patterns (currency symbol + number).
+    if PRICE_TEXT_RE.search(text):
+        return True
+    # Check for JSON-LD price properties inside script tags.
+    import re as _re
+    ld_price = _re.search(
+        r'"(?:price|lowPrice|highPrice|offers)"\s*:\s*[{\[]|"priceCurrency"\s*:',
+        text, _re.IGNORECASE,
+    )
+    if ld_price:
+        return True
+    # Check for meta tag prices.
+    if _re.search(r'<meta[^>]+(?:product:price|og:price|itemprop="price")', text, _re.IGNORECASE):
+        return True
+    return False
+
+
 def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
     """Return (blocked, signal_phrase). Operates on VISIBLE rendered text
-    only — won't false-positive on dev comments or JS strings inside
-    legitimate pages.
+    only for bot-phrase checks — won't false-positive on dev comments or
+    JS strings inside legitimate pages.
 
-    Two layers:
+    Three layers:
       1. Explicit honeypot phrases in visible text.
-      2. Suspiciously thin page heuristic — a 1KB HTML response with no
-         visible text is almost always a block / JS-only shell that we
-         can't probe meaningfully via direct HTTP.
+      2. Raw HTML price check — if the full HTML has price signals
+         (including JSON-LD), the page is valid regardless of visible text.
+      3. Suspiciously thin page heuristic — fires ONLY when there are NO
+         price signals anywhere in the raw HTML AND the visible text is
+         abnormally small.
     """
     visible = _visible_text(text)
     has_visible_price = bool(PRICE_TEXT_RE.search(visible))
@@ -533,15 +565,20 @@ def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
         if short and phrase in visible:
             return True, phrase
 
-    # 2. Heuristic thin-page check.
-    #   - Empty body (0 bytes) means the upstream rejected us outright.
-    #   - <800 bytes of HTML with <80 chars visible = either a block page
-    #     or a JS-only shell. Either way we can't extract a price.
+    # 2. Check raw HTML for price signals BEFORE thin-page heuristic.
+    #    If the full HTML (including JSON-LD scripts) contains price data,
+    #    this is a valid product page — never flag it as blocked.
     if not text:
         return True, "empty response"
-    if not has_visible_price and len(text) < 800 and len(visible) < 80:
+    if _has_price_in_html(text):
+        return False, None
+
+    # 3. Heuristic thin-page check — fires ONLY when there are ZERO price
+    #    signals anywhere (visible text, JSON-LD, meta tags). At this point
+    #    we're confident the page is either a block page or a pure-JS shell.
+    if len(text) < 800 and len(visible) < 80:
         return True, "empty page (blocked / JS-only shell)"
-    if not has_visible_price and len(text) < 12000 and len(visible) < 200:
+    if len(text) < 12000 and len(visible) < 200:
         # Booking.com's blocker returns ~8KB of pure-JS shell.
         return True, "JS-only shell (likely blocked)"
 
@@ -602,8 +639,16 @@ class BrightDataMCPClient:
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
         }
         if identity.get("referrer"):
             headers["Referer"] = identity["referrer"]
@@ -855,9 +900,6 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
         network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
     retry_cfg = dict(cfg)
-    retry_cfg.pop("cookie", None)
-    retry_cfg.pop("sec_ch_ua", None)
-    retry_cfg.pop("referrer", None)
     try:
         last_failure = "Unknown"
         for attempt_index, attempt_cfg in enumerate((cfg, retry_cfg, retry_cfg)):
@@ -914,7 +956,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     bd = BrightDataMCPClient()
     await bd.start()
     try:
-        probe_timeout_s = 30.0 if brightdata_live_ready() else 8.0
+        probe_timeout_s = 30.0 if brightdata_live_ready() else 25.0
         wave_gap_s = WAVE_STAGGER_S if brightdata_live_ready() else 0.0
         for wi in range(3):
             configs = WAVE_CONFIGS.get(wi, [])

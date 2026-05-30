@@ -983,26 +983,28 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 25.0
-            sem_size = 3
             phase1_count = 6
+            phase1_sem = 6
+            phase2_sem = 4
         else:
             probe_timeout_s = 15.0
-            sem_size = 6
             phase1_count = 24
+            phase1_sem = 6
+            phase2_sem = 6
 
-        sem = asyncio.Semaphore(sem_size)
-        async def _limited_agent(cfg):
+        async def _limited_agent(cfg, sem):
             async with sem:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
 
-        # Phase 1: run first N agents for quick price detection
+        # Phase 1: fast initial scan
+        sem1 = asyncio.Semaphore(phase1_sem)
         phase1 = AGENT_CONFIGS[:phase1_count]
-        tasks = [_limited_agent(c) for c in phase1]
+        tasks = [_limited_agent(c, sem1) for c in phase1]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:
             _ingest_agent(r)
 
-        # Check if pricing is uniform (no need for more agents)
+        # Check if pricing is uniform
         prices = [v for v in session["all_prices"].values() if v is not None]
         uniform = False
         if len(prices) >= 3:
@@ -1010,10 +1012,11 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
             spread_pct = ((max(prices) - min(prices)) / bp * 100) if bp > 0 else 0
             uniform = spread_pct < 2.0
 
-        # Phase 2: only if prices vary significantly and we want more data
+        # Phase 2: only if prices vary
         if not uniform:
+            sem2 = asyncio.Semaphore(phase2_sem)
             phase2 = AGENT_CONFIGS[phase1_count:]
-            tasks = [_limited_agent(c) for c in phase2]
+            tasks = [_limited_agent(c, sem2) for c in phase2]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
                 _ingest_agent(r)

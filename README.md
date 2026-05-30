@@ -346,6 +346,32 @@ After computing statistical gradients across all 24 agents, JACOBI classifies th
 
 ---
 
+## ⛓️ Decentralized Ledger (Sepolia Testnet)
+
+JACOBI integrates a gas-optimized Solidity smart contract (`JacobiPricingLedger.sol`) on the Ethereum Sepolia Testnet to verify price-audit sessions transparently and prevent data tampering or replay attacks.
+
+### On-Chain Deployment Metrics
+*   **Contract Address**: [`0x16adADa5A2603A2a418E0D1B014cA85926e6b04f`](https://sepolia.etherscan.io/address/0x16adADa5A2603A2a418E0D1B014cA85926e6b04f)
+*   **Compiler**: Solidity `0.8.24` (Yul-optimized Merkle proofs)
+*   **Deployment Block Tx**: [`0x192289cf42642b8667363c592cacab6f3b31b7eb0e58a8b6ac210da0b11a5986`](https://sepolia.etherscan.io/tx/0x192289cf42642b8667363c592cacab6f3b31b7eb0e58a8b6ac210da0b11a5986)
+
+### Cryptographic Security Guarantees
+1. **Sorted-Pair Merkle Inclusion Proofs**: Leverages inline Yul assembly for gas-optimized `keccak256` hashing (OpenZeppelin standard), eliminating direction bits.
+2. **Replay Protection Nullifiers**: Prevents reusing the same audit session proof on-chain by registering each verified price leaf hash in the `spentLeaves` registry:
+   $$L_i = \text{keccak256}(\text{sessionId}, \text{domain}, \text{priceCents}, \text{spreadCents}, \text{salt})$$
+3. **Double-Spend/Replay Prevention**: Once verified, the leaf is flagged as spent. Subsequent verification calls containing the same leaf signature will revert with `LeafAlreadySpent()`.
+
+### Local Deployment
+To compile and deploy the smart contract on Sepolia yourself:
+```bash
+cd backend
+python scratch/deploy_ledger.py
+```
+> [!NOTE]
+> The deployment script utilizes `py-solc-x` to dynamically pull the `0.8.24` Solidity compiler and broadcasts transaction payloads utilizing EIP-1559 Dynamic Fee parameters.
+
+---
+
 ## 📈 Project Metrics
 
 | Metric | Value |

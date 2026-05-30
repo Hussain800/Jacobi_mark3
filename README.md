@@ -18,6 +18,7 @@
 [✨ Features](#-features) •
 [🚀 Quick Start](#-quick-start) •
 [🔬 Architecture](#-architecture) •
+[⚙️ Core Engineering](#-core-engineering--mathematics) •
 [🌐 API Reference](#-api-reference) •
 [🧪 The 5 Variables](#-the-5-variables) •
 [📊 Topology Classification](#-topology-classification) •
@@ -163,6 +164,60 @@ User                Frontend              Backend               BrightData
   │◄────────────────────┤                     │                     │              
   │                     │                     │                     │              
 ```
+
+---
+
+## ⚙️ Core Engineering & Mathematics
+
+JACOBI's core consists of advanced statistical models, headless evasion layers, and self-regulating infrastructure components implemented in standard Python and TypeScript.
+
+### 1. Econometric PEI Hashing & Scoring Engine
+The backend pricing engine evaluates geographical, hardware, and behavioral differences by aggregating statistical indexes. Let $P$ represent the collected prices. We calculate:
+*   **Trimmed Median Baseline**: Evaluated using a $10\%$ trim parameter to remove outliers caused by bot block screens.
+*   **Gini Coefficient of Inequality**:
+    $$G = \frac{\sum_{i=1}^n \sum_{j=1}^n |p_i - p_j|}{2n^2 \bar{p}}$$
+*   **Median Absolute Deviation (MAD) Dispersion**: Measures price variance across target proxies, normalized by the median.
+*   **Composite Index Power Norm**: Aggregated via Minkowski $p$-norm ($p=2.0$):
+    $$Z_p = \left( \sum w_k I_k^p \right)^{1/p}$$
+*   **Pricing Inequality Index (PEI)**: Maps the composite norm to a scale $[-1, 1]$ using a sigmoid activation function:
+    $$\text{PEI} = \frac{2}{1 + e^{-\lambda Z_p}} - 1$$
+
+### 2. AIMD Semaphore Concurrency Controller
+To protect upstream proxy networks from rate limiting without broad capacity choke points, the concurrent dispatcher implements an **Additive Increase / Multiplicative Decrease (AIMD)** semaphore:
+*   **Multiplicative Decrease**: Triggered on status code `429 Too Many Requests` or connection timeout:
+    $$C(t + 1) = \max(C_{\text{min}}, \lfloor C(t) \times \beta \rfloor) \quad \text{where } \beta = 0.5$$
+*   **Additive Increase**: Triggered after $20$ consecutive successful queries:
+    $$C(t + 1) = \min(C_{\text{max}}, C(t) + \alpha) \quad \text{where } \alpha = 1$$
+*   **Circuit Breaker**: Auto-trips to cooled-off states when short-window error rates exceed $30\%$.
+
+### 3. Client-Side IP Reputation Broker
+Per-IP quality scores $R_i(t) \in [0, 100]$ recover dynamically based on an exponential time-decay model:
+$$R_i(t) = R_i(t_{\text{last}}) + (100 - R_i(t_{\text{last}})) \left(1 - e^{-\lambda \cdot \Delta t}\right) \quad \text{where } \lambda = \frac{\ln(2)}{300}$$
+Penalty allocations are assigned by failure type (timeout: $-15$, `5xx` error: $-10$, `429` rate limit: $-30$, `403` captcha challenge: $-50$). If $R_i(t) < 50$, the IP is temporarily blacklisted, forcing session rotation on BrightData zones.
+
+### 4. Anti-Fingerprint Evasion Layer
+The scraping subsystem injects a unified pre-execution script (`preload.js`) to secure browser profiles against tracking heuristics:
+*   **Prototype Shadowing**: Overrides `Function.prototype.toString` using ES6 WeakMaps to output standard native strings `[native code]` for all patched APIs.
+*   **Canvas Fingerprint Spoofing**: Overrides canvas extraction methods (`getImageData`, `toDataURL`) to apply deterministic, Mulberry32 PRNG-seeded spatial micro-noise ($\pm 1$) to pixel matrices.
+*   **WebGL Vendor Spoofing**: Obfuscates graphic parameters (e.g. `UNMASKED_VENDOR_WEBGL`, `UNMASKED_RENDERER_WEBGL`) to align with hardware profiles.
+*   **WebRTC Local IP Shielding**: Masks local endpoints by proxying `RTCPeerConnection` constructors and stripping SDP payloads.
+
+### 5. Postgres Transaction Outbox & SSRF Webhook Dispatcher
+Outbox telemetry events are logged transactionally in PostgreSQL and dispatched asynchronously.
+*   **SSRF Protection**: Webhook endpoints are resolved via DNS; all private IPs (RFC 1918, loopbacks, link-local ranges) are rejected.
+*   **Cryptographic Verification**: Webhooks are dispatched with a signature generated via HMAC-SHA256 using a shared secret key.
+*   **Retry Schedule**: Follows exponential backoff with full jitter:
+    $$t_{\text{retry}} = \text{random}(0, \min(t_{\text{max}}, t_{\text{base}} \times 2^{\text{attempt}}))$$
+
+### 6. Geodesic IDW Heatmap (Front-End)
+Price spatial densities are rendered in React using a manual Albers Equal-Area Conic projection and inverse distance weighting (IDW) interpolation:
+$$w_i(x) = \frac{1}{(d(x, x_i) + \epsilon)^p} \quad \text{where } p=2, \epsilon = 50\text{ km}$$
+Calculated on a $256 \times 256$ off-screen canvas and upscaled to viewport coordinates via GPU bilinear filtering for $60\text{ fps}$ render updates.
+
+### 7. Multipartite Force Simulation (Worker)
+Renders proxy routing paths dynamically by running a multipartite graph layout simulation on a separate browser worker thread:
+*   **Separation of Concerns**: Forces are calculated inside `forceWorker.js` to avoid blocking main thread UI execution.
+*   **Direct DOM Mutation**: Worker coordinates are applied directly to SVG transformation matrices via native references (`useRef`), bypassing React's Virtual DOM reconciliation loop for peak performance.
 
 ---
 

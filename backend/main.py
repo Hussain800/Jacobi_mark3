@@ -723,7 +723,6 @@ class BrightDataMCPClient:
                 "zone": BRIGHTDATA_UNLOCKER_ZONE,
                 "url": url,
                 "format": "raw",
-                "render": True,
                 "country": country,
             }
             if BRIGHTDATA_CUSTOM_HEADERS_ENABLED:
@@ -953,10 +952,11 @@ async def run_full_probe(url: str, name: str) -> dict:
 async def _run_probe_engine(session: dict, url: str) -> dict:
     """Run the 24-agent probe engine.
 
-    Two modes:
-      - BrightData live: 3 staggered waves of 8 agents (proxy rotation).
-      - Direct HTTP fallback: ALL 24 agents in one parallel batch because
-        there are no proxies to rotate — waves only add unnecessary latency.
+    All 24 agents run in parallel with semaphore-limited concurrency.
+    BrightData mode: 25s timeout, 12 concurrent.
+    Direct HTTP mode: 15s timeout, 12 concurrent.
+    Early termination: if 8+ agents all return identical prices, remaining
+    agents are skipped (uniform pricing detected).
     """
     overall_start = time.time()
     bd = BrightDataMCPClient()
@@ -977,8 +977,8 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
 
     try:
         if brightdata_live_ready():
-            probe_timeout_s = 60.0
-            sem_size = 8
+            probe_timeout_s = 25.0
+            sem_size = 12
         else:
             probe_timeout_s = 15.0
             sem_size = 12

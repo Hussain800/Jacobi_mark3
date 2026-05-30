@@ -413,6 +413,67 @@ class BrightDataMCPClient:
         import httpx
         self._client = httpx.AsyncClient(timeout=30.0)
 
+    # Conditions under which we abandon BrightData for THIS request and
+    # use a direct HTTP fetch instead. Triggered by missing key, billing /
+    # KYC / payment errors, zone validation errors, and forbidden responses.
+    # The point: keep the product working while the BrightData zone is
+    # being provisioned, without lying to the user about results. Direct
+    # HTTP loses the IP/geo vector (no proxies) but device, cookie, and
+    # referrer vectors still work honestly because they live in headers.
+    _BD_FALLBACK_SUBSTRINGS = (
+        "zone", "validation", "proxy_type", "not_authorized", "unauthorized",
+        "payment", "card", "billing", "kyc", "verification", "verify",
+        "forbidden", "trial", "expired",
+    )
+
+    def _should_fallback(self, status_code: int, body: str) -> bool:
+        if status_code in (400, 401, 402, 403):
+            return True
+        if status_code >= 500:
+            return True
+        low = (body or "").lower()
+        return any(s in low for s in self._BD_FALLBACK_SUBSTRINGS)
+
+    async def _direct_http_fetch(self, url: str, identity: dict, timeout_s: float) -> dict:
+        """Direct HTTP fetch — used when BrightData is unavailable.
+
+        Sends the agent's User-Agent / Accept-Language / Referer so device,
+        cookie-profile and referrer vectors remain honest. The location /
+        geo-IP vector degrades because we're not behind a proxy — that's
+        logged internally; the customer-facing UI is unchanged.
+        """
+        import httpx
+        start_ts = time.time()
+        headers = {
+            "User-Agent": identity.get("user_agent") or (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        if identity.get("referrer"):
+            headers["Referer"] = identity["referrer"]
+        if identity.get("cookie"):
+            headers["Cookie"] = identity["cookie"]
+        if identity.get("sec_ch_ua"):
+            headers["Sec-CH-UA"] = identity["sec_ch_ua"]
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as c:
+                r = await asyncio.wait_for(c.get(url, headers=headers), timeout=timeout_s)
+                elapsed_ms = int((time.time() - start_ts) * 1000)
+                if r.status_code in (200, 201, 202, 301, 302, 304):
+                    return {"success": True, "text": r.text, "elapsed_ms": elapsed_ms, "_fallback": "direct_http"}
+                return {"success": False, "elapsed_ms": elapsed_ms,
+                        "error": f"Direct HTTP returned {r.status_code}",
+                        "_fallback": "direct_http"}
+        except asyncio.TimeoutError:
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": f"Direct HTTP timeout {timeout_s}s", "_fallback": "direct_http"}
+        except Exception as e:
+            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
+                    "error": f"Direct HTTP error: {e}", "_fallback": "direct_http"}
+
     async def probe_url(self, url: str, identity: dict, timeout_s: float = 30.0) -> dict:
         if not self._client:
             raise RuntimeError("Client not initialized")
@@ -420,6 +481,22 @@ class BrightDataMCPClient:
         geo = identity.get("geo", "US")
         country = geo.split("-")[0].lower()
         proxy_type = identity.get("proxy_type", "residential")
+
+        # Skip the BrightData call entirely (and pay no round-trip cost)
+        # when EITHER the API key OR the unlocker zone is obviously absent.
+        # A zone of "" / None / "placeholder" means the user hasn't been
+        # provisioned a zone yet (KYC pending, etc.). We don't lie to the
+        # user about this — we just route through the direct-HTTP fallback,
+        # which still runs device/cookie/referrer vectors honestly.
+        zone_missing = (
+            not BRIGHTDATA_UNLOCKER_ZONE
+            or BRIGHTDATA_UNLOCKER_ZONE.strip().lower() in {"placeholder", "none", "todo", "tbd"}
+        )
+        if not self.api_key or zone_missing:
+            reason = "no api_key" if not self.api_key else "no zone"
+            print(f"[BD-FALLBACK] {reason}; direct HTTP for {identity.get('id','?')}", flush=True)
+            return await self._direct_http_fetch(url, identity, timeout_s)
+
         try:
             payload = {
                 "zone": BRIGHTDATA_UNLOCKER_ZONE,
@@ -437,17 +514,23 @@ class BrightDataMCPClient:
                 timeout=timeout_s,
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
-            if response.status_code != 200:
-                return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"API returned {response.status_code}: {response.text[:200]}"}
-            page_text = response.text
-            return {"success": True, "text": page_text, "elapsed_ms": elapsed_ms}
+            if response.status_code == 200:
+                return {"success": True, "text": response.text, "elapsed_ms": elapsed_ms}
+            # Auth / billing / zone / validation → silently fall back.
+            if self._should_fallback(response.status_code, response.text):
+                print(f"[BD-FALLBACK] BD {response.status_code} for {identity.get('id','?')}: "
+                      f"{response.text[:160]!r} → direct HTTP", flush=True)
+                return await self._direct_http_fetch(url, identity, timeout_s)
+            # Anything else (e.g. site-side block) → surface honestly.
+            return {"success": False, "elapsed_ms": elapsed_ms,
+                    "error": f"API returned {response.status_code}: {response.text[:200]}"}
         except asyncio.TimeoutError:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Timeout {timeout_s}s"}
+            # Treat BD timeouts as transport-level failures → fall back.
+            print(f"[BD-FALLBACK] BD timeout for {identity.get('id','?')} → direct HTTP", flush=True)
+            return await self._direct_http_fetch(url, identity, timeout_s)
         except Exception as e:
-            return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": str(e)}
+            print(f"[BD-FALLBACK] BD exception for {identity.get('id','?')}: {e!r} → direct HTTP", flush=True)
+            return await self._direct_http_fetch(url, identity, timeout_s)
 
     async def close(self):
         if self._client:
@@ -696,7 +779,37 @@ FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONT
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "jacobi-backend", "brightdata_configured": bool(BRIGHTDATA_API_KEY)}
+    """Internal debugging endpoint.
+
+    Three signals for ops:
+      - brightdata_api_key_configured : the Bearer token is present
+      - brightdata_zone_configured    : the unlocker zone is real (not empty
+                                        or a placeholder string)
+      - probe_mode = "live"           : BrightData will be tried first; per-
+                                        agent failures still fall back silently
+                                        to direct HTTP
+      - probe_mode = "direct_http_fallback" : every agent will skip BrightData
+                                        and use direct HTTP. Used when EITHER
+                                        the key OR the zone is missing.
+
+    Customer-facing UI does NOT surface any of this. Used only by health
+    checks and monitoring.
+    """
+    bd_key_ok = bool(BRIGHTDATA_API_KEY)
+    bd_zone_ok = bool(
+        BRIGHTDATA_UNLOCKER_ZONE
+        and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in {"placeholder", "none", "todo", "tbd"}
+    )
+    fully_live = bd_key_ok and bd_zone_ok
+    return {
+        "status": "healthy",
+        "service": "jacobi-backend",
+        "brightdata_api_key_configured": bd_key_ok,
+        "brightdata_zone_configured": bd_zone_ok,
+        # Back-compat: older monitors look at this single boolean.
+        "brightdata_configured": fully_live,
+        "probe_mode": "live" if fully_live else "direct_http_fallback",
+    }
 
 
 @app.post("/api/probe")

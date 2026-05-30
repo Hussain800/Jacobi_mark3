@@ -39,11 +39,14 @@ from brightdata_config import (
 )
 
 
+FAKE_ZONE_NAMES = {"placeholder", "none", "todo", "tbd", "mcp_unlocker", "your_zone_name", "your_key_here"}
+
+
 def brightdata_zone_ready() -> bool:
     """True only when the configured BrightData zone is a real Unlocker zone."""
     return bool(
         BRIGHTDATA_UNLOCKER_ZONE
-        and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in {"placeholder", "none", "todo", "tbd"}
+        and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in FAKE_ZONE_NAMES
     )
 
 
@@ -708,7 +711,7 @@ class BrightDataMCPClient:
         # which still runs device/cookie/referrer vectors honestly.
         zone_missing = (
             not BRIGHTDATA_UNLOCKER_ZONE
-            or BRIGHTDATA_UNLOCKER_ZONE.strip().lower() in {"placeholder", "none", "todo", "tbd"}
+            or BRIGHTDATA_UNLOCKER_ZONE.strip().lower() in FAKE_ZONE_NAMES
         )
         if not self.api_key or zone_missing:
             reason = "no api_key" if not self.api_key else "no zone"
@@ -902,7 +905,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
     retry_cfg = dict(cfg)
     try:
         last_failure = "Unknown"
-        for attempt_index, attempt_cfg in enumerate((cfg, retry_cfg, retry_cfg)):
+        for attempt_index, attempt_cfg in enumerate((cfg, retry_cfg)):
             if attempt_index:
                 await asyncio.sleep(0.75 * attempt_index)
             r = await bd.probe_url(url, attempt_cfg, timeout_s)
@@ -948,38 +951,64 @@ async def run_full_probe(url: str, name: str) -> dict:
 
 
 async def _run_probe_engine(session: dict, url: str) -> dict:
-    """The actual 24-agent engine — runs in-place on the provided session
-    dict. Separated from create_session() so /api/probe can return the
-    session_id immediately, then launch this in a background task so the
-    HTTP response isn't blocked by 12-50 seconds of fetching."""
+    """Run the 24-agent probe engine.
+
+    Two modes:
+      - BrightData live: 3 staggered waves of 8 agents (proxy rotation).
+      - Direct HTTP fallback: ALL 24 agents in one parallel batch because
+        there are no proxies to rotate — waves only add unnecessary latency.
+    """
     overall_start = time.time()
     bd = BrightDataMCPClient()
     await bd.start()
+
+    def _ingest_agent(r):
+        if isinstance(r, Exception):
+            session["failed_agents"] += 1
+            return
+        session["agents"].append(r)
+        if r.get("price") is not None:
+            session["all_prices"][r["agent_id"]] = r["price"]
+            session["successful_agents"] += 1
+        elif r.get("bot_detected"):
+            session["detected_agents"] += 1
+        else:
+            session["failed_agents"] += 1
+
     try:
-        probe_timeout_s = 30.0 if brightdata_live_ready() else 25.0
-        wave_gap_s = WAVE_STAGGER_S if brightdata_live_ready() else 0.0
-        for wi in range(3):
-            configs = WAVE_CONFIGS.get(wi, [])
-            if not configs: continue
-            tasks = [launch_single_agent(bd, url, c, probe_timeout_s) for c in configs]
+        if brightdata_live_ready():
+            probe_timeout_s = 30.0
+            wave_gap_s = WAVE_STAGGER_S
+            for wi in range(3):
+                configs = WAVE_CONFIGS.get(wi, [])
+                if not configs:
+                    continue
+                tasks = [launch_single_agent(bd, url, c, probe_timeout_s) for c in configs]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for r in results:
+                    _ingest_agent(r)
+                if wi < 2 and wave_gap_s > 0:
+                    await asyncio.sleep(wave_gap_s)
+        else:
+            probe_timeout_s = 15.0
+            sem = asyncio.Semaphore(12)
+            async def _limited_agent(cfg):
+                async with sem:
+                    return await launch_single_agent(bd, url, cfg, probe_timeout_s)
+            tasks = [_limited_agent(c) for c in AGENT_CONFIGS]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
-                if isinstance(r, Exception): session["failed_agents"] += 1; continue
-                session["agents"].append(r)
-                if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
-                elif r.get("bot_detected"): session["detected_agents"] += 1
-                else: session["failed_agents"] += 1
-            if wi < 2 and wave_gap_s > 0: await asyncio.sleep(wave_gap_s)
+                _ingest_agent(r)
+
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
         if not valid and session["detected_agents"] > 12:
             session["status"] = "completed"
             session["error"] = f"TARGET BLOCKED PROBE — {session['detected_agents']}/24 agents hit honeypot pages."
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
-            await bd.close(); return session
+            await bd.close()
+            return session
         if not valid:
-            # No usable prices. Pick the most actionable explanation
-            # based on what the engine actually observed.
             session["status"] = "failed"
             if session["detected_agents"] > 0:
                 session["error"] = (
@@ -994,10 +1023,13 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                     "Try a hotel or product page with a clearly listed price."
                 )
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
-            await bd.close(); return session
+            await bd.close()
+            return session
         finalize_pricing_session(session, overall_start)
     except Exception as e:
-        session["status"] = "failed"; session["error"] = str(e); session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+        session["status"] = "failed"
+        session["error"] = str(e)
+        session["elapsed_seconds"] = round(time.time() - overall_start, 2)
     finally:
         await bd.close()
     return session

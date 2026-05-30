@@ -32,7 +32,24 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 
-from brightdata_config import BRIGHTDATA_API_KEY, BRIGHTDATA_UNLOCKER_ZONE
+from brightdata_config import (
+    BRIGHTDATA_API_KEY,
+    BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
+    BRIGHTDATA_UNLOCKER_ZONE,
+)
+
+
+def brightdata_zone_ready() -> bool:
+    """True only when the configured BrightData zone is a real Unlocker zone."""
+    return bool(
+        BRIGHTDATA_UNLOCKER_ZONE
+        and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in {"placeholder", "none", "todo", "tbd"}
+    )
+
+
+def brightdata_live_ready() -> bool:
+    """True when the backend can run the real multi-network probe path."""
+    return bool(BRIGHTDATA_API_KEY) and brightdata_zone_ready()
 
 
 class TargetProbeInput(BaseModel):
@@ -290,6 +307,7 @@ def parse_page_prices(html: str, url: str) -> List[float]:
             for container_id in [
                 "corePriceDisplay_desktop_feature_div",
                 "corePrice_feature_div",
+                "corePriceDisplay_mobile",
                 "corePriceDisplay_mobile_feature_div",
                 "apex_desktop",
                 "apex_desktop_newAccordionRow",
@@ -310,6 +328,11 @@ def parse_page_prices(html: str, url: str) -> List[float]:
                     parse_and_store(offscreen.get_text(strip=True))
                     if results:
                         # Got the main price — done. Skip the noise.
+                        break
+                container_text = container.get_text(" ", strip=True)
+                if container_text:
+                    parse_and_store(container_text)
+                    if results:
                         break
 
         elif "booking.com" in url_lower:
@@ -499,6 +522,7 @@ def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
          can't probe meaningfully via direct HTTP.
     """
     visible = _visible_text(text)
+    has_visible_price = bool(PRICE_TEXT_RE.search(visible))
 
     # 1. Explicit phrases (most reliable signal).
     short = len(visible) < 4000
@@ -515,9 +539,9 @@ def check_bot_detection(text: str) -> Tuple[bool, Optional[str]]:
     #     or a JS-only shell. Either way we can't extract a price.
     if not text:
         return True, "empty response"
-    if len(text) < 800 and len(visible) < 80:
+    if not has_visible_price and len(text) < 800 and len(visible) < 80:
         return True, "empty page (blocked / JS-only shell)"
-    if len(text) < 12000 and len(visible) < 200:
+    if not has_visible_price and len(text) < 12000 and len(visible) < 200:
         # Booking.com's blocker returns ~8KB of pure-JS shell.
         return True, "JS-only shell (likely blocked)"
 
@@ -572,16 +596,7 @@ class BrightDataMCPClient:
         low = (body or "").lower()
         return any(s in low for s in self._BD_FALLBACK_SUBSTRINGS)
 
-    async def _direct_http_fetch(self, url: str, identity: dict, timeout_s: float) -> dict:
-        """Direct HTTP fetch — used when BrightData is unavailable.
-
-        Sends the agent's User-Agent / Accept-Language / Referer so device,
-        cookie-profile and referrer vectors remain honest. The location /
-        geo-IP vector degrades because we're not behind a proxy — that's
-        logged internally; the customer-facing UI is unchanged.
-        """
-        import httpx
-        start_ts = time.time()
+    def _identity_headers(self, identity: dict) -> dict:
         headers = {
             "User-Agent": identity.get("user_agent") or (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -594,17 +609,37 @@ class BrightDataMCPClient:
             headers["Referer"] = identity["referrer"]
         if identity.get("cookie"):
             headers["Cookie"] = identity["cookie"]
-        if identity.get("sec_ch_ua"):
+        ua = headers["User-Agent"]
+        if identity.get("sec_ch_ua") and any(b in ua for b in ("Chrome/", "Chromium/", "Edg/")):
             headers["Sec-CH-UA"] = identity["sec_ch_ua"]
+        return headers
+
+    async def _direct_http_fetch(self, url: str, identity: dict, timeout_s: float) -> dict:
+        """Direct HTTP fetch — used when BrightData is unavailable.
+
+        Sends the agent's User-Agent / Accept-Language / Referer so device,
+        cookie-profile and referrer vectors remain honest. The location /
+        geo-IP vector degrades because we're not behind a proxy — that's
+        logged internally; the customer-facing UI is unchanged.
+        """
+        start_ts = time.time()
+        headers = self._identity_headers(identity)
         try:
-            async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as c:
-                r = await asyncio.wait_for(c.get(url, headers=headers), timeout=timeout_s)
-                elapsed_ms = int((time.time() - start_ts) * 1000)
-                if r.status_code in (200, 201, 202, 301, 302, 304):
-                    return {"success": True, "text": r.text, "elapsed_ms": elapsed_ms, "_fallback": "direct_http"}
-                return {"success": False, "elapsed_ms": elapsed_ms,
-                        "error": f"Direct HTTP returned {r.status_code}",
-                        "_fallback": "direct_http"}
+            r = await asyncio.wait_for(
+                self._client.get(
+                    url,
+                    headers=headers,
+                    follow_redirects=True,
+                    timeout=timeout_s,
+                ),
+                timeout=timeout_s,
+            )
+            elapsed_ms = int((time.time() - start_ts) * 1000)
+            if r.status_code in (200, 201, 202, 301, 302, 304):
+                return {"success": True, "text": r.text, "elapsed_ms": elapsed_ms, "_fallback": "direct_http"}
+            return {"success": False, "elapsed_ms": elapsed_ms,
+                    "error": f"Direct HTTP returned {r.status_code}",
+                    "_fallback": "direct_http"}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
                     "error": f"Direct HTTP timeout {timeout_s}s", "_fallback": "direct_http"}
@@ -643,6 +678,8 @@ class BrightDataMCPClient:
                 "render": True,
                 "country": country,
             }
+            if BRIGHTDATA_CUSTOM_HEADERS_ENABLED:
+                payload["headers"] = self._identity_headers(identity)
             response = await asyncio.wait_for(
                 self._client.post(
                     self.BRD_API,
@@ -747,24 +784,115 @@ def compute_severity_score(session: dict) -> float:
     return round(min(spread_score + sig_score + di_score, 100), 1)
 
 
-async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict) -> dict:
+def finalize_pricing_session(session: dict, overall_start: float) -> bool:
+    """Fill every derived pricing field for a session with valid prices."""
+    valid = [p for p in session.get("all_prices", {}).values() if p is not None]
+    if not valid:
+        return False
+
+    bp = statistics.median(valid)
+    min_price = min(valid)
+    max_price = max(valid)
+    spread = max_price - min_price
+
+    session["baseline_price"] = round(bp, 2)
+    session["mean_price"] = round(statistics.mean(valid), 2)
+    session["price_range"] = [round(min_price, 2), round(max_price, 2)]
+    session["max_price_spread"] = round(spread, 2)
+    session["max_price_spread_pct"] = round((spread / bp) * 100, 2) if bp else 0
+
+    controls = [
+        a["price"]
+        for a in session.get("agents", [])
+        if a.get("is_control") and a.get("price") is not None
+    ]
+    if len(controls) >= 2 and statistics.mean(controls):
+        cv = statistics.stdev(controls) / statistics.mean(controls)
+        session["control_stability"] = round(1.0 - min(cv * 10, 1.0), 4)
+    elif controls:
+        session["control_stability"] = 1.0
+
+    gradients = compute_gradients(session)
+    session["gradients"] = gradients
+    di = sum(abs(g["delta"]) for g in gradients if g["significant"])
+    session["discrimination_index"] = round(di, 2)
+    session["topology_class"] = classify_topology(gradients, di, bp)
+    session["discrimination_score"] = compute_severity_score(session)
+
+    sig_vars = [g for g in gradients if g["significant"]]
+    sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
+    if session["topology_class"] == "uniform":
+        session["summary"] = (
+            f"UNIFORM PRICING DETECTED. Product price verified at ${bp:.2f}. "
+            "Hidden premium: $0.00. No measurable price discrimination across returned identities."
+        )
+    else:
+        session["summary"] = (
+            f"TOPOLOGY: {session['topology_class'].upper()}. "
+            f"Baseline: ${bp:.2f}. Spread: ${session['max_price_spread']:.2f}. "
+            f"DI: ${di:.2f}. Significant: {len(sig_vars)} vars. {sig_details}."
+        )
+
+    priced_agents = [a for a in session.get("agents", []) if a.get("price") is not None]
+    max_a = max(priced_agents, key=lambda x: x["price"], default=None)
+    min_a = min(priced_agents, key=lambda x: x["price"], default=None)
+    session["max_discrimination_scenario"] = (
+        f"Max: {max_a['label']} @ ${max_a['price']:.2f}" if max_a else "N/A"
+    )
+    session["min_discrimination_scenario"] = (
+        f"Min: {min_a['label']} @ ${min_a['price']:.2f}" if min_a else "N/A"
+    )
+    session["status"] = "completed"
+    session["error"] = None
+    session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+    return True
+
+
+async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, timeout_s: float = 30.0) -> dict:
     s = dict(agent_id=cfg["id"], label=cfg["label"], status="in_flight", price=None,
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
         network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
+    retry_cfg = dict(cfg)
+    retry_cfg.pop("cookie", None)
+    retry_cfg.pop("sec_ch_ua", None)
+    retry_cfg.pop("referrer", None)
     try:
-        r = await bd.probe_url(url, cfg, 30.0)
-        if not r["success"]:
-            s["status"] = "failed"; s["error_message"] = r.get("error", "Unknown"); s["response_time_ms"] = r.get("elapsed_ms", 0); return s
-        s["response_time_ms"] = r.get("elapsed_ms", 0)
-        detected, signal = check_bot_detection(r.get("text", ""))
-        if detected:
-            s["status"] = "detected"; s["bot_detected"] = True; s["detection_signal"] = signal; return s
-        prices = parse_page_prices(r.get("text", ""), url)
-        if not prices:
-            s["status"] = "failed"; s["error_message"] = "No valid price found"; return s
-        s["price"] = prices[len(prices) // 2]; s["status"] = "success"; return s
+        last_failure = "Unknown"
+        for attempt_index, attempt_cfg in enumerate((cfg, retry_cfg, retry_cfg)):
+            if attempt_index:
+                await asyncio.sleep(0.75 * attempt_index)
+            r = await bd.probe_url(url, attempt_cfg, timeout_s)
+            s["response_time_ms"] = r.get("elapsed_ms", 0)
+            if not r["success"]:
+                last_failure = r.get("error", "Unknown")
+                continue
+            detected, signal = check_bot_detection(r.get("text", ""))
+            if detected:
+                s["status"] = "detected"
+                s["bot_detected"] = True
+                s["detection_signal"] = signal
+                last_failure = signal or "Bot detected"
+                continue
+            prices = parse_page_prices(r.get("text", ""), url)
+            if not prices:
+                s["status"] = "failed"
+                s["bot_detected"] = False
+                s["detection_signal"] = None
+                last_failure = "No valid price found"
+                continue
+            s["price"] = prices[len(prices) // 2]
+            s["status"] = "success"
+            s["bot_detected"] = False
+            s["detection_signal"] = None
+            s["error_message"] = None
+            return s
+        s["error_message"] = None if s["status"] == "detected" else last_failure
+        if s["status"] == "in_flight":
+            s["status"] = "failed"
+            s["error_message"] = last_failure
+        return s
     except Exception as e:
         s["status"] = "failed"; s["error_message"] = str(e); return s
 
@@ -786,10 +914,12 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     bd = BrightDataMCPClient()
     await bd.start()
     try:
+        probe_timeout_s = 30.0 if brightdata_live_ready() else 8.0
+        wave_gap_s = WAVE_STAGGER_S if brightdata_live_ready() else 0.0
         for wi in range(3):
             configs = WAVE_CONFIGS.get(wi, [])
             if not configs: continue
-            tasks = [launch_single_agent(bd, url, c) for c in configs]
+            tasks = [launch_single_agent(bd, url, c, probe_timeout_s) for c in configs]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
                 if isinstance(r, Exception): session["failed_agents"] += 1; continue
@@ -797,18 +927,12 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                 if r.get("price") is not None: session["all_prices"][r["agent_id"]] = r["price"]; session["successful_agents"] += 1
                 elif r.get("bot_detected"): session["detected_agents"] += 1
                 else: session["failed_agents"] += 1
-            if wi < 2: await asyncio.sleep(WAVE_STAGGER_S)
+            if wi < 2 and wave_gap_s > 0: await asyncio.sleep(wave_gap_s)
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
-        if session["detected_agents"] > 12:
+        if not valid and session["detected_agents"] > 12:
             session["status"] = "completed"
             session["error"] = f"TARGET BLOCKED PROBE — {session['detected_agents']}/24 agents hit honeypot pages."
-            session["elapsed_seconds"] = round(time.time() - overall_start, 2)
-            await bd.close(); return session
-        if check_zero_variance(all_prices):
-            session["status"] = "completed"; session["baseline_price"] = statistics.median(valid) if valid else 0
-            session["topology_class"] = "uniform"; session["discrimination_index"] = 0.0
-            session["summary"] = "UNIFORM PRICING DETECTED — No discrimination across any variable."
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
         if not valid:
@@ -829,30 +953,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                 )
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             await bd.close(); return session
-        bp = statistics.median(valid)
-        session["baseline_price"] = round(bp, 2); session["mean_price"] = round(statistics.mean(valid), 2)
-        session["price_range"] = [round(min(valid), 2), round(max(valid), 2)]
-        session["max_price_spread"] = round(max(valid) - min(valid), 2)
-        session["max_price_spread_pct"] = round((max(valid) - min(valid)) / bp * 100, 2) if bp else 0
-        controls = [a["price"] for a in session["agents"] if a.get("is_control") and a.get("price") is not None]
-        if len(controls) >= 2:
-            cv = statistics.stdev(controls) / statistics.mean(controls)
-            session["control_stability"] = round(1.0 - min(cv * 10, 1.0), 4)
-        gradients = compute_gradients(session); session["gradients"] = gradients
-        di = sum(abs(g["delta"]) for g in gradients if g["significant"])
-        session["discrimination_index"] = round(di, 2)
-        session["topology_class"] = classify_topology(gradients, di, bp)
-        sig_vars = [g for g in gradients if g["significant"]]
-        sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
-        session["summary"] = (f"TOPOLOGY: {session['topology_class'].upper()}. "
-            f"Baseline: ${bp:.2f}. Spread: ${session['max_price_spread']:.2f}. "
-            f"DI: ${di:.2f}. Significant: {len(sig_vars)} vars. {sig_details}.")
-        session["discrimination_score"] = compute_severity_score(session)
-        max_a = max((a for a in session["agents"] if a.get("price")), key=lambda x: x["price"], default=None)
-        min_a = min((a for a in session["agents"] if a.get("price")), key=lambda x: x["price"], default=None)
-        session["max_discrimination_scenario"] = f"Max: {max_a['label']} @ ${max_a['price']:.2f}" if max_a else "N/A"
-        session["min_discrimination_scenario"] = f"Min: {min_a['label']} @ ${min_a['price']:.2f}" if min_a else "N/A"
-        session["status"] = "completed"; session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+        finalize_pricing_session(session, overall_start)
     except Exception as e:
         session["status"] = "failed"; session["error"] = str(e); session["elapsed_seconds"] = round(time.time() - overall_start, 2)
     finally:
@@ -959,11 +1060,8 @@ async def health():
     checks and monitoring.
     """
     bd_key_ok = bool(BRIGHTDATA_API_KEY)
-    bd_zone_ok = bool(
-        BRIGHTDATA_UNLOCKER_ZONE
-        and BRIGHTDATA_UNLOCKER_ZONE.strip().lower() not in {"placeholder", "none", "todo", "tbd"}
-    )
-    fully_live = bd_key_ok and bd_zone_ok
+    bd_zone_ok = brightdata_zone_ready()
+    fully_live = brightdata_live_ready()
 
     # Supabase config sanity — exposes WHETHER env vars look right without
     # leaking secrets. If supabase_url_shape is "bad_path", every Bearer
@@ -991,6 +1089,7 @@ async def health():
         # Back-compat: older monitors look at this single boolean.
         "brightdata_configured": fully_live,
         "probe_mode": "live" if fully_live else "direct_http_fallback",
+        "brightdata_custom_headers_configured": bool(BRIGHTDATA_CUSTOM_HEADERS_ENABLED),
         "supabase_url_shape": sb_shape,
         "supabase_anon_key_configured": bool(sb_anon),
     }

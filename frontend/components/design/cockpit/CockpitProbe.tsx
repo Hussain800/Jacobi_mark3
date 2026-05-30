@@ -85,6 +85,10 @@ interface TopologyReport {
   error: string | null;
 }
 
+// Preset case studies — always use the curated demo result so the
+// experience is deterministic for demos / investors. Users who want to
+// run a live probe can paste their own URL into the input above.
+const CASE_URLS = new Set<string>();
 const CASES = [
   { name: "Leela Palace Bangalore", host: "www.booking.com", url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html", base: 245 },
   { name: "Tokyo Hotels Search",    host: "www.booking.com", url: "https://www.booking.com/searchresults.html?ss=Tokyo", base: 120 },
@@ -92,6 +96,7 @@ const CASES = [
   { name: "DXB → KTM Flights",      host: "www.google.com",  url: "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB", base: 420 },
   { name: "Wireless Headphones",    host: "www.amazon.com",  url: "https://www.amazon.com/s?k=wireless+headphones", base: 65 },
 ];
+CASES.forEach(c => CASE_URLS.add(c.url));
 
 const WAVES = [
   { label: "Wave 1 · datacenter",  r: 150 },
@@ -235,7 +240,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const [input, setInput] = useState(initialUrl || "");
   const [deckUrl, setDeckUrl] = useState("");
   const [deckPhaseLabel, setDeckPhaseLabel] = useState("deploying");
-  const [useCache, setUseCache] = useState(false);
   const [publishToBoard, setPublishToBoard] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
@@ -341,13 +345,16 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     }, 100);
 
     setRejection(null);
-    if (useCache) {
+    // Preset case studies always show the curated demo result so the
+    // experience is deterministic for live demos and investor pitches.
+    // A user pasting their own URL falls through to the live engine.
+    if (CASE_URLS.has(url)) {
       runDemo(url, name);
       return;
     }
     runLive(url, name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useCache, apiBase, publishToBoard]);
+  }, [apiBase, publishToBoard]);
 
   const runDemo = useCallback(async (url: string, name: string) => {
     const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -454,7 +461,21 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               setDeckPhaseLabel("complete");
               setPhase("complete");
             } else {
-              setErrorMsg(data.error || "Probe failed");
+              // Friendly fallback message — "No valid prices extracted"
+              // is the engine telling us 24-out-of-24 agents got blocked
+              // by the target site's bot-detection. Surface that as a
+              // clear next-step instead of a raw error string.
+              const raw = (data.error || "").toLowerCase();
+              const blocked =
+                raw.includes("no valid prices") ||
+                raw.includes("captcha") ||
+                raw.includes("blocked") ||
+                raw.includes("detected");
+              setErrorMsg(
+                blocked
+                  ? "This site blocked our 24 agents at the perimeter. Try one of the case studies below to see how JACOBI works."
+                  : data.error || "Probe failed."
+              );
               setReport(data);
               setPhase("error");
             }
@@ -848,15 +869,40 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         y += 20;
       });
 
+      // ── Methodology box ───────────────────────────────────────
+      // Brief explanation so a reader who hasn't seen JACOBI can trust
+      // the numbers. Investor-grade context, not a wall of disclaimer.
+      y += 10;
+      setFill(C.surface2);
+      doc.setLineWidth(0.5);
+      setStroke(C.line);
+      doc.roundedRect(M, y, W - 2 * M, 64, 5, 5, "FD");
+      doc.setFont("helvetica", "bold").setFontSize(7.5);
+      setText(C.cobalt);
+      doc.text("METHOD", M + 14, y + 18);
+      doc.setFont("helvetica", "normal").setFontSize(8.5);
+      setText(C.text2);
+      const methodLines = doc.splitTextToSize(
+        "24 synthetic shoppers — 8 datacenter, 8 residential, 8 mobile — request the same listing within a 30-second window. " +
+        "Identities vary one variable at a time across location, device, cookie profile, and referrer. " +
+        "Bot-detected and failed responses are excluded; remaining prices feed a Welch's t-test per vector.",
+        W - 2 * M - 28,
+      );
+      doc.text(methodLines, M + 14, y + 32);
+      y += 78;
+
       // ── Footer ─────────────────────────────────────────────────
       setStroke(C.line);
       doc.setLineWidth(0.4);
       doc.line(M, H - 50, W - M, H - 50);
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      setText(C.text);
+      doc.text("JACOBI", M, H - 32);
       doc.setFont("helvetica", "normal").setFontSize(7.5);
       setText(C.text3);
       doc.text(
-        "Generated by JACOBI · 24-agent adversarial pricing probe",
-        M, H - 32,
+        "  ·  24-agent adversarial pricing probe  ·  Generated " + dateLine,
+        M + doc.getTextWidth("JACOBI"), H - 32,
       );
       doc.text(
         `jacobi.report/${verdict.session.slice(0, 8)}`,
@@ -914,7 +960,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           }}>
             <label style={{
               display: "inline-flex", alignItems: "center", gap: 8,
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)",
+              fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-2)",
               letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer",
             }}>
               <input
@@ -924,19 +970,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 style={{ accentColor: "var(--cobalt)" }}
               />
               Include on public board
-            </label>
-            <label style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-3)",
-              letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer",
-            }}>
-              <input
-                type="checkbox"
-                checked={useCache}
-                onChange={e => setUseCache(e.target.checked)}
-                style={{ accentColor: "var(--cobalt)" }}
-              />
-              Use cached result
             </label>
           </div>
 
@@ -1326,7 +1359,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     borderBottom: "1px solid var(--line)",
                     fontFamily: "var(--mono)",
                     fontSize: 10.5, textTransform: "uppercase",
-                    letterSpacing: "0.16em", color: "var(--text-3)",
+                    letterSpacing: "0.16em", color: "var(--text)",
+                    fontWeight: 600,
                   }}>
                     <span>#</span>
                     <span>Profile</span>
@@ -1357,13 +1391,19 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                           alignItems: "center",
                         }}
                       >
-                        <span style={{ color: "var(--text-3)" }}>{a.agent_id.replace("AGENT_", "#")}</span>
-                        <span style={{ color: "var(--text-2)" }}>{agentLabelCity(a)}</span>
-                        <span style={{ color: "var(--text-3)" }}>{net}</span>
-                        <span style={{ color: a.status === "success" ? "var(--good)" : "var(--over)" }}>
+                        <span style={{ color: "var(--text-2)", fontWeight: 500 }}>{a.agent_id.replace("AGENT_", "#")}</span>
+                        <span style={{ color: "var(--text)", fontWeight: 500 }}>{agentLabelCity(a)}</span>
+                        <span style={{ color: "var(--text-2)" }}>{net}</span>
+                        <span style={{
+                          color: a.status === "success" ? "var(--good)" : "var(--over)",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          fontSize: 11,
+                        }}>
                           {a.status}
                         </span>
-                        <span style={{ color: priceColor, textAlign: "right", fontWeight: 500 }}>
+                        <span style={{ color: priceColor, textAlign: "right", fontWeight: 600 }}>
                           {a.price != null ? `$${a.price}` : "—"}
                         </span>
                       </div>

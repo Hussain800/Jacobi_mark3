@@ -613,7 +613,7 @@ class BrightDataMCPClient:
 
     async def start(self):
         import httpx
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(timeout=60.0)
 
     # Conditions under which we abandon BrightData for THIS request and
     # use a direct HTTP fetch instead. Triggered by missing key, billing /
@@ -810,11 +810,11 @@ def compute_gradients(session: dict) -> List[dict]:
     return results
 
 
-def classify_topology(gradients: List[dict], di: float, baseline: float) -> str:
+def classify_topology(gradients: List[dict], di: float, baseline: float, spread_pct: float = 0) -> str:
     sig = sum(1 for g in gradients if g["significant"])
-    di_pct = (di / baseline * 100) if baseline else 0
-    if sig == 0: return "uniform"
-    if sig <= 2 and di_pct < 10: return "selective"
+    di_pct = max((di / baseline * 100) if baseline else 0, spread_pct)
+    if sig == 0 and di_pct < 5: return "uniform"
+    if sig <= 1 and di_pct < 12: return "selective"
     if sig <= 3 and di_pct < 25: return "progressive"
     return "aggressive"
 
@@ -864,7 +864,7 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     session["gradients"] = gradients
     di = sum(abs(g["delta"]) for g in gradients if g["significant"])
     session["discrimination_index"] = round(di, 2)
-    session["topology_class"] = classify_topology(gradients, di, bp)
+    session["topology_class"] = classify_topology(gradients, di, bp, session.get("max_price_spread_pct", 0))
     session["discrimination_score"] = compute_severity_score(session)
 
     sig_vars = [g for g in gradients if g["significant"]]
@@ -977,7 +977,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
 
     try:
         if brightdata_live_ready():
-            probe_timeout_s = 30.0
+            probe_timeout_s = 60.0
             wave_gap_s = WAVE_STAGGER_S
             for wi in range(3):
                 configs = WAVE_CONFIGS.get(wi, [])

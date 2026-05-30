@@ -5,12 +5,12 @@
  * to match the brand reference:
  *
  *   - J     — top serif + stem + hook curving left at the bottom
- *   - Λ     — A rendered as a clean triangle, NO crossbar (the brand's
- *             signature reduction)
+ *   - Λ     — A rendered as a clean triangle, NO crossbar (signature reduction)
  *   - C     — three-quarter circle opening right
- *   - [ ]   — two cobalt brackets sitting VERY close together so they
- *             read as a single composed O-like glyph (the empty-set
- *             that names the brand)
+ *   - [ ]   — two cobalt brackets with a clear, visible interior gap.
+ *             The gap is intentional and exactly the width of one bracket
+ *             arm — that's the "empty set" the brand name refers to. NOT
+ *             touching (which read as a single rectangle).
  *   - B     — left stem + two stacked half-bowls
  *   - I     — top serif + stem + bottom serif
  *
@@ -32,20 +32,17 @@ interface Props {
   className?: string;
 }
 
-const VIEWBOX_W = 218;
+const VIEWBOX_W = 232;
 const VIEWBOX_H = 30;
 
 export default function BrandLockup({ size = 18, noLink = false, className }: Props) {
   const width = (size * VIEWBOX_W) / VIEWBOX_H;
 
-  // Use inline CSS variables so the wordmark theme-responds with the rest
-  // of the design system. The fallback literals are the actual brand
-  // tokens so nothing breaks if the variable resolution fails.
+  // Brand tokens via CSS vars so the wordmark theme-responds with the
+  // rest of the design system. Fallback literals are the actual brand
+  // colors so nothing breaks if variable resolution fails.
   const txt = "var(--text, #eceef3)";
   const cobalt = "var(--cobalt-bright, #6e92ff)";
-
-  // Stroke width tuned to look the same visual weight as the brand
-  // reference at every size from 16 → 36 px.
   const sw = 3;
 
   const inner = (
@@ -64,49 +61,47 @@ export default function BrandLockup({ size = 18, noLink = false, className }: Pr
         strokeLinecap="square"
         strokeLinejoin="miter"
       >
-        {/* J — top serif (3,3)→(24,3), stem at x=18 down to y=21, hook
-              curving left to ground at (6, 23). */}
+        {/* J — top serif (6,3)→(24,3), stem at x=18 down to y=21, hook left to (6,22). */}
         <path
           d="M 6 3 L 24 3 M 18 3 L 18 21 Q 18 27 12 27 Q 6 27 6 22"
           style={{ stroke: txt }}
         />
 
-        {/* Λ — A as a clean triangle. Left foot (36,27) → apex (50,3) → right foot (64,27). */}
+        {/* Λ — clean triangle: left foot (36,27) → apex (50,3) → right foot (64,27). */}
         <path
           d="M 36 27 L 50 3 L 64 27"
           style={{ stroke: txt }}
         />
 
-        {/* C — three-quarter circle, centered at (88,15) with r=9.
-              SVG arc from (94,7) sweeping clockwise to (94,23). */}
+        {/* C — three-quarter arc, opens right. */}
         <path
           d="M 94 7 A 10 10 0 1 0 94 23"
           style={{ stroke: txt }}
         />
 
-        {/* [ — left bracket: top serif (108,3)→(116,3), stem at x=108 down, bottom serif (108,27)→(116,27). */}
+        {/* [ — left bracket. Stem at x=110, arms protrude right to x=120 (10 wide). */}
         <path
-          d="M 116 3 L 108 3 L 108 27 L 116 27"
+          d="M 120 3 L 110 3 L 110 27 L 120 27"
           style={{ stroke: cobalt }}
         />
 
-        {/* ] — right bracket, gap of just 2 units from [ so together they
-              read as one O-glyph. */}
+        {/* ] — right bracket. Stem at x=140, arms back to x=130 (10 wide).
+              Interior gap = 10 units (from x=120 to x=130) — same width as
+              one bracket arm. Reads as a clear empty set, NOT a rectangle. */}
         <path
-          d="M 118 3 L 126 3 L 126 27 L 118 27"
+          d="M 130 3 L 140 3 L 140 27 L 130 27"
           style={{ stroke: cobalt }}
         />
 
-        {/* B — left stem at x=140, two stacked half-bowls. Each bowl is a
-              quadratic curve from top of bowl to bottom of bowl. */}
+        {/* B — left stem at x=152, two stacked half-bowls. */}
         <path
-          d="M 140 3 L 140 27 M 140 3 L 152 3 Q 159 3 159 9 Q 159 15 152 15 L 140 15 M 152 15 Q 161 15 161 21 Q 161 27 152 27 L 140 27"
+          d="M 152 3 L 152 27 M 152 3 L 164 3 Q 171 3 171 9 Q 171 15 164 15 L 152 15 M 164 15 Q 173 15 173 21 Q 173 27 164 27 L 152 27"
           style={{ stroke: txt }}
         />
 
-        {/* I — top serif (174,3)→(196,3), stem at x=185, bottom serif (174,27)→(196,27). */}
+        {/* I — top serif (186,3)→(208,3), stem at x=197, bottom serif (186,27)→(208,27). */}
         <path
-          d="M 174 3 L 196 3 M 185 3 L 185 27 M 174 27 L 196 27"
+          d="M 186 3 L 208 3 M 197 3 L 197 27 M 186 27 L 208 27"
           style={{ stroke: txt }}
         />
       </g>

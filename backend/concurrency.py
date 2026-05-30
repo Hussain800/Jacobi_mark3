@@ -215,14 +215,9 @@ class AIMDSemaphore:
             # Drain excess permits (best-effort; may not succeed if all
             # permits are currently held by in-flight tasks).
             for _ in range(-delta):
-                # Attempt a non-blocking acquire; if it fails the permit
-                # is already held and will naturally be consumed.
                 acquired = self._semaphore._value > 0  # noqa: SLF001
                 if acquired:
-                    try:
-                        self._semaphore.acquire_nowait()
-                    except (RuntimeError, ValueError):
-                        break
+                    self._semaphore._value -= 1
 
     def __repr__(self) -> str:
         return (

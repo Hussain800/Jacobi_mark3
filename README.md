@@ -1,6 +1,5 @@
 <div align="center">
 
-![JACOBI Banner](docs/assets/banner.png)
 
 # ⚡ JACOBI — Adversarial Pricing Topology Probe
 

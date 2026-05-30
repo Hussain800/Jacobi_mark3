@@ -426,7 +426,6 @@ class BrightDataMCPClient:
                 "url": url,
                 "format": "raw",
                 "render": True,
-                "proxy_type": proxy_type,
                 "country": country,
             }
             response = await asyncio.wait_for(

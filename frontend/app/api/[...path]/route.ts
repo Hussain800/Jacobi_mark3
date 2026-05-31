@@ -149,17 +149,23 @@ async function proxy(request: NextRequest, context: { params: { path?: string[] 
   try {
     const headers = new Headers(request.headers);
     headers.delete("host");
+    // Don't forward Accept-Encoding — we want the backend to send raw
+    // so Next.js can handle compression at the edge.
+    headers.set("Accept-Encoding", "identity");
 
     const response = await fetch(target, {
       method: request.method,
       headers,
       body: bodyText,
       cache: "no-store",
-      signal: AbortSignal.timeout(12_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     const responseHeaders = new Headers(response.headers);
     responseHeaders.set("x-jacobi-api-mode", "backend");
+    // Strip encoding headers — we're passing the raw body, Next.js handles compression
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("transfer-encoding");
 
     return new NextResponse(response.body, {
       status: response.status,

@@ -467,6 +467,99 @@ def parse_page_prices(html: str, url: str) -> List[float]:
     return sorted(set(round(p, 2) for p in results))
 
 
+def _extraction_evidence(html: str, url: str, prices: List[float]) -> dict:
+    """Build backwards-compatible evidence metadata for a price extraction.
+
+    Does NOT modify parse_page_prices. Reads the HTML independently to
+    determine which extraction method produced the result, then returns
+    a dict safe for JSON serialization (all values are plain types).
+    Gracefully handles missing/None inputs.
+    """
+    evidence: dict = {
+        "prices_found": prices or [],
+        "html_excerpt": (html or "")[:5000],
+        "timestamp_ms": int(time.time() * 1000),
+        "extraction_method": "none",
+        "price_raw_text": None,
+        "currency_detected": None,
+    }
+    if not html or not prices:
+        return evidence
+
+    url_lower = (url or "").lower()
+    currency_code, _rate = _detect_currency(html, url)
+    evidence["currency_detected"] = currency_code
+
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        return evidence
+
+    # Determine extraction method by checking which scoped container matched
+    if "amazon" in url_lower:
+        for cid in ["corePriceDisplay_desktop_feature_div", "corePrice_feature_div",
+                     "priceblock_ourprice", "priceblock_dealprice", "newBuyBoxPrice"]:
+            container = soup.find(id=cid)
+            if not container:
+                continue
+            off = container.select_one(".a-offscreen")
+            txt = (off.get_text(strip=True) if off else container.get_text(" ", strip=True))
+            if txt:
+                evidence["extraction_method"] = "scoped_amazon"
+                evidence["price_raw_text"] = txt[:200]
+                return evidence
+    elif "booking.com" in url_lower:
+        for sel in ['[data-testid="price-and-discounted-price"]', '.bui-price-display__value']:
+            el = soup.select_one(sel)
+            if el:
+                txt = el.get_text(" ", strip=True)
+                if txt and len(txt) < 80:
+                    evidence["extraction_method"] = "scoped_booking"
+                    evidence["price_raw_text"] = txt[:200]
+                    return evidence
+    elif any(a in url_lower for a in ["flydubai", "united", "delta", "emirates", "expedia"]):
+        for sel in ['[data-testid*="fare-price"]', '[class*="fare-price"]', '.total-amount']:
+            el = soup.select_one(sel)
+            if el:
+                txt = el.get_text(" ", strip=True)
+                if txt and len(txt) < 80:
+                    evidence["extraction_method"] = "scoped_airline"
+                    evidence["price_raw_text"] = txt[:200]
+                    return evidence
+
+    # Check JSON-LD
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.string or "{}")
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            for pk in ("price", "lowPrice", "highPrice"):
+                if pk in data:
+                    evidence["extraction_method"] = "json_ld"
+                    evidence["price_raw_text"] = str(data[pk])[:200]
+                    return evidence
+
+    # Check OpenGraph / meta
+    for sel in ['meta[property="product:price:amount"]', 'meta[itemprop="price"]']:
+        el = soup.select_one(sel)
+        if el and el.get("content"):
+            evidence["extraction_method"] = "og_meta"
+            evidence["price_raw_text"] = el["content"][:200]
+            return evidence
+
+    # Fallback: regex matched
+    if prices:
+        evidence["extraction_method"] = "regex_fallback"
+        visible = _visible_text(html)
+        m = PRICE_TEXT_RE.search(visible)
+        if m:
+            evidence["price_raw_text"] = (m.group(1) + " " + m.group(2))[:200]
+
+    return evidence
+
+
 def _visible_text(html: str) -> str:
     """Extract VISIBLE rendered text from HTML — strips <script>, <style>,
     <!-- comments -->, and HTML tags. Without this, bot-detection matches
@@ -935,6 +1028,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
+            s["evidence"] = _extraction_evidence(r.get("text", ""), url, prices)
             return s
         s["error_message"] = None if s["status"] == "detected" else last_failure
         if s["status"] == "in_flight":

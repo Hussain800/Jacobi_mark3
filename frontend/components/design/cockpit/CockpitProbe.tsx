@@ -687,20 +687,26 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         doc.setLineWidth(1.6);
         doc.line(M, 38, M + 36, 38);
 
-        // Brand mark — JAC[ ]BI rendered as text-only, monospaced
+        // Brand mark — JAC[ ]BI rendered as text-only, monospaced.
+        // CRITICAL: measure ALL widths in the brand font BEFORE switching
+        // to the tagline font, otherwise the tagline X is computed in
+        // the wrong font and overlaps the wordmark.
         doc.setFont("courier", "bold").setFontSize(11);
+        const jacW = doc.getTextWidth("JAC");
+        const bracketW = doc.getTextWidth("[ ]");
+        const biW = doc.getTextWidth("BI");
+        const brandTotalW = jacW + 2 + bracketW + 4 + biW;
         setText(C.text);
         doc.text("JAC", M, 60);
         setText(C.cobalt);
-        doc.text("[ ]", M + doc.getTextWidth("JAC") + 2, 60);
+        doc.text("[ ]", M + jacW + 2, 60);
         setText(C.text);
-        doc.text("BI", M + doc.getTextWidth("JAC[ ]") + 4, 60);
+        doc.text("BI", M + jacW + 2 + bracketW + 4, 60);
 
-        // Tagline
+        // Tagline — anchor X off pre-measured brand width.
         doc.setFont("helvetica", "normal").setFontSize(7);
         setText(C.text3);
-        const taglineX = M + doc.getTextWidth("JAC[ ]BI") + 18;
-        doc.text("PRICING TOPOLOGY · FORENSIC REPORT", taglineX, 60);
+        doc.text("PRICING TOPOLOGY · FORENSIC REPORT", M + brandTotalW + 16, 60);
 
         // Right header: date + session
         doc.setFont("courier", "normal").setFontSize(7.5);
@@ -999,45 +1005,35 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         y += lines.length * 12 + 10;
       });
 
-      y += 14;
+      y += 10;
 
-      // ─── 2. Stats strip ───────────────────────────────────────
+      // ─── 2. Distribution + table header in one band ───────────
+      // (Stat cards were eating 78pt of vertical space, pushing the
+      // 24-row table into the footer. Collapsed to a single inline
+      // summary line so all 24 rows fit cleanly above the footer.)
       doc.setFont("helvetica", "bold").setFontSize(8);
       setText(C.cobalt);
       doc.text("DISTRIBUTION", M, y);
-      y += 16;
-
-      const stats = [
-        { label: "BASELINE", value: verdict.baseline != null ? `$${Math.round(verdict.baseline)}` : "—" },
-        { label: "MEAN",     value: verdict.mean     != null ? `$${Math.round(verdict.mean)}`     : "—" },
-        { label: "RANGE",    value: verdict.range ? `$${Math.round(verdict.range[0])}–$${Math.round(verdict.range[1])}` : "—" },
-        { label: "SPREAD",   value: verdict.spread > 0 ? `$${verdict.spread}` : "$0" },
-      ];
-      const statW = (COL_W - 24) / 4;
-      stats.forEach((s, i) => {
-        const sx = M + i * (statW + 8);
-        setFill(C.surface);
-        setStroke(C.line);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(sx, y, statW, 56, 5, 5, "FD");
-        doc.setFont("helvetica", "bold").setFontSize(7);
-        setText(C.text3);
-        doc.text(s.label, sx + 12, y + 18);
-        doc.setFont("helvetica", "bold").setFontSize(15);
-        setText(C.text);
-        doc.text(s.value, sx + 12, y + 42);
-      });
-      y += 78;
+      doc.setFont("courier", "normal").setFontSize(9);
+      setText(C.text);
+      const distStr = [
+        verdict.baseline != null ? `BASELINE $${Math.round(verdict.baseline)}` : null,
+        verdict.mean     != null ? `MEAN $${Math.round(verdict.mean)}` : null,
+        verdict.range    ? `RANGE $${Math.round(verdict.range[0])}–$${Math.round(verdict.range[1])}` : null,
+        verdict.spread > 0 ? `SPREAD $${verdict.spread}` : "SPREAD $0",
+      ].filter(Boolean).join("   ·   ");
+      doc.text(distStr, M + 90, y);
+      y += 20;
 
       // ─── 3. All 24 agents table ───────────────────────────────
       doc.setFont("helvetica", "bold").setFontSize(8);
       setText(C.cobalt);
       doc.text("ALL 24 IDENTITIES", M, y);
-      y += 16;
+      y += 14;
 
       // Column widths sum to COL_W = 495
       const col = { num: 32, profile: 245, network: 80, status: 60, price: 78 };
-      const rowH = 16;
+      const rowH = 14;   // tightened from 16 so 24 rows fit above footer
 
       // Header row
       setFill(C.surface2);

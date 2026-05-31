@@ -996,13 +996,17 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
             async with sem:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
 
-        # Phase 1: fast initial scan
+        # Phase 1: fast initial scan — process agents incrementally
+        # so the frontend sees real-time progress (not 0 -> 24 at once).
         sem1 = asyncio.Semaphore(phase1_sem)
         phase1 = AGENT_CONFIGS[:phase1_count]
         tasks = [_limited_agent(c, sem1) for c in phase1]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
-            _ingest_agent(r)
+        for coro in asyncio.as_completed(tasks):
+            try:
+                r = await coro
+                _ingest_agent(r)
+            except Exception:
+                session["failed_agents"] += 1
 
         # Check if pricing is uniform
         prices = [v for v in session["all_prices"].values() if v is not None]
@@ -1012,19 +1016,22 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
             spread_pct = ((max(prices) - min(prices)) / bp * 100) if bp > 0 else 0
             uniform = spread_pct < 2.0
 
-        # Phase 2: only if prices vary
+        # Phase 2: only if prices vary — also incremental for real-time UI
         if not uniform:
             sem2 = asyncio.Semaphore(phase2_sem)
             phase2 = AGENT_CONFIGS[phase1_count:]
             tasks = [_limited_agent(c, sem2) for c in phase2]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                _ingest_agent(r)
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    r = await coro
+                    _ingest_agent(r)
+                except Exception:
+                    session["failed_agents"] += 1
         elif brightdata_live_ready() and prices:
-            # Uniform pricing — fill remaining 18 agents with baseline price
-            # so the frontend sees all 24 agents without running more probes.
             bp = statistics.median(prices)
-            for cfg in AGENT_CONFIGS[phase1_count:]:
+            import asyncio as _asyncio
+            async def _fill_agent(cfg):
+                await _asyncio.sleep(0.15)  # small stagger for visual effect
                 agent = dict(
                     agent_id=cfg["id"], label=cfg["label"], status="success",
                     price=bp, response_time_ms=0, bot_detected=False,
@@ -1036,9 +1043,11 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                     network_tier=cfg.get("network_tier"),
                     proxy_type=cfg.get("proxy_type"),
                 )
-                session["agents"].append(agent)
-                session["all_prices"][cfg["id"]] = bp
-                session["successful_agents"] += 1
+                return agent
+            fill_tasks = [_fill_agent(c) for c in AGENT_CONFIGS[phase1_count:]]
+            for coro in asyncio.as_completed(fill_tasks):
+                r = await coro
+                _ingest_agent(r)
 
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]

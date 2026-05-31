@@ -234,7 +234,8 @@ const DEMO_REPORT: TopologyReport = {
 type Phase = "idle" | "deploying" | "complete" | "error";
 
 export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = rawApi.includes("localhost") ? rawApi : "";
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [input, setInput] = useState(initialUrl || "");

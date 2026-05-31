@@ -141,7 +141,8 @@ export default function Terminal({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastUrlRef = useRef("");
   const lastNameRef = useRef("");
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = rawApi.includes("localhost") ? rawApi : "";
 
   /* Restore past probe from session ID */
   useEffect(() => {

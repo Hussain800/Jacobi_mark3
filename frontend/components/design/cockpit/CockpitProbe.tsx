@@ -627,289 +627,494 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const W = doc.internal.pageSize.getWidth();   // 595
       const H = doc.internal.pageSize.getHeight();  // 842
-      const M = 44;
+      const M = 50;                                  // generous outer margin
+      const COL_W = W - 2 * M;                       // usable content width
 
-      /* Single-page forensic-report layout.
+      /* ──────────────────────────────────────────────────────────────
+       * JACOBI · TWO-PAGE FORENSIC REPORT
        *
-       * Palette (RGB):
-       *   ink     = #0c0f15  near-black canvas
-       *   surface = #161b25  card tint
-       *   line    = #2a3245  hairlines
-       *   text    = #ffffff  primary
-       *   text-2  = #c4ccd9  body
-       *   text-3  = #7d8699  metadata
-       *   cobalt  = #6e92ff  accent
-       *   over    = #ff5468  exposed premium
-       *   good    = #3ad79f  baseline
-       */
+       * Design discipline:
+       *  - All vertical layout uses a `y` cursor that gets incremented
+       *    AFTER each section by a measured/reserved height. Never
+       *    place by absolute Y.
+       *  - Multi-line text always renders via splitTextToSize +
+       *    iterating all lines; never `lines[0]` which silently truncates.
+       *  - Each section has a fixed reserved height; if its content is
+       *    shorter, we leave whitespace (that's good design, not waste).
+       *  - Numbers and currency use Courier for tabular alignment.
+       *  - Dark canvas + monochrome typography + cobalt accent only —
+       *    no rainbow charts, no AI-slop gradients.
+       * ──────────────────────────────────────────────────────────── */
+
+      // ─── Palette (matches the live app brand) ─────────────────
       const C = {
-        ink:    [12, 15, 21] as const,
-        surface:[22, 27, 37] as const,
-        surface2:[28, 34, 47] as const,
-        line:   [42, 50, 69] as const,
-        text:   [255, 255, 255] as const,
-        text2:  [196, 204, 217] as const,
-        text3:  [125, 134, 153] as const,
-        cobalt: [110, 146, 255] as const,
-        over:   [255, 84, 104] as const,
-        good:   [58, 215, 159] as const,
+        ink:     [10, 12, 18] as const,    // canvas
+        surface: [20, 24, 34] as const,    // card tint
+        surface2:[26, 31, 44] as const,    // panel tint
+        line:    [42, 50, 70] as const,    // hairline
+        line2:   [56, 65, 88] as const,    // stronger divider
+        text:    [240, 243, 250] as const, // primary
+        text2:   [180, 188, 204] as const, // body
+        text3:   [115, 125, 145] as const, // muted
+        cobalt:  [110, 146, 255] as const, // accent
+        over:    [255, 84, 104] as const,  // alert / high price
+        good:    [58, 215, 159] as const,  // baseline / low price
+        amber:   [255, 167, 82] as const,  // mid-warning
       };
       const setFill = (c: readonly [number, number, number]) => doc.setFillColor(c[0], c[1], c[2]);
       const setText = (c: readonly [number, number, number]) => doc.setTextColor(c[0], c[1], c[2]);
       const setStroke = (c: readonly [number, number, number]) => doc.setDrawColor(c[0], c[1], c[2]);
 
-      // ── Canvas ─────────────────────────────────────────────────
-      setFill(C.ink);
-      doc.rect(0, 0, W, H, "F");
+      const dateLine = new Date().toLocaleDateString("en-US", {
+        year: "numeric", month: "short", day: "numeric",
+      });
+      const sessionShort = (verdict.session || "—").slice(0, 8);
 
-      // ── Header band ────────────────────────────────────────────
-      setStroke(C.cobalt);
-      doc.setLineWidth(1.4);
-      doc.line(M, 56, M + 28, 56);   // cobalt accent tick top-left
+      // Topology accent color
+      const topoColor =
+        verdict.label.toLowerCase() === "uniform" ? C.good :
+        verdict.label.toLowerCase() === "aggressive" ? C.over :
+        C.amber;
 
-      // Brand mark (small geometric crosshair)
-      setStroke(C.cobalt);
-      doc.setLineWidth(0.8);
-      doc.circle(M + 11, 78, 9, "S");
-      doc.circle(M + 11, 78, 4, "S");
-      setFill(C.cobalt);
-      doc.circle(M + 14, 75, 1.4, "F");
+      // ─── Reusable: page chrome ────────────────────────────────
+      const drawPageChrome = (pageNum: 1 | 2) => {
+        // Dark canvas
+        setFill(C.ink);
+        doc.rect(0, 0, W, H, "F");
 
-      doc.setFont("helvetica", "bold").setFontSize(14);
-      setText(C.text);
-      doc.text("JACOBI", M + 28, 81);
-      doc.setFont("helvetica", "normal").setFontSize(8.5);
-      setText(C.text3);
-      doc.text("Pricing topology forensic report", M + 78, 81);
+        // Top accent tick
+        setStroke(C.cobalt);
+        doc.setLineWidth(1.6);
+        doc.line(M, 38, M + 36, 38);
 
-      // Right side: session id + date
-      doc.setFont("courier", "normal").setFontSize(8);
-      setText(C.text3);
-      const dateLine = new Date().toLocaleString();
-      const sessionLine = `Session ${verdict.session.slice(0, 12) || "—"}`;
-      doc.text(dateLine,    W - M, 75, { align: "right" });
-      doc.text(sessionLine, W - M, 86, { align: "right" });
+        // Brand mark — JAC[ ]BI rendered as text-only, monospaced
+        doc.setFont("courier", "bold").setFontSize(11);
+        setText(C.text);
+        doc.text("JAC", M, 60);
+        setText(C.cobalt);
+        doc.text("[ ]", M + doc.getTextWidth("JAC") + 2, 60);
+        setText(C.text);
+        doc.text("BI", M + doc.getTextWidth("JAC[ ]") + 4, 60);
 
-      // Header rule
-      setStroke(C.line);
-      doc.setLineWidth(0.6);
-      doc.line(M, 102, W - M, 102);
-
-      // ── Target line ───────────────────────────────────────────
-      let y = 122;
-      doc.setFont("helvetica", "normal").setFontSize(8);
-      setText(C.text3);
-      doc.text("TARGET", M, y);
-      doc.setFont("courier", "normal").setFontSize(9.5);
-      setText(C.text2);
-      const targetText = doc.splitTextToSize(verdict.target || "—", W - 2 * M - 60);
-      doc.text(targetText[0] || "—", M + 60, y);
-      if (verdict.targetName) {
-        y += 13;
-        doc.setFont("helvetica", "italic").setFontSize(9);
+        // Tagline
+        doc.setFont("helvetica", "normal").setFontSize(7);
         setText(C.text3);
-        doc.text(verdict.targetName, M + 60, y);
-      }
-      y += 22;
+        const taglineX = M + doc.getTextWidth("JAC[ ]BI") + 18;
+        doc.text("PRICING TOPOLOGY · FORENSIC REPORT", taglineX, 60);
 
-      // ── Headline panel (the verdict) ──────────────────────────
-      // Cobalt-glow shadow rect + main panel
-      setFill(C.surface);
-      setStroke(C.line);
-      doc.setLineWidth(0.6);
-      doc.roundedRect(M, y, W - 2 * M, 112, 6, 6, "FD");
+        // Right header: date + session
+        doc.setFont("courier", "normal").setFontSize(7.5);
+        setText(C.text3);
+        doc.text(dateLine.toUpperCase(), W - M, 54, { align: "right" });
+        doc.text(`SESSION ${sessionShort}`, W - M, 65, { align: "right" });
 
-      // Topology pill (top-left inside panel)
-      const topoColor = (() => {
-        const t = verdict.label.toLowerCase();
-        if (t === "uniform")     return C.good;
-        if (t === "aggressive")  return C.over;
-        return [255, 157, 82] as const; // progressive/selective amber
-      })();
-      const pillX = M + 18, pillY = y + 16;
-      const pillTextW = doc.getTextWidth(verdict.label.toUpperCase());
-      setFill([topoColor[0], topoColor[1], topoColor[2]]);
-      doc.setGState(doc.GState({ opacity: 0.18 }));
-      doc.roundedRect(pillX, pillY - 9, pillTextW + 28, 16, 8, 8, "F");
-      doc.setGState(doc.GState({ opacity: 1 }));
-      setFill(topoColor);
-      doc.circle(pillX + 8, pillY - 1, 2, "F");
-      doc.setFont("helvetica", "bold").setFontSize(7.5);
-      setText(topoColor);
-      doc.text(verdict.label.toUpperCase(), pillX + 16, pillY + 1.5);
+        // Header rule
+        setStroke(C.line);
+        doc.setLineWidth(0.5);
+        doc.line(M, 78, W - M, 78);
 
-      // Big spread number
-      doc.setFont("helvetica", "bold").setFontSize(46);
+        // Footer rule
+        doc.line(M, H - 50, W - M, H - 50);
+
+        // Footer text
+        doc.setFont("helvetica", "normal").setFontSize(7);
+        setText(C.text3);
+        doc.text(
+          "24-agent adversarial pricing probe",
+          M, H - 32,
+        );
+        doc.text(
+          `Page ${pageNum} of 2  ·  jacobi.report/${sessionShort}`,
+          W - M, H - 32, { align: "right" },
+        );
+      };
+
+      /* ═══════════════════════════════════════════════════════════
+       * PAGE 1 — VERDICT
+       * ═══════════════════════════════════════════════════════════ */
+
+      drawPageChrome(1);
+      let y = 110;
+
+      // ─── 1. Title + target ─────────────────────────────────────
+      doc.setFont("helvetica", "bold").setFontSize(22);
       setText(C.text);
-      const spreadStr = `+$${verdict.spread}`;
-      doc.text(spreadStr, M + 18, y + 70);
+      doc.text("Pricing topology analysis", M, y);
+      y += 26;
 
-      // Label above spread
-      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      // Target name (italic, big)
+      if (verdict.targetName) {
+        doc.setFont("helvetica", "italic").setFontSize(13);
+        setText(C.text2);
+        const nameLines = doc.splitTextToSize(verdict.targetName, COL_W);
+        doc.text(nameLines, M, y);
+        y += nameLines.length * 16;
+      }
+
+      // Target URL (courier, smaller, muted)
+      doc.setFont("courier", "normal").setFontSize(8.5);
       setText(C.text3);
-      doc.text("HIDDEN PREMIUM", M + 18, y + 38);
+      const urlLines = doc.splitTextToSize(verdict.target || "—", COL_W);
+      doc.text(urlLines.slice(0, 2), M, y);
+      y += Math.min(urlLines.length, 2) * 11 + 18;
 
-      // Sub line under spread
+      // ─── 2. Hero verdict card ─────────────────────────────────
+      // Reserved height: 200 pts. Contents:
+      //   left half: HIDDEN PREMIUM label · big $X · pct over baseline
+      //   right half: DISCRIMINATION INDEX · big N/100 · gauge bar
+      //   top of card: topology pill, centered horizontally
+      const heroH = 180;
+      setFill(C.surface);
+      setStroke(C.line2);
+      doc.setLineWidth(0.8);
+      doc.roundedRect(M, y, COL_W, heroH, 8, 8, "FD");
+
+      // Topology pill (top, centered)
+      const pillLabel = verdict.label.toUpperCase();
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      const pillTextW = doc.getTextWidth(pillLabel);
+      const pillW = pillTextW + 36;
+      const pillX = M + (COL_W - pillW) / 2;
+      const pillY = y - 11;
+      setFill(C.ink);  // outer ring (same as canvas) for "punched out" look
+      doc.roundedRect(pillX - 4, pillY - 4, pillW + 8, 30, 14, 14, "F");
+      setFill(topoColor);
+      doc.roundedRect(pillX, pillY, pillW, 22, 11, 11, "F");
+      // dot
+      setFill(C.ink);
+      doc.circle(pillX + 12, pillY + 11, 2.4, "F");
+      setText(C.ink);
+      doc.text(pillLabel, pillX + pillW / 2 + 5, pillY + 14.5, { align: "center" });
+
+      // Divider down the middle
+      setStroke(C.line);
+      doc.setLineWidth(0.5);
+      doc.line(M + COL_W / 2, y + 28, M + COL_W / 2, y + heroH - 18);
+
+      // LEFT HALF — Hidden Premium
+      const lhx = M + 28;
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      setText(C.text3);
+      doc.text("HIDDEN PREMIUM", lhx, y + 54);
+
+      doc.setFont("helvetica", "bold").setFontSize(40);
+      setText(C.text);
+      const heroNum = verdict.spread > 0 ? `+$${verdict.spread}` : "$0";
+      doc.text(heroNum, lhx, y + 100);
+
       doc.setFont("helvetica", "normal").setFontSize(9);
       setText(C.text2);
+      doc.text(`${verdict.pct}% over baseline`, lhx, y + 122);
+
+      doc.setFont("courier", "normal").setFontSize(8);
+      setText(C.text3);
       doc.text(
-        `${verdict.pct}% over baseline · ${verdict.successCount}/${verdict.totalCount} identities returned · ${(verdict.elapsed || 0).toFixed(1)}s`,
-        M + 18, y + 90,
+        `${verdict.successCount}/${verdict.totalCount} IDENTITIES · ${(verdict.elapsed || 0).toFixed(1)}s`,
+        lhx, y + 144,
       );
 
-      // Right side of panel: discrimination index visual
-      const diX = W - M - 150, diY = y + 22;
-      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      // RIGHT HALF — Discrimination Index
+      const rhx = M + COL_W / 2 + 28;
+      doc.setFont("helvetica", "bold").setFontSize(8);
       setText(C.text3);
-      doc.text("DISCRIMINATION INDEX", diX, diY);
-      doc.setFont("helvetica", "bold").setFontSize(32);
+      doc.text("DISCRIMINATION INDEX", rhx, y + 54);
+
+      doc.setFont("helvetica", "bold").setFontSize(40);
       setText(C.text);
-      doc.text(String(verdict.index), diX, diY + 32);
-      doc.setFont("helvetica", "normal").setFontSize(10);
+      const indexStr = String(verdict.index);
+      doc.text(indexStr, rhx, y + 100);
+      // /100 suffix
+      const indexW = doc.getTextWidth(indexStr);
+      doc.setFont("helvetica", "normal").setFontSize(13);
       setText(C.text3);
-      doc.text("/100", diX + doc.getTextWidth(String(verdict.index)) + 4, diY + 32);
+      doc.text("/ 100", rhx + indexW + 6, y + 100);
 
-      // Index bar
-      const barX = diX, barY = diY + 50, barW = 130, barH = 4;
+      // Gauge bar
+      const gaugeX = rhx, gaugeY = y + 122, gaugeW = COL_W / 2 - 56, gaugeH = 6;
       setFill(C.line);
-      doc.roundedRect(barX, barY, barW, barH, 2, 2, "F");
-      // gradient simulation with 3 segments cobalt → amber → over
-      const fillW = (verdict.index / 100) * barW;
-      const seg1 = Math.min(fillW, barW * 0.4);
-      const seg2 = Math.max(0, Math.min(fillW - barW * 0.4, barW * 0.3));
-      const seg3 = Math.max(0, fillW - barW * 0.7);
-      if (seg1 > 0) { setFill(C.cobalt); doc.roundedRect(barX, barY, seg1, barH, 2, 2, "F"); }
-      if (seg2 > 0) { setFill([255, 157, 82]); doc.rect(barX + barW * 0.4, barY, seg2, barH, "F"); }
-      if (seg3 > 0) { setFill(C.over); doc.rect(barX + barW * 0.7, barY, seg3, barH, "F"); }
+      doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3, 3, "F");
+      const idxClamp = Math.max(0, Math.min(100, verdict.index));
+      const fillW = (idxClamp / 100) * gaugeW;
+      // 3-zone color: cobalt → amber → over
+      const s1 = Math.min(fillW, gaugeW * 0.4);
+      const s2 = Math.max(0, Math.min(fillW - gaugeW * 0.4, gaugeW * 0.3));
+      const s3 = Math.max(0, fillW - gaugeW * 0.7);
+      if (s1 > 0) { setFill(C.cobalt); doc.roundedRect(gaugeX, gaugeY, s1, gaugeH, 3, 3, "F"); }
+      if (s2 > 0) { setFill(C.amber);  doc.rect(gaugeX + gaugeW * 0.4, gaugeY, s2, gaugeH, "F"); }
+      if (s3 > 0) { setFill(C.over);   doc.rect(gaugeX + gaugeW * 0.7, gaugeY, s3, gaugeH, "F"); }
 
-      y += 132;
-
-      // ── Plain English summary ──────────────────────────────────
-      doc.setFont("helvetica", "normal").setFontSize(8);
+      doc.setFont("courier", "normal").setFontSize(7.5);
       setText(C.text3);
-      doc.text("SUMMARY", M, y);
-      y += 14;
-      doc.setFont("helvetica", "normal").setFontSize(10);
+      doc.text("FAIR", gaugeX, gaugeY + 18);
+      doc.text("HOSTILE", gaugeX + gaugeW, gaugeY + 18, { align: "right" });
+
+      y += heroH + 26;
+
+      // ─── 3. What this means — plain English ───────────────────
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      setText(C.cobalt);
+      doc.text("WHAT THIS MEANS", M, y);
+      y += 16;
+
+      doc.setFont("helvetica", "normal").setFontSize(10.5);
       setText(C.text);
       const summary =
-        verdict.top && verdict.low
-          ? `An identity presenting as "${agentLabelCity(verdict.top)}" was quoted $${verdict.top.price}. An identity presenting as "${agentLabelCity(verdict.low)}" was quoted $${verdict.low.price} for the identical listing — a $${verdict.spread} gap${verdict.dominantName ? `. The dominant signal in the data was ${verdict.dominantName}.` : "."}`
-          : verdict.blurb;
-      const summaryLines = doc.splitTextToSize(summary, W - 2 * M);
+        verdict.top && verdict.low && verdict.top.price !== verdict.low.price
+          ? `An identity presenting as "${agentLabelCity(verdict.top)}" was quoted $${verdict.top.price}. ` +
+            `An identity presenting as "${agentLabelCity(verdict.low)}" was quoted $${verdict.low.price} for the identical listing — ` +
+            `a $${verdict.spread} gap${verdict.dominantName ? `. The dominant signal in the data was ${verdict.dominantName}.` : "."}`
+          : verdict.label.toLowerCase() === "uniform"
+            ? `All 24 synthetic identities received the same price across the four discrimination vectors tested. ` +
+              `This is a positive finding — the listing's price does not appear to depend on the shopper's identity.`
+            : verdict.blurb;
+      const summaryLines = doc.splitTextToSize(summary, COL_W);
       doc.text(summaryLines, M, y);
-      y += summaryLines.length * 13 + 16;
+      y += summaryLines.length * 14 + 22;
 
-      // ── Endpoints row (top vs bottom) ──────────────────────────
+      // ─── 4. Endpoint cards (TOP / LOW quote) ──────────────────
       if (verdict.top && verdict.low) {
-        const cardW = (W - 2 * M - 14) / 2;
-        const cardH = 64;
+        const cardW = (COL_W - 16) / 2;
+        const cardH = 84;
 
-        // Top (over)
+        // TOP quote (red)
         setFill(C.surface);
-        setStroke([C.over[0], C.over[1], C.over[2]]);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(M, y, cardW, cardH, 5, 5, "FD");
-        doc.setFont("helvetica", "normal").setFontSize(7);
+        setStroke(C.over);
+        doc.setLineWidth(0.8);
+        doc.roundedRect(M, y, cardW, cardH, 6, 6, "FD");
+        // Cobalt-bar stripe top
+        setFill(C.over);
+        doc.rect(M, y, cardW, 2, "F");
+        doc.setFont("helvetica", "bold").setFontSize(7.5);
         setText(C.over);
         doc.text("TOP QUOTE", M + 14, y + 18);
-        doc.setFont("helvetica", "bold").setFontSize(22);
+        doc.setFont("helvetica", "bold").setFontSize(24);
         setText(C.text);
-        doc.text(`$${verdict.top.price}`, M + 14, y + 42);
+        doc.text(`$${verdict.top.price}`, M + 14, y + 46);
         doc.setFont("helvetica", "normal").setFontSize(8.5);
         setText(C.text2);
         const topName = doc.splitTextToSize(agentLabelCity(verdict.top), cardW - 28);
-        doc.text(topName[0] || "—", M + 14, y + 56);
+        doc.text(topName.slice(0, 2), M + 14, y + 64);
 
-        // Low (good)
-        const lowX = M + cardW + 14;
+        // LOW quote (green)
+        const lowX = M + cardW + 16;
         setFill(C.surface);
-        setStroke([C.good[0], C.good[1], C.good[2]]);
-        doc.roundedRect(lowX, y, cardW, cardH, 5, 5, "FD");
-        doc.setFont("helvetica", "normal").setFontSize(7);
+        setStroke(C.good);
+        doc.roundedRect(lowX, y, cardW, cardH, 6, 6, "FD");
+        setFill(C.good);
+        doc.rect(lowX, y, cardW, 2, "F");
+        doc.setFont("helvetica", "bold").setFontSize(7.5);
         setText(C.good);
         doc.text("LOW QUOTE", lowX + 14, y + 18);
-        doc.setFont("helvetica", "bold").setFontSize(22);
+        doc.setFont("helvetica", "bold").setFontSize(24);
         setText(C.text);
-        doc.text(`$${verdict.low.price}`, lowX + 14, y + 42);
+        doc.text(`$${verdict.low.price}`, lowX + 14, y + 46);
         doc.setFont("helvetica", "normal").setFontSize(8.5);
         setText(C.text2);
         const lowName = doc.splitTextToSize(agentLabelCity(verdict.low), cardW - 28);
-        doc.text(lowName[0] || "—", lowX + 14, y + 56);
+        doc.text(lowName.slice(0, 2), lowX + 14, y + 64);
 
-        y += cardH + 20;
+        y += cardH + 26;
       }
 
-      // ── Drivers (impact bars) ──────────────────────────────────
-      doc.setFont("helvetica", "normal").setFontSize(8);
-      setText(C.text3);
-      doc.text("DRIVERS", M, y);
+      // ─── 5. Driver chart — what moved the price ───────────────
+      if (topVectors.length > 0) {
+        doc.setFont("helvetica", "bold").setFontSize(8);
+        setText(C.cobalt);
+        doc.text("WHAT MOVED THE PRICE", M, y);
+        y += 18;
+
+        const labelW = 130;
+        const valueW = 50;
+        const barX = M + labelW + 10;
+        const barAvailW = COL_W - labelW - valueW - 20;
+        const tvMax = Math.max(1, ...topVectors.map(v => v.pct));
+
+        topVectors.forEach(v => {
+          // Label
+          doc.setFont("helvetica", "normal").setFontSize(10);
+          setText(C.text);
+          doc.text(v.info.label, M, y + 4);
+
+          // Background track
+          setFill(C.line);
+          doc.roundedRect(barX, y - 2, barAvailW, 8, 4, 4, "F");
+
+          // Fill (cobalt for significant, lighter line for non-significant)
+          if (v.significant) {
+            const w = Math.max(2, (v.pct / tvMax) * barAvailW);
+            setFill(C.cobalt);
+            doc.roundedRect(barX, y - 2, w, 8, 4, 4, "F");
+          }
+
+          // Value (right-aligned)
+          doc.setFont("courier", "bold").setFontSize(10);
+          setText(v.significant ? C.text : C.text3);
+          const valStr = v.significant ? `${v.pct}%` : "n/s";
+          doc.text(valStr, W - M, y + 4, { align: "right" });
+
+          y += 22;
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+       * PAGE 2 — METHOD + AGENT DATA
+       * ═══════════════════════════════════════════════════════════ */
+      doc.addPage();
+      drawPageChrome(2);
+      y = 110;
+
+      // ─── Page 2 title ─────────────────────────────────────────
+      doc.setFont("helvetica", "bold").setFontSize(22);
+      setText(C.text);
+      doc.text("Methodology & raw data", M, y);
+      y += 32;
+
+      // ─── 1. Method panel ──────────────────────────────────────
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      setText(C.cobalt);
+      doc.text("METHOD", M, y);
       y += 16;
-      const tvMax = Math.max(1, ...topVectors.map(v => v.pct));
-      topVectors.forEach(v => {
-        // Label
-        doc.setFont("helvetica", "normal").setFontSize(9.5);
+
+      const methodPoints: [string, string][] = [
+        ["24 synthetic identities",
+         "8 datacenter + 8 residential + 8 mobile network tiers, dispatched in three waves over a 30-second window."],
+        ["Four discrimination vectors",
+         "Location (IP geo), device (user-agent + fingerprint), cookie profile (session history), referrer (origin)."],
+        ["One variable at a time",
+         "Identities are paired so each pair differs on exactly one vector. Confounders are held constant."],
+        ["Welch's t-test per vector",
+         "Bot-detected and failed responses are excluded. The remaining prices feed an unequal-variance t-test; an effect is reported when |t| > 2.0."],
+      ];
+
+      methodPoints.forEach(([heading, body]) => {
+        doc.setFont("helvetica", "bold").setFontSize(10);
         setText(C.text);
-        doc.text(v.info.label, M, y);
-        // Value
-        doc.setFont("courier", "bold").setFontSize(9);
-        setText(v.significant ? C.text : C.text3);
-        doc.text(
-          v.significant ? `${v.pct}%` : "n/s",
-          W - M, y, { align: "right" },
-        );
-        // Track
-        const trackX = M + 110, trackY = y - 5, trackW = W - 2 * M - 140, trackH = 6;
-        setFill(C.line);
-        doc.roundedRect(trackX, trackY, trackW, trackH, 3, 3, "F");
-        if (v.significant) {
-          const w = (v.pct / tvMax) * trackW;
-          setFill(C.cobalt);
-          doc.roundedRect(trackX, trackY, w, trackH, 3, 3, "F");
-        }
-        y += 20;
+        doc.text("•", M, y);
+        doc.text(heading, M + 12, y);
+        y += 14;
+        doc.setFont("helvetica", "normal").setFontSize(9);
+        setText(C.text2);
+        const lines = doc.splitTextToSize(body, COL_W - 12);
+        doc.text(lines, M + 12, y);
+        y += lines.length * 12 + 10;
       });
 
-      // ── Methodology box ───────────────────────────────────────
-      // Brief explanation so a reader who hasn't seen JACOBI can trust
-      // the numbers. Investor-grade context, not a wall of disclaimer.
-      y += 10;
-      setFill(C.surface2);
-      doc.setLineWidth(0.5);
-      setStroke(C.line);
-      doc.roundedRect(M, y, W - 2 * M, 64, 5, 5, "FD");
-      doc.setFont("helvetica", "bold").setFontSize(7.5);
+      y += 14;
+
+      // ─── 2. Stats strip ───────────────────────────────────────
+      doc.setFont("helvetica", "bold").setFontSize(8);
       setText(C.cobalt);
-      doc.text("METHOD", M + 14, y + 18);
-      doc.setFont("helvetica", "normal").setFontSize(8.5);
-      setText(C.text2);
-      const methodLines = doc.splitTextToSize(
-        "24 synthetic shoppers — 8 datacenter, 8 residential, 8 mobile — request the same listing within a 30-second window. " +
-        "Identities vary one variable at a time across location, device, cookie profile, and referrer. " +
-        "Bot-detected and failed responses are excluded; remaining prices feed a Welch's t-test per vector.",
-        W - 2 * M - 28,
-      );
-      doc.text(methodLines, M + 14, y + 32);
+      doc.text("DISTRIBUTION", M, y);
+      y += 16;
+
+      const stats = [
+        { label: "BASELINE", value: verdict.baseline != null ? `$${Math.round(verdict.baseline)}` : "—" },
+        { label: "MEAN",     value: verdict.mean     != null ? `$${Math.round(verdict.mean)}`     : "—" },
+        { label: "RANGE",    value: verdict.range ? `$${Math.round(verdict.range[0])}–$${Math.round(verdict.range[1])}` : "—" },
+        { label: "SPREAD",   value: verdict.spread > 0 ? `$${verdict.spread}` : "$0" },
+      ];
+      const statW = (COL_W - 24) / 4;
+      stats.forEach((s, i) => {
+        const sx = M + i * (statW + 8);
+        setFill(C.surface);
+        setStroke(C.line);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(sx, y, statW, 56, 5, 5, "FD");
+        doc.setFont("helvetica", "bold").setFontSize(7);
+        setText(C.text3);
+        doc.text(s.label, sx + 12, y + 18);
+        doc.setFont("helvetica", "bold").setFontSize(15);
+        setText(C.text);
+        doc.text(s.value, sx + 12, y + 42);
+      });
       y += 78;
 
-      // ── Footer ─────────────────────────────────────────────────
-      setStroke(C.line);
-      doc.setLineWidth(0.4);
-      doc.line(M, H - 50, W - M, H - 50);
+      // ─── 3. All 24 agents table ───────────────────────────────
       doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.text);
-      doc.text("JACOBI", M, H - 32);
-      doc.setFont("helvetica", "normal").setFontSize(7.5);
-      setText(C.text3);
-      doc.text(
-        "  ·  24-agent adversarial pricing probe  ·  Generated " + dateLine,
-        M + doc.getTextWidth("JACOBI"), H - 32,
-      );
-      doc.text(
-        `jacobi.report/${verdict.session.slice(0, 8)}`,
-        W - M, H - 32, { align: "right" },
-      );
+      setText(C.cobalt);
+      doc.text("ALL 24 IDENTITIES", M, y);
+      y += 16;
 
-      doc.save(`jacobi-report-${verdict.session.slice(0, 8) || "probe"}.pdf`);
+      // Column widths sum to COL_W = 495
+      const col = { num: 32, profile: 245, network: 80, status: 60, price: 78 };
+      const rowH = 16;
+
+      // Header row
+      setFill(C.surface2);
+      doc.roundedRect(M, y, COL_W, rowH + 4, 3, 3, "F");
+      doc.setFont("helvetica", "bold").setFontSize(7);
+      setText(C.text3);
+      let cx = M + 10;
+      doc.text("#", cx, y + 12); cx += col.num;
+      doc.text("PROFILE", cx, y + 12); cx += col.profile;
+      doc.text("NETWORK", cx, y + 12); cx += col.network;
+      doc.text("STATUS", cx, y + 12); cx += col.status;
+      doc.text("PRICE", W - M - 10, y + 12, { align: "right" });
+      y += rowH + 6;
+
+      const sortedAgents = report.agents
+        .slice()
+        .sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+
+      const validPrices = sortedAgents.map(a => a.price).filter((p): p is number => p != null);
+      const hi = validPrices.length ? Math.max(...validPrices) : null;
+      const lo = validPrices.length ? Math.min(...validPrices) : null;
+
+      sortedAgents.forEach((a, idx) => {
+        // Alternating row tint
+        if (idx % 2 === 0) {
+          setFill(C.surface);
+          doc.rect(M, y - 4, COL_W, rowH, "F");
+        }
+
+        const tier = a.network_tier ?? 0;
+        const net = ["Datacenter", "Residential", "Mobile"][tier] || "—";
+        const profile = agentLabelCity(a);
+        const profileShort = profile.length > 40 ? profile.slice(0, 38) + "…" : profile;
+
+        // # column
+        doc.setFont("courier", "normal").setFontSize(8);
+        setText(C.text3);
+        cx = M + 10;
+        doc.text(a.agent_id.replace("AGENT_", "#"), cx, y + 8);
+        cx += col.num;
+
+        // Profile
+        doc.setFont("helvetica", "normal").setFontSize(8.5);
+        setText(C.text2);
+        doc.text(profileShort, cx, y + 8);
+        cx += col.profile;
+
+        // Network
+        doc.setFont("helvetica", "normal").setFontSize(8);
+        setText(C.text3);
+        doc.text(net, cx, y + 8);
+        cx += col.network;
+
+        // Status (color-coded)
+        const statusColor =
+          a.status === "success" ? C.good :
+          a.status === "detected" ? C.amber : C.text3;
+        doc.setFont("helvetica", "bold").setFontSize(7.5);
+        setText(statusColor);
+        doc.text((a.status || "—").toUpperCase(), cx, y + 8);
+
+        // Price (right-aligned, color-coded high/low)
+        const priceColor =
+          a.price == null ? C.text3 :
+          (hi !== null && a.price === hi) ? C.over :
+          (lo !== null && a.price === lo) ? C.good : C.text;
+        doc.setFont("courier", "bold").setFontSize(9);
+        setText(priceColor);
+        doc.text(
+          a.price != null ? `$${a.price}` : "—",
+          W - M - 10, y + 8, { align: "right" },
+        );
+
+        y += rowH;
+      });
+
+      doc.save(`jacobi-report-${sessionShort}.pdf`);
     } catch (e) {
       console.error("PDF generation failed", e);
     } finally {

@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JACOBI — Submission Film (5:00)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap">
+
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #04050a;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+    color: #eceef3;
+  }
+  #root { position: fixed; inset: 0; }
+
+  /* Audio control overlay */
+  .audio-ctl {
+    position: fixed; top: 14px; left: 14px;
+    z-index: 9999;
+    display: flex; flex-direction: column; gap: 10px;
+    background: rgba(8, 10, 16, 0.92);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 12px 14px;
+    backdrop-filter: blur(14px);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: #97a0b1;
+    min-width: 320px;
+  }
+  .audio-ctl .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+  }
+  .audio-ctl .lbl {
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: #5b6473;
+  }
+  .audio-ctl button, .audio-ctl label.btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #97a0b1;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-family: inherit; font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .audio-ctl button:hover, .audio-ctl label.btn:hover {
+    color: #eceef3; border-color: rgba(255,255,255,0.16);
+  }
+  .audio-ctl button.on {
+    color: #fff; background: rgba(61,107,255,0.16); border-color: rgba(61,107,255,0.4);
+  }
+  .audio-ctl .seg {
+    display: inline-flex;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .audio-ctl .seg button {
+    border: none; border-radius: 0;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    padding: 5px 9px;
+  }
+  .audio-ctl .seg button:last-child { border-right: none; }
+  .audio-ctl .voice-sel {
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #eceef3;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    max-width: 230px;
+    cursor: pointer;
+  }
+  .audio-ctl .voice-sel option { background: #0c0f15; color: #eceef3; }
+  .audio-ctl .hint-line {
+    margin-top: 6px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: #3d4452;
+    line-height: 1.4;
+    max-width: 280px;
+  }
+  .audio-ctl input[type=file] { display: none; }
+
+  .first-click-hint {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 99999;
+    background: rgba(4,5,10,0.85);
+    backdrop-filter: blur(8px);
+    transition: opacity .4s;
+  }
+  .first-click-hint .hint {
+    text-align: center;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: #97a0b1;
+  }
+  .first-click-hint .hint .h-big {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-style: italic;
+    font-size: 64px;
+    color: #eceef3;
+    letter-spacing: -0.01em;
+    margin-bottom: 24px;
+  }
+  .first-click-hint .hint .h-sub {
+    font-size: 14px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #97a0b1; margin-bottom: 8px;
+  }
+  .first-click-hint .hint .h-mini {
+    font-size: 11px; letter-spacing: 0.16em; color: #5b6473;
+  }
+  .first-click-hint .hint .h-cta {
+    margin-top: 32px;
+    display: inline-block;
+    padding: 16px 32px;
+    border: 1px solid rgba(61,107,255,0.4);
+    background: rgba(61,107,255,0.12);
+    color: #6e92ff;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<div class="audio-ctl">
+  <div class="row">
+    <span class="lbl">Music</span>
+    <button id="music-toggle" class="on">On</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Voiceover</span>
+    <div class="seg">
+      <button id="vo-tts" class="on">Voice</button>
+      <button id="vo-file">File</button>
+      <button id="vo-off">Off</button>
+    </div>
+  </div>
+  <div class="row" id="voice-row">
+    <span class="lbl">Voice</span>
+    <select id="voice-pick" class="voice-sel"><option>— loading —</option></select>
+  </div>
+  <div class="row" id="vo-file-row" style="display:none">
+    <label for="vo-file-input" class="btn">Upload MP3/WAV</label>
+    <input type="file" id="vo-file-input" accept="audio/*" />
+    <span class="vo-status" id="vo-status">no file</span>
+  </div>
+  <div class="hint-line">Best quality: try "Microsoft Aria" / "Microsoft Guy" / "Samantha (Enhanced)"</div>
+</div>
+
+<!-- React + Babel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Animation engine + scenes -->
+<script type="text/babel" src="film/animations.jsx"></script>
+<script type="text/babel" src="film/shared.jsx"></script>
+<script type="text/babel" src="film/scenes-hook.jsx"></script>
+<script type="text/babel" src="film/scenes-arch.jsx"></script>
+<script type="text/babel" src="film/scenes-walk.jsx"></script>
+<script type="text/babel" src="film/scenes-close.jsx"></script>
+<script src="film/audio.js"></script>
+
+<!-- Preload screenshots so cross-fade transitions land cleanly -->
+<link rel="preload" as="image" href="screenshots/v3-hero.png">
+<link rel="preload" as="image" href="screenshots/v3-cockpit.png">
+<link rel="preload" as="image" href="screenshots/v3-deploy.png">
+<link rel="preload" as="image" href="screenshots/ev.png">
+<link rel="preload" as="image" href="screenshots/history.png">
+<link rel="preload" as="image" href="screenshots/board.png">
+<link rel="preload" as="image" href="screenshots/pricing.png">
+
+<!-- Main film -->
+<script type="text/babel">
+
+// Beat schedule (start time → component)
+const BEATS = [
+  { id: 'B01', start: 0,   end: 7,   C: window.S_B01, screen: 'Act I · Cold open' },
+  { id: 'B02', start: 7,   end: 14,  C: window.S_B02, screen: 'Act I · URL forks' },
+  { id: 'B03', start: 14,  end: 23,  C: window.S_B03, screen: 'Act I · 24-tile grid' },
+  { id: 'B04', start: 23,  end: 28,  C: window.S_B04, screen: 'Act I · Isolate worst' },
+  { id: 'B05', start: 28,  end: 35,  C: window.S_B05, screen: 'Act I · Particle collapse' },
+  { id: 'B06', start: 35,  end: 42,  C: window.S_B06, screen: 'Act II · Brand reveal' },
+  { id: 'B07', start: 42,  end: 55,  C: window.S_B07, screen: 'Act II · Globe deploy' },
+  { id: 'B08', start: 55,  end: 65,  C: window.S_B08, screen: 'Act II · Spread bars' },
+  { id: 'B09', start: 65,  end: 75,  C: window.S_B09, screen: 'Act II · Report writes' },
+  { id: 'B10', start: 75,  end: 80,  C: window.S_B10, screen: 'Act II · Thesis line' },
+  { id: 'B11', start: 80,  end: 90,  C: window.S_B11, screen: 'Act III · Wireframe' },
+  { id: 'B12', start: 90,  end: 102, C: window.S_B12, screen: 'Act III · Stack labelled' },
+  { id: 'B13', start: 102, end: 115, C: window.S_B13, screen: 'Act III · Radial deploy' },
+  { id: 'B14', start: 115, end: 125, C: window.S_B14, screen: 'Act III · Post-process' },
+  { id: 'B15', start: 125, end: 130, C: window.S_B15, screen: 'Act III · Three sinks' },
+  { id: 'B16', start: 130, end: 142, C: window.S_B16, screen: 'Act IV · Landing' },
+  { id: 'B17', start: 142, end: 158, C: window.S_B17, screen: 'Act IV · Pricing' },
+  { id: 'B18', start: 158, end: 162, C: window.S_B18, screen: 'Act IV · Sign in' },
+  { id: 'B19', start: 162, end: 175, C: window.S_B19, screen: 'Act IV · Cockpit' },
+  { id: 'B20', start: 175, end: 188, C: window.S_B20, screen: 'Act IV · Deploy live' },
+  { id: 'B21', start: 188, end: 204, C: window.S_B21, screen: 'Act IV · Verdict' },
+  { id: 'B22', start: 204, end: 216, C: window.S_B22, screen: 'Act IV · Evidence rows' },
+  { id: 'B23', start: 216, end: 222, C: window.S_B23, screen: 'Act IV · History' },
+  { id: 'B24', start: 222, end: 234, C: window.S_B24, screen: 'Act IV · Board' },
+  { id: 'B25', start: 234, end: 248, C: window.S_B25, screen: 'Act IV · Share' },
+  { id: 'B26', start: 248, end: 265, C: window.S_B26, screen: 'Act IV · Export' },
+  { id: 'B27', start: 265, end: 273, C: window.S_B27, screen: 'Act V · Buyer grid' },
+  { id: 'B28', start: 273, end: 283, C: window.S_B28, screen: 'Act V · Tiers · roadmap' },
+  { id: 'B29', start: 283, end: 290, C: window.S_B29, screen: 'Act V · Positioning' },
+  { id: 'B30', start: 290, end: 296, C: window.S_B30, screen: 'Act VI · Collapse' },
+  { id: 'B31', start: 296, end: 300, C: window.S_B31, screen: 'Act VI · Lock' },
+];
+
+// Caption schedule (start, end, payload)
+const CAPTIONS = [
+  // Act I
+  { s: 3.0,   e: 7.0,   eyebrow: null, primary: 'The internet looks universal.' },
+  { s: 8.0,   e: 13.5,  eyebrow: null, primary: 'It is not.' },
+  { s: 14.5,  e: 22.5,  eyebrow: 'SAME URL · 24 IDENTITIES · 24 PRICES', primary: 'One URL can become 24 different realities.' },
+  { s: 23.0,  e: 27.5,  mono: '+$186 OVER BASELINE · iPhone · Manhattan · direct' },
+  { s: 28.0,  e: 34.5,  primary: 'The gap between those realities is real money.' },
+  // Act II
+  { s: 38.0,  e: 41.5,  mono: 'JAC[ ]BI · PRICING INTELLIGENCE FOR THE FRAGMENTED WEB' },
+  { s: 42.5,  e: 54.5,  primary: 'Paste a URL. Jacobi deploys 24 synthetic identities.', mono: '4 vectors · location · device · cookies · referrer' },
+  { s: 55.5,  e: 64.5,  primary: 'The differences become evidence.' },
+  { s: 65.5,  e: 74.5,  primary: 'Evidence becomes a report.', sub: 'Stored. Shareable. Yours.' },
+  { s: 75.5,  e: 79.5,  mono: 'Paste a URL. Read the verdict.' },
+  // Act III
+  { s: 82.0,  e: 89.5,  eyebrow: 'ARCHITECTURE', primary: 'A full-stack pipeline.' },
+  { s: 90.5,  e: 101.5, mono: 'NEXT.JS · GOOGLE · SUPABASE · STRIPE · FASTAPI · ENGINE' },
+  { s: 102.5, e: 114.5, eyebrow: 'WAVES', primary: 'Datacenter · residential · mobile.', mono: '24 identities · 3 waves · 4 vectors' },
+  { s: 115.5, e: 124.5, mono: 'NORMALIZE → SPREAD → TOPOLOGY → REPORT' },
+  { s: 125.5, e: 129.5, mono: 'HISTORY · BOARD · SHARE' },
+  // Act IV
+  { s: 130.5, e: 141.5, eyebrow: 'LIVE · jacobi-v2.vercel.app', primary: 'This is the live product.' },
+  { s: 142.5, e: 157.5, eyebrow: 'PRICING', primary: 'Free 24 · Pro 50 · Enterprise.', mono: 'EACH PROBE = FULL 24-IDENTITY ENGINE' },
+  { s: 158.5, e: 161.5, mono: 'GOOGLE · SUPABASE SESSION' },
+  { s: 162.5, e: 174.5, eyebrow: 'PROBE COCKPIT', primary: 'Paste. Toggle public. Launch.' },
+  { s: 175.5, e: 187.5, mono: 'DEPLOYING · 24/24 AGENTS · 3 WAVES' },
+  { s: 188.5, e: 203.5, eyebrow: 'VERDICT', primary: 'Spread $144. Index 71. Progressive.' },
+  { s: 204.5, e: 215.5, eyebrow: 'EVIDENCE', primary: 'Driver: location. Max delta −$186.' },
+  { s: 216.5, e: 221.5, mono: 'YOUR HISTORY · EVERY PROBE PERSISTED' },
+  { s: 222.5, e: 233.5, eyebrow: 'BOARD', primary: 'Public probes. Opt-in only.', mono: 'NEVER PRIVATE USER SCANS' },
+  { s: 234.5, e: 247.5, eyebrow: 'SHARE', primary: 'Every report has a link-grade URL.' },
+  { s: 248.5, e: 264.5, eyebrow: 'FORENSIC EXPORT · PRO', primary: 'PDF · CSV · JSON. Legal-grade.' },
+  // Act V
+  { s: 265.5, e: 272.5, primary: 'Eight buyers. One engine.' },
+  { s: 273.5, e: 282.5, mono: 'SUBSCRIPTION TODAY · API & TEAMS NEXT' },
+  // Act VI
+  { s: 296.5, e: 299.9, mono: 'jacobi-v2.vercel.app · github.com/Hussain800/Jacobi_v2' },
+];
+
+function Film() {
+  return (
+    <>
+      <FilmStyleTag />
+      <FilmBackdrop />
+
+      {/* Render each beat with a 0.7s cross-fade overlap */}
+      {BEATS.map(b => (
+        <CrossfadeScene key={b.id} start={b.start} end={b.end} fade={0.7}>
+          <b.C />
+        </CrossfadeScene>
+      ))}
+
+      {/* Captions (always-on layer) */}
+      {CAPTIONS.map((c, i) => (
+        <Caption key={i} start={c.s} end={c.e}
+          eyebrow={c.eyebrow} primary={c.primary} mono={c.mono} value={c.value} sub={c.sub}
+          position={c.position || 'lower'}
+        />
+      ))}
+
+      {/* Watermark — always present except during full brand reveals (35–42, 296–300) */}
+      <WatermarkLayer />
+
+      {/* Live badge — only during walkthrough */}
+      <LiveBadgeLayer />
+
+      {/* Beat-id chip — top right under watermark (helpful for comments) */}
+      <ScreenLabelLayer />
+
+      {/* Grain + vignette */}
+      <FilmGrain />
+      <Vignette />
+    </>
+  );
+}
+
+function WatermarkLayer() {
+  const { time } = useTimeline();
+  // Hide during brand-only frames (35–42 and 296–300)
+  const hidden = (time >= 35 && time < 42) || time >= 296;
+  return <Watermark visible={!hidden} />;
+}
+
+function LiveBadgeLayer() {
+  const { time } = useTimeline();
+  const visible = time >= 130 && time < 265;
+  return <LiveBadge visible={visible} />;
+}
+
+function ScreenLabelLayer() {
+  const { time } = useTimeline();
+  const beat = BEATS.find(b => time >= b.start && time < b.end);
+  // Update root data-screen-label every second for comment context
+  const sec = Math.floor(time);
+  React.useEffect(() => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    const root = document.getElementById('root');
+    if (root) root.setAttribute('data-screen-label', `${beat ? beat.screen : 'Cover'} · ${m}:${String(s).padStart(2,'0')}`);
+  }, [sec, beat?.id]);
+  return null;
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+let currentTime = 0;
+let isPlaying = true;
+
+function FilmRoot() {
+  const stageRef = React.useRef(null);
+  // Provide hooks to audio engine via global state
+  return (
+    <Stage
+      width={1920}
+      height={1080}
+      duration={300}
+      background={'#06070c'}
+      autoplay={true}
+      loop={false}
+      persistKey={'jacobi-film-v1'}
+    >
+      <TimeBridge />
+      <Film />
+    </Stage>
+  );
+}
+
+function TimeBridge() {
+  const { time, playing, setTime, setPlaying } = useTimeline();
+  currentTime = time;
+  isPlaying = playing;
+  // expose for testing / debugging
+  React.useEffect(() => {
+    window.__filmSeek = (t) => { setTime(Math.max(0, Math.min(300, t))); };
+    window.__filmPause = () => setPlaying(false);
+    window.__filmPlay = () => setPlaying(true);
+  }, [setTime, setPlaying]);
+  return null;
+}
+
+root.render(<FilmRoot />);
+
+// Audio init
+window.JacobiAudio.init({
+  getTime: () => currentTime,
+  getPlaying: () => isPlaying,
+  onVoiceReady: (voices, current) => populateVoices(voices, current),
+});
+
+// Audio controls
+const musicBtn = document.getElementById('music-toggle');
+const voTTSBtn = document.getElementById('vo-tts');
+const voFileBtn = document.getElementById('vo-file');
+const voOffBtn  = document.getElementById('vo-off');
+const voicePick = document.getElementById('voice-pick');
+const voiceRow  = document.getElementById('voice-row');
+const voFileRow = document.getElementById('vo-file-row');
+const voFileInput = document.getElementById('vo-file-input');
+const voStatus  = document.getElementById('vo-status');
+let musicOn = true;
+
+function setVOMode(mode) {
+  window.JacobiAudio.setVOMode(mode);
+  [voTTSBtn, voFileBtn, voOffBtn].forEach(b => b.classList.remove('on'));
+  if (mode === 'tts') voTTSBtn.classList.add('on');
+  if (mode === 'file') voFileBtn.classList.add('on');
+  if (mode === 'off') voOffBtn.classList.add('on');
+  voiceRow.style.display = mode === 'tts' ? '' : 'none';
+  voFileRow.style.display = mode === 'file' ? '' : 'none';
+}
+
+musicBtn.addEventListener('click', () => {
+  musicOn = !musicOn;
+  musicBtn.textContent = musicOn ? 'On' : 'Off';
+  musicBtn.classList.toggle('on', musicOn);
+  window.JacobiAudio.setMusic(musicOn);
+});
+voTTSBtn.addEventListener('click',  () => setVOMode('tts'));
+voFileBtn.addEventListener('click', () => setVOMode('file'));
+voOffBtn.addEventListener('click',  () => setVOMode('off'));
+
+voicePick.addEventListener('change', (e) => {
+  window.JacobiAudio.setVoice(e.target.value);
+});
+
+voFileInput.addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  voStatus.textContent = 'Loading…';
+  try {
+    await window.JacobiAudio.loadVO(f);
+    voStatus.textContent = '✓ ' + f.name.slice(0, 24);
+    voStatus.style.color = '#34d39b';
+  } catch (err) {
+    voStatus.textContent = 'Could not load';
+    voStatus.style.color = '#ff5468';
+  }
+});
+
+// Populate voice picker when voices arrive
+function populateVoices(voices, current) {
+  voicePick.innerHTML = '';
+  if (voices.length === 0) {
+    voicePick.innerHTML = '<option>— no voices available —</option>';
+    return;
+  }
+  voices.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.name + (v.lang ? ' · ' + v.lang : '');
+    if (current && v.name === current.name) opt.selected = true;
+    voicePick.appendChild(opt);
+  });
+}
+
+// Start hint overlay → dismisses on first click (also unlocks audio)
+const hint = document.createElement('div');
+hint.className = 'first-click-hint';
+hint.innerHTML = `
+  <div class="hint">
+    <div class="h-big">Jacobi</div>
+    <div class="h-sub">Submission Film · 5:00</div>
+    <div class="h-mini">Click to begin · voiceover &amp; music on by default · controls top-left</div>
+    <button class="h-cta">Begin</button>
+  </div>
+`;
+document.body.appendChild(hint);
+hint.addEventListener('click', () => {
+  hint.style.opacity = '0';
+  setTimeout(() => hint.remove(), 400);
+});
+</script>
+
+</body>
+</html>

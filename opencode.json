@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "oh-my-openagent"
+  ],
+  "agent": {
+    "sisyphus": {
+      "description": "Orchestrator agent - plans, delegates to specialists, drives tasks to completion",
+      "model": "opencode/claude-opus-4-7",
+      "mode": "subagent"
+    },
+    "hephaestus": {
+      "description": "Autonomous deep worker - explores, researches, and executes end-to-end",
+      "model": "opencode/gpt-5.5",
+      "mode": "subagent"
+    },
+    "prometheus": {
+      "description": "Strategic planner - interview mode, identifies scope, builds detailed plan",
+      "model": "opencode/claude-opus-4-7",
+      "mode": "subagent"
+    },
+    "oracle": {
+      "description": "Knowledge agent - deep research and information retrieval",
+      "model": "opencode/gpt-5.5",
+      "mode": "subagent"
+    },
+    "librarian": {
+      "description": "Documentation and reference agent",
+      "model": "opencode-go/qwen3.5-plus",
+      "mode": "subagent"
+    },
+    "explore": {
+      "description": "Fast codebase exploration agent",
+      "model": "opencode/claude-haiku-4-5",
+      "mode": "subagent"
+    }
+  }
+}

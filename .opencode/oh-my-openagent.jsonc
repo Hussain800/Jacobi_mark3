@@ -1,0 +1,82 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+
+  // Project-specific agent overrides for Jacobi
+  "agents": {
+    "sisyphus": {
+      // Jacobi is a full-stack project (Python backend + Next.js frontend)
+      "model": "opencode/claude-opus-4-7",
+      "variant": "max",
+      "fallback_models": [
+        { "model": "opencode-go/kimi-k2.6" },
+        { "model": "kimi-for-coding/k2p5" },
+        { "model": "opencode/gpt-5.5", "variant": "medium" },
+        { "model": "opencode/glm-5" },
+        { "model": "opencode/big-pickle" }
+      ]
+    },
+    "hephaestus": {
+      "model": "opencode/gpt-5.5",
+      "variant": "medium"
+    },
+    "explore": {
+      "model": "opencode/claude-haiku-4-5",
+      "fallback_models": [
+        { "model": "opencode-go/qwen3.5-plus" },
+        { "model": "opencode-go/minimax-m2.7" },
+        { "model": "opencode/gpt-5.4-nano" }
+      ]
+    },
+    "librarian": {
+      "model": "opencode-go/qwen3.5-plus",
+      "fallback_models": [
+        { "model": "opencode-go/minimax-m2.7" },
+        { "model": "opencode/claude-haiku-4-5" },
+        { "model": "opencode/gpt-5.4-nano" }
+      ]
+    }
+  },
+
+  // Categories map Jacobi's stack to models
+  "categories": {
+    "visual-engineering": {
+      "model": "opencode/gemini-3.1-pro",
+      "variant": "high",
+      "fallback_models": [
+        { "model": "opencode/glm-5" },
+        { "model": "opencode/claude-opus-4-7", "variant": "max" },
+        { "model": "opencode-go/glm-5.1" },
+        { "model": "kimi-for-coding/k2p5" }
+      ]
+    },
+    "quick": {
+      "model": "opencode/gpt-5.4-mini",
+      "fallback_models": [
+        { "model": "opencode/claude-haiku-4-5" },
+        { "model": "opencode/gemini-3-flash" },
+        { "model": "opencode-go/minimax-m2.7" },
+        { "model": "opencode/gpt-5-nano" }
+      ]
+    },
+    "deep": {
+      "model": "opencode/gpt-5.5",
+      "variant": "medium",
+      "fallback_models": [
+        { "model": "opencode/claude-opus-4-7", "variant": "max" },
+        { "model": "opencode/gemini-3.1-pro", "variant": "high" },
+        { "model": "opencode-go/kimi-k2.6" },
+        { "model": "opencode-go/glm-5.1" }
+      ]
+    }
+  },
+
+  // Team Mode (optional - uncomment to enable)
+  // "team_mode": {
+  //   "enabled": true,
+  //   "max_parallel_members": 4,
+  //   "tmux_visualization": true
+  // },
+
+  // Disable hooks that aren't useful for this project
+  "disabled_hooks": []
+}

@@ -20,3 +20,15 @@ build/
 
 .vercel
 supabase/.temp/
+
+# Demo film render artifacts (regenerable from scripts)
+Jacobi_demo_video/_render/node_modules/
+Jacobi_demo_video/_render/*.wav
+Jacobi_demo_video/_render/probe.mp3
+Jacobi_demo_video/_render/JACOBI_film_video.mp4
+Jacobi_demo_video/_render/JACOBI_film_perfect.mp4
+Jacobi_demo_video/_render/JACOBI_film_yc.mp4
+Jacobi_demo_video/_render/JACOBI_film_1080p30.mp4
+
+# Opencode + tool internal state
+.omo/

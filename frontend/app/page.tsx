@@ -228,8 +228,8 @@ export default function LandingPage() {
       <section className="statband divider-top">
         <div className="wrap statband-grid">
           <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span data-count="24">0</span>
+            <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
+              24&ndash;50
             </div>
             <div className="label-mono">Identities per probe</div>
           </div>
@@ -250,6 +250,56 @@ export default function LandingPage() {
               ~60s
             </div>
             <div className="label-mono">Typical probe time</div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ HOW IT WORKS — workflow strip ════════════ */}
+      <section className="section divider-top" id="workflow">
+        <div className="wrap">
+          <div className="why-head" data-reveal>
+            <span className="eyebrow"><span className="dot">●</span> How it works</span>
+            <h2 className="display sec-title">Five steps, from URL to audit-ready report.</h2>
+          </div>
+          <ol className="workflow-strip" data-reveal>
+            {[
+              ["01", "Enter a URL", "Paste a flight, hotel, or product page."],
+              ["02", "Deploy controlled agents", "24 (Smart) or 50 (Pro) buyer identities, varied one vector at a time."],
+              ["03", "Capture evidence", "Each agent records the on-page price, raw text, currency, and language."],
+              ["04", "Score the differences", "Prices are compared with Welch t-tests; only controlled gaps count."],
+              ["05", "Export the report", "Download an audit-ready PDF with the full evidence appendix."],
+            ].map(([n, t, d]) => (
+              <li className="workflow-step" key={n}>
+                <span className="workflow-num mono">{n}</span>
+                <span className="workflow-title">{t}</span>
+                <span className="workflow-desc sec">{d}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* ════════════ FEATURES ════════════ */}
+      <section className="section divider-top" id="features">
+        <div className="wrap">
+          <div className="why-head" data-reveal>
+            <span className="eyebrow"><span className="dot">●</span> Capabilities</span>
+            <h2 className="display sec-title">Controlled probe matrices, real evidence.</h2>
+          </div>
+          <div className="feature-grid" data-reveal>
+            {[
+              ["Smart 24 audit", "A 24-agent matrix across location, device, cookie history, and referrer — the free evidence audit."],
+              ["Pro 50 matrix", "A 50-agent advanced matrix with deeper cookie, referrer, device, and geo coverage."],
+              ["Native-currency evidence", "Prices shown in the real on-page currency first (e.g. AED 11,600.00), with a USD-normalized comparison."],
+              ["Browser-language pairs", "Controlled Accept-Language pairs (EN vs AR/HI/FR) where only the language differs."],
+              ["PDF audit report", "A research-grade PDF with summary, figures, and a raw-evidence appendix."],
+              ["Honest probe accounting", "Real vs inferred agents are reported separately; inferred agents never appear as real evidence."],
+            ].map(([t, d]) => (
+              <div className="feature-card card" key={t}>
+                <h3 className="feature-title">{t}</h3>
+                <p className="feature-desc sec">{d}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -405,12 +455,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ════════════ EVIDENCE ════════════ */}
+      {/* ════════════ EVIDENCE / CASE STUDY ════════════ */}
       <section className="section divider-top" id="evidence">
+        <span id="case-studies" className="anchor-offset" aria-hidden="true" />
         <div className="wrap">
           <div className="sec-head" data-reveal>
             <span className="eyebrow">
-              <span className="dot">●</span> Evidence · full readout
+              <span className="dot">●</span> Sample report · full readout
             </span>
             <h2 className="display sec-title">
               UA182 &nbsp;

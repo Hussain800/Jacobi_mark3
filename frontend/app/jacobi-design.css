@@ -390,6 +390,43 @@
 .jacobi-design .hero-proof { margin-top: 18px; }
 .jacobi-design .hero-proof .sep { color: var(--text-4); margin: 0 5px; }
 
+/* anchor offset so #case-studies clears the fixed nav */
+.jacobi-design .anchor-offset { display: block; position: relative; top: -80px; visibility: hidden; }
+
+/* ── Workflow strip (How it works) ── */
+.jacobi-design .workflow-strip {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px;
+  margin-top: 40px; padding: 0; list-style: none; counter-reset: none;
+}
+.jacobi-design .workflow-step {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 20px 18px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface);
+}
+.jacobi-design .workflow-num { font-size: 12px; color: var(--cobalt); letter-spacing: 0.1em; }
+.jacobi-design .workflow-title { font-size: 14.5px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.jacobi-design .workflow-desc { font-size: 13px; line-height: 1.5; }
+@media (max-width: 900px) {
+  .jacobi-design .workflow-strip { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .jacobi-design .workflow-strip { grid-template-columns: 1fr; }
+}
+
+/* ── Feature grid (Capabilities) ── */
+.jacobi-design .feature-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px;
+}
+.jacobi-design .feature-card { padding: 24px 22px; }
+.jacobi-design .feature-title { font-size: 15.5px; font-weight: 600; color: var(--text); margin: 0 0 8px; letter-spacing: -0.01em; }
+.jacobi-design .feature-desc { font-size: 13.5px; line-height: 1.55; margin: 0; }
+@media (max-width: 900px) {
+  .jacobi-design .feature-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .jacobi-design .feature-grid { grid-template-columns: 1fr; }
+}
+
 .jacobi-design .globe-stage { position: relative; width: 100%; max-width: 660px; margin-left: auto; aspect-ratio: 1 / 1; }
 .jacobi-design .globe-stage::before {
   content: ""; position: absolute; inset: -4%; z-index: 0; pointer-events: none;

@@ -220,6 +220,17 @@ async def export_pdf(report_id: str):
             return ""
         return str(s).replace("_", " ").title()
 
+    def _softbreak(s):
+        """Insert zero-width break opportunities into long unbreakable tokens
+        (URLs) so justified text can wrap them instead of stretching the line
+        before with huge inter-word gaps. Must run AFTER _esc."""
+        if not s:
+            return ""
+        # U+200B after URL separators lets ReportLab break the URL across lines.
+        for sep in ("/", "-", "_", ".", "?", "&", "=", "%"):
+            s = s.replace(sep, sep + "​")
+        return s
+
     # ------------------------------------------------------------------ palette
     # Restrained, print-safe academic palette. White paper, black ink.
     INK = colors.HexColor("#111111")     # body / headings
@@ -453,7 +464,7 @@ async def export_pdf(report_id: str):
         f"audit of <b>{_esc(target_name)}</b>"
     )
     if target_url:
-        intro += f" (<font color='#555555'>{_esc(target_url[:96])}</font>)"
+        intro += f" (<font color='#555555'>{_softbreak(_esc(target_url[:96]))}</font>)"
     intro += (
         ". The objective is to determine whether, and along which attributes, the "
         "target applies price discrimination, and to preserve verifiable evidence "

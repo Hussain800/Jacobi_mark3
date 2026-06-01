@@ -140,8 +140,7 @@ export default function LandingPage() {
         <div className="hero-grid wrap">
           <div className="hero-copy">
             <div className="chip" data-reveal>
-              <span className="pulse" />{" "}
-              24 identities · 4 vectors · evidence-grade
+              Evidence-grade pricing intelligence
             </div>
 
             <h1 className="hero-h1" data-reveal>
@@ -150,15 +149,15 @@ export default function LandingPage() {
               <span className="hero-sub-rule" />
             </h1>
 
-            <p className="hero-typed mono" data-reveal>
-              <span id="typed" />
-              <span className="caret">▌</span>
+            <p className="hero-lede sec" data-reveal>
+              Evidence-grade pricing intelligence that detects regional, device,
+              language, and session-based price differences.
             </p>
 
             <p className="hero-para sec" data-reveal>
-              JACOBI deploys 24 shopper profiles against your URL and
-              surfaces the pricing&nbsp;discrimination algorithms hide behind
-              your digital&nbsp;fingerprint.
+              JACOBI runs controlled buyer-context probes against your URL,
+              compares what each identity is shown, captures the raw evidence, and
+              exports an audit-ready report.
             </p>
 
             <form
@@ -172,7 +171,7 @@ export default function LandingPage() {
             >
               <div className="pi-row">
                 <span className="pi-meta">
-                  <span className="pi-glyph">⌖</span> 24 agents
+                  Run a pricing audit
                 </span>
                 <input
                   ref={heroInputRef}
@@ -188,16 +187,17 @@ export default function LandingPage() {
                   aria-label="Paste a URL to probe"
                 />
                 <button className="pi-submit" type="submit">
-                  Inspect <span className="pi-arrow">→</span>
+                  Run a pricing audit <span className="pi-arrow">→</span>
                 </button>
               </div>
               <span className="pi-rule" />
             </form>
 
             <div className="hero-proof label-mono" data-reveal>
-              4 discrimination vectors <span className="sep">·</span>{" "}
-              verdict in seconds <span className="sep">·</span>{" "}
-              no login required
+              <a href="#case-studies" className="hero-secondary-cta">View a sample report</a>
+              <span className="sep">·</span>{" "}
+              Smart 24 &amp; Pro 50 matrices <span className="sep">·</span>{" "}
+              native-currency evidence
             </div>
           </div>
 
@@ -228,8 +228,8 @@ export default function LandingPage() {
       <section className="statband divider-top">
         <div className="wrap statband-grid">
           <div className="stat" data-reveal>
-            <div className="stat-num tnum">
-              <span data-count="24">0</span>
+            <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
+              24&ndash;50
             </div>
             <div className="label-mono">Identities per probe</div>
           </div>
@@ -250,6 +250,56 @@ export default function LandingPage() {
               ~60s
             </div>
             <div className="label-mono">Typical probe time</div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ HOW IT WORKS — workflow strip ════════════ */}
+      <section className="section divider-top" id="workflow">
+        <div className="wrap">
+          <div className="why-head" data-reveal>
+            <span className="eyebrow"><span className="dot">●</span> How it works</span>
+            <h2 className="display sec-title">Five steps, from URL to audit-ready report.</h2>
+          </div>
+          <ol className="workflow-strip" data-reveal>
+            {[
+              ["01", "Enter a URL", "Paste a flight, hotel, or product page."],
+              ["02", "Deploy controlled agents", "24 (Smart) or 50 (Pro) buyer identities, varied one vector at a time."],
+              ["03", "Capture evidence", "Each agent records the on-page price, raw text, currency, and language."],
+              ["04", "Score the differences", "Prices are compared with Welch t-tests; only controlled gaps count."],
+              ["05", "Export the report", "Download an audit-ready PDF with the full evidence appendix."],
+            ].map(([n, t, d]) => (
+              <li className="workflow-step" key={n}>
+                <span className="workflow-num mono">{n}</span>
+                <span className="workflow-title">{t}</span>
+                <span className="workflow-desc sec">{d}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* ════════════ FEATURES ════════════ */}
+      <section className="section divider-top" id="features">
+        <div className="wrap">
+          <div className="why-head" data-reveal>
+            <span className="eyebrow"><span className="dot">●</span> Capabilities</span>
+            <h2 className="display sec-title">Controlled probe matrices, real evidence.</h2>
+          </div>
+          <div className="feature-grid" data-reveal>
+            {[
+              ["Smart 24 audit", "A 24-agent matrix across location, device, cookie history, and referrer — the free evidence audit."],
+              ["Pro 50 matrix", "A 50-agent advanced matrix with deeper cookie, referrer, device, and geo coverage."],
+              ["Native-currency evidence", "Prices shown in the real on-page currency first (e.g. AED 11,600.00), with a USD-normalized comparison."],
+              ["Browser-language pairs", "Controlled Accept-Language pairs (EN vs AR/HI/FR) where only the language differs."],
+              ["PDF audit report", "A research-grade PDF with summary, figures, and a raw-evidence appendix."],
+              ["Honest probe accounting", "Real vs inferred agents are reported separately; inferred agents never appear as real evidence."],
+            ].map(([t, d]) => (
+              <div className="feature-card card" key={t}>
+                <h3 className="feature-title">{t}</h3>
+                <p className="feature-desc sec">{d}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -405,12 +455,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ════════════ EVIDENCE ════════════ */}
+      {/* ════════════ EVIDENCE / CASE STUDY ════════════ */}
       <section className="section divider-top" id="evidence">
+        <span id="case-studies" className="anchor-offset" aria-hidden="true" />
         <div className="wrap">
           <div className="sec-head" data-reveal>
             <span className="eyebrow">
-              <span className="dot">●</span> Evidence · full readout
+              <span className="dot">●</span> Sample report · full readout
             </span>
             <h2 className="display sec-title">
               UA182 &nbsp;

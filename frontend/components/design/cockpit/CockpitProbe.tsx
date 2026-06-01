@@ -147,20 +147,34 @@ const CY = 450;
 
 interface NodeGeom { i: number; wave: number; posInWave: number; angle: number; x: number; y: number; lineLen: number; }
 
-const NODE_GEOM: NodeGeom[] = (() => {
+// Build the radial node web for ANY agent count (24 Smart, 50 Pro). Agents are
+// distributed evenly across the 3 concentric rings so the visual reflects the
+// real configured agent count instead of a hardcoded 24.
+function buildNodeGeom(n: number): NodeGeom[] {
+  const count = Math.max(1, n);
   const out: NodeGeom[] = [];
-  for (let i = 0; i < 24; i++) {
-    const wave = Math.floor(i / 8);
-    const posInWave = i % 8;
+  const ring = WAVES.length;            // 3
+  const perWaveBase = Math.floor(count / ring);
+  const remainder = count - perWaveBase * ring;
+  // Each ring gets perWaveBase agents; the remainder is spread onto the outer rings.
+  const ringCounts = WAVES.map((_, w) => perWaveBase + (w >= ring - remainder ? 1 : 0));
+  let i = 0;
+  for (let wave = 0; wave < ring; wave++) {
+    const inThisWave = ringCounts[wave];
     const w = WAVES[wave];
     const offset = wave * 0.39 - Math.PI / 2;
-    const angle = (posInWave / 8) * Math.PI * 2 + offset;
-    const x = CX + w.r * Math.cos(angle);
-    const y = CY + w.r * Math.sin(angle);
-    out.push({ i, wave, posInWave, angle, x, y, lineLen: Math.hypot(x - CX, y - CY) });
+    for (let posInWave = 0; posInWave < inThisWave; posInWave++) {
+      const angle = (posInWave / Math.max(1, inThisWave)) * Math.PI * 2 + offset;
+      const x = CX + w.r * Math.cos(angle);
+      const y = CY + w.r * Math.sin(angle);
+      out.push({ i, wave, posInWave, angle, x, y, lineLen: Math.hypot(x - CX, y - CY) });
+      i++;
+    }
   }
   return out;
-})();
+}
+
+const NODE_GEOM_24: NodeGeom[] = buildNodeGeom(24);
 
 type NodeVis = "pending" | "deploying" | "done-over" | "done-good" | "done-normal" | "blocked";
 
@@ -399,50 +413,31 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     }, 100);
 
     setRejection(null);
-    // Preset case studies always show the curated demo result so the
-    // experience is deterministic for live demos and investor pitches.
-    // A user pasting their own URL falls through to the live engine.
-    if (CASE_URLS.has(url)) {
-      runDemo(url, name);
-      return;
-    }
-    runLive(url, name);
+    // Case studies now run the REAL engine just like a pasted URL — so a demo
+    // shows genuine probe behaviour, not canned data. The only difference: if a
+    // case study fails (e.g. a JS-heavy search page times out mid-pitch), it
+    // falls back to a clearly-labelled curated report so the demo never breaks.
+    // A user-pasted URL has no fallback (an honest error is correct there).
+    runLive(url, name, CASE_URLS.has(url));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiBase, publishToBoard]);
+  }, [apiBase, publishToBoard, auditDepth]);
 
-  const runDemo = useCallback(async (url: string, name: string) => {
-    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
-    const sub: BackendAgent[] = [];
-    setActiveWave(0);
-    for (let i = 0; i < 8; i++) { if (cancelledRef.current) return; sub.push(DEMO_AGENTS[i]); }
-    await wait(900);
-    setReturnedAgents([...sub]);
-    setActiveWave(1);
-    for (let i = 8; i < 16; i++) { if (cancelledRef.current) return; sub.push(DEMO_AGENTS[i]); }
-    await wait(900);
-    setReturnedAgents([...sub]);
-    setActiveWave(2);
-    for (let i = 16; i < 24; i++) { if (cancelledRef.current) return; sub.push(DEMO_AGENTS[i]); }
-    await wait(900);
-    if (cancelledRef.current) return;
-    setReturnedAgents([...sub]);
-    setDeckPhaseLabel("complete");
-    try {
-      const r = await fetch(`${apiBase}/api/analyze-demo`);
-      if (r.ok) {
-        const a = await r.json();
-        setReport({ ...DEMO_REPORT, target_url: url, target_name: name, _analysis: a, _demo: true } as TopologyReport & { _analysis: unknown; _demo: boolean });
-      } else {
-        setReport({ ...DEMO_REPORT, target_url: url, target_name: name, _demo: true } as TopologyReport & { _demo: boolean });
-      }
-    } catch {
-      setReport({ ...DEMO_REPORT, target_url: url, target_name: name, _demo: true } as TopologyReport & { _demo: boolean });
-    }
-    setPhase("complete");
+
+  // Curated fallback for case studies: if a real probe can't complete, show the
+  // deterministic sample report (clearly marked) so an investor demo never dies
+  // on a flaky target. Only ever called for case-study URLs.
+  const caseStudyFallback = useCallback((url: string, name: string) => {
     stopTimers();
-  }, [apiBase, stopTimers]);
+    setReturnedAgents(DEMO_AGENTS.slice());
+    setReport({
+      ...DEMO_REPORT, target_url: url, target_name: name,
+      _demo: true, _curated_fallback: true,
+    } as TopologyReport & { _demo: boolean; _curated_fallback: boolean });
+    setDeckPhaseLabel("complete");
+    setPhase("complete");
+  }, [stopTimers]);
 
-  const runLive = useCallback(async (url: string, name: string) => {
+  const runLive = useCallback(async (url: string, name: string, isCaseStudy = false) => {
     try {
       // SaaS auth: attach Supabase access token so the backend can identify
       // the user, run the quota check, and stamp user_id on the saved probe.
@@ -500,6 +495,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           const r2 = await fetch(`${apiBase}/api/result/${sessionId}`);
           if (r2.status === 404) {
             stopTimers();
+            if (isCaseStudy) { caseStudyFallback(url, name); return; }
             setErrorMsg("Probe session expired");
             setPhase("error");
             return;
@@ -519,10 +515,12 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               setDeckPhaseLabel("complete");
               setPhase("complete");
             } else {
+              // A case study that failed → degrade to the curated sample so a
+              // live demo never shows an error screen.
+              if (isCaseStudy) { caseStudyFallback(url, name); return; }
               // Friendly fallback message — "No valid prices extracted"
-              // is the engine telling us 24-out-of-24 agents got blocked
-              // by the target site's bot-detection. Surface that as a
-              // clear next-step instead of a raw error string.
+              // is the engine telling us agents got blocked by the target
+              // site's bot-detection. Surface that as a clear next-step.
               const raw = (data.error || "").toLowerCase();
               const blocked =
                 raw.includes("no valid prices") ||
@@ -531,7 +529,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 raw.includes("detected");
               setErrorMsg(
                 blocked
-                  ? "This site blocked our 24 agents at the perimeter. Try one of the case studies below to see how JACOBI works."
+                  ? "This site blocked our agents at the perimeter. Try one of the case studies below to see how JACOBI works."
                   : data.error || "Probe failed."
               );
               setReport(data);
@@ -540,6 +538,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           }
         } catch (e) {
           stopTimers();
+          if (isCaseStudy) { caseStudyFallback(url, name); return; }
           setErrorMsg(e instanceof Error ? e.message : "Poll error");
           setPhase("error");
         }
@@ -547,15 +546,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
       timeoutRef.current = setTimeout(() => {
         stopTimers();
+        if (isCaseStudy) { caseStudyFallback(url, name); return; }
         setErrorMsg("Probe timed out after 3 minutes");
         setPhase("error");
       }, 180_000);
     } catch (e) {
+      if (isCaseStudy) { caseStudyFallback(url, name); return; }
       setErrorMsg(e instanceof Error ? e.message : "Request failed");
       setPhase("error");
       stopTimers();
     }
-  }, [apiBase, stopTimers, saveConv, handleAnalyze, publishToBoard, auditDepth]);
+  }, [apiBase, stopTimers, saveConv, handleAnalyze, publishToBoard, auditDepth, caseStudyFallback]);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -591,15 +592,24 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     [returnedAgents],
   );
 
+  // Radial geometry sized to the ACTUAL configured agent count: the result's
+  // configured_agents when complete (24 or 50), else the number of agents that
+  // have returned so far, else 24. So a Pro 50 scan renders 50 nodes, not 24.
+  const nodeGeom: NodeGeom[] = useMemo(() => {
+    const n = report?.configured_agents
+      ?? (returnedAgents.length > 24 ? returnedAgents.length : 24);
+    return n === 24 ? NODE_GEOM_24 : buildNodeGeom(n);
+  }, [report?.configured_agents, returnedAgents.length]);
+
   const nodeStates: NodeVis[] = useMemo(() => {
-    return NODE_GEOM.map((g) => {
+    return nodeGeom.map((g) => {
       const idStr = `AGENT_${String(g.i).padStart(2, "0")}`;
       const a = returnedAgents.find(x => x.agent_id === idStr);
       if (a) return classifyAgent(a, allPrices);
       if (phase === "deploying" && g.wave <= activeWave) return "deploying";
       return "pending";
     });
-  }, [returnedAgents, allPrices, phase, activeWave]);
+  }, [nodeGeom, returnedAgents, allPrices, phase, activeWave]);
 
   const verdict = useMemo(() => {
     if (!report) return null;
@@ -650,6 +660,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       nativeBaseline: report.native_baseline_price ?? null,
       // Audit depth + honest accounting (from the actual run).
       ranDepth, ranDepthLabel, configuredAgents, realProbes, skippedInferred, evidenceCount,
+      // True when a case study fell back to the curated sample (probe didn't complete).
+      curatedFallback: (report as unknown as { _curated_fallback?: boolean })._curated_fallback === true,
     };
   }, [report]);
 
@@ -952,7 +964,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               {WAVES.map((w, i) => (
                 <circle key={`g${i}`} cx={CX} cy={CY} r={w.r} className="radial-guide" />
               ))}
-              {NODE_GEOM.map((g) => {
+              {nodeGeom.map((g) => {
                 const v = nodeStates[g.i];
                 const isFiring = v === "deploying";
                 const isDone = v === "done-over" || v === "done-good" || v === "done-normal";
@@ -977,7 +989,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               <circle cx={CX} cy={CY} r={30} className="radial-hub" />
               <circle cx={CX} cy={CY} r={20} className="radial-hub" />
               <circle cx={CX} cy={CY} r={11} className="radial-hub core" />
-              {NODE_GEOM.map((g) => {
+              {nodeGeom.map((g) => {
                 const v = nodeStates[g.i];
                 let cls = "radial-node";
                 if (v === "deploying") cls += " deploying";
@@ -1131,6 +1143,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   />
                   {verdict.label} pricing
                 </div>
+                {/* Curated-sample notice: a case study whose live probe didn't
+                    complete falls back to a deterministic sample. Be explicit. */}
+                {verdict.curatedFallback && (
+                  <div className="label-mono" style={{
+                    marginBottom: 12, padding: "8px 12px", borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--line-2)", background: "var(--surface-2)",
+                    color: "var(--text-3)",
+                  }}>
+                    Curated sample — the live probe didn't complete, showing a saved example.
+                  </div>
+                )}
                 {/* Honest audit-depth line — reflects the run the backend
                     actually performed (verdict.ranDepth), never the selection. */}
                 <div className="label-mono" style={{ marginBottom: 14, color: "var(--text-3)" }}>

@@ -152,8 +152,8 @@ export default function PricingPage() {
                 .
               </h1>
               <p className="sec-lede sec">
-                Start with 24 probes. Go Pro for 50. Enterprise teams
-                can contact us for custom volume.
+                Start with the Smart 24 audit. Go Pro for the 50-agent advanced
+                matrix. Enterprise teams can contact us for a custom audit.
               </p>
               {/* The Stripe test-mode banner that used to live here was
                   removed per product direction: customer-facing UI should
@@ -190,14 +190,14 @@ export default function PricingPage() {
                   Start probing
                 </Link>
                 <ul className="plan-feats">
-                  <li><span className="pf-check">✓</span> <strong>24 probes</strong> / month</li>
-                  <li><span className="pf-check">✓</span> 24 synthetic identities per probe</li>
-                  <li><span className="pf-check">✓</span> Basic discrimination report</li>
-                  <li><span className="pf-check">✓</span> Shareable result link</li>
-                  <li><span className="pf-check">✓</span> Limited history</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Forensic PDF report</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Private share links</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Priority processing</li>
+                  <li><span className="pf-check">✓</span> <strong>Smart 24 audit</strong> — 24-agent matrix</li>
+                  <li><span className="pf-check">✓</span> Evidence table with raw on-page text</li>
+                  <li><span className="pf-check">✓</span> Native-currency price display</li>
+                  <li><span className="pf-check">✓</span> Basic report export</li>
+                  <li><span className="pf-check">✓</span> Limited monthly scans</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Pro 50 advanced matrix</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Controlled language pairs</li>
+                  <li className="muted-feat"><span className="pf-dash">—</span> Advanced PDF report</li>
                 </ul>
               </div>
 
@@ -259,13 +259,13 @@ export default function PricingPage() {
                   </p>
                 )}
                 <ul className="plan-feats">
-                  <li><span className="pf-check pro">✓</span> <strong>50 probes / month</strong></li>
-                  <li><span className="pf-check pro">✓</span> 24 synthetic identities per probe</li>
-                  <li><span className="pf-check pro">✓</span> Full forensic PDF report</li>
-                  <li><span className="pf-check pro">✓</span> Probe history</li>
-                  <li><span className="pf-check pro">✓</span> Private share links</li>
-                  <li><span className="pf-check pro">✓</span> Priority processing</li>
-                  <li><span className="pf-check pro">✓</span> Board opt-in control</li>
+                  <li><span className="pf-check pro">✓</span> <strong>Pro 50 advanced matrix</strong> — 50-agent audit</li>
+                  <li><span className="pf-check pro">✓</span> More controlled language pairs (EN/AR/HI/FR)</li>
+                  <li><span className="pf-check pro">✓</span> Deeper cookie, referrer, device &amp; geo coverage</li>
+                  <li><span className="pf-check pro">✓</span> Advanced PDF report export</li>
+                  <li><span className="pf-check pro">✓</span> Higher monthly scan limits</li>
+                  <li><span className="pf-check pro">✓</span> Probe history &amp; private share links</li>
+                  <li><span className="pf-check pro">✓</span> Everything in Free</li>
                 </ul>
               </div>
 
@@ -293,10 +293,10 @@ export default function PricingPage() {
                 </a>
                 <ul className="plan-feats">
                   <li><span className="pf-check pro">✓</span> Everything in Pro</li>
-                  <li><span className="pf-check pro">✓</span> <strong>Custom probe volume</strong></li>
-                  <li><span className="pf-check pro">✓</span> Custom identity / topology sets</li>
-                  <li><span className="pf-check pro">✓</span> Team accounts + API access</li>
-                  <li><span className="pf-check pro">✓</span> Custom reporting</li>
+                  <li><span className="pf-check pro">✓</span> <strong>100-agent custom audit</strong> (bespoke, contact us)</li>
+                  <li><span className="pf-check pro">✓</span> Custom geos &amp; proxy profiles</li>
+                  <li><span className="pf-check pro">✓</span> API access &amp; custom reporting</li>
+                  <li><span className="pf-check pro">✓</span> Team workspaces</li>
                   <li><span className="pf-check pro">✓</span> Dedicated support</li>
                   <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
                 </ul>

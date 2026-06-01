@@ -156,7 +156,7 @@ export function useTyped() {
     const reduce = prefersReducedMotion();
     const el = document.getElementById("typed");
     if (!el) return;
-    const full = "24 agents. One URL. The truth about what you pay.";
+    const full = "Controlled probes. One URL. The truth about what you pay.";
     if (reduce) {
       el.textContent = full;
       return;

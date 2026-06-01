@@ -257,6 +257,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const [returnedAgents, setReturnedAgents] = useState<BackendAgent[]>([]);
   const [activeWave, setActiveWave] = useState<number>(0);
   const [elapsed, setElapsed] = useState(0);
+  const [activeTab, setActiveTab] = useState<"verdict" | "evidence">("verdict");
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1417,6 +1418,24 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           {phase === "complete" && verdict && report && (
             <div style={{ maxWidth: 880, margin: "0 auto" }}>
 
+              {/* Tab switcher */}
+              <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--line)" }}>
+                <button onClick={() => setActiveTab("verdict")} style={{
+                  padding: "12px 24px", background: "none", border: "none",
+                  borderBottom: activeTab === "verdict" ? "2px solid var(--cobalt-bright)" : "2px solid transparent",
+                  color: activeTab === "verdict" ? "var(--cobalt-bright)" : "var(--muted)",
+                  fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: activeTab === "verdict" ? 600 : 400, cursor: "pointer"
+                }}>Verdict</button>
+                <button onClick={() => setActiveTab("evidence")} style={{
+                  padding: "12px 24px", background: "none", border: "none",
+                  borderBottom: activeTab === "evidence" ? "2px solid var(--cobalt-bright)" : "2px solid transparent",
+                  color: activeTab === "evidence" ? "var(--cobalt-bright)" : "var(--muted)",
+                  fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: activeTab === "evidence" ? 600 : 400, cursor: "pointer"
+                }}>Evidence</button>
+              </div>
+
+              {activeTab === "verdict" && (<>
+
               {/* 2. Headline + topology */}
               <ResultSection eyebrow="01 · verdict">
                 <div
@@ -1638,6 +1657,100 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   </button>
                 </div>
               </ResultSection>
+
+              </>)}
+              {activeTab === "evidence" && report && (
+                <div>
+                  {/* Summary cards */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 32 }}>
+                    {(() => {
+                      const aprices = returnedAgents.filter((a: any) => a.price != null).map((a: any) => a.price);
+                      const srt = [...aprices].sort((a: any, b: any) => a - b);
+                      const mp = srt[srt.length - 1] || 0;
+                      const lp = srt[0] || 0;
+                      const sp = mp - lp;
+                      const succ = report.successful_agents || 0;
+                      const tot = report.total_agents || 24;
+                      const conf = tot > 0 ? Math.round((succ / tot) * 100) : 0;
+                      const sigG = (report.gradients || []).filter((g: any) => g.significant).sort((a: any, b: any) => Math.abs(b.delta) - Math.abs(a.delta));
+                      const sev = (report as any).discrimination_score || 0;
+                      return (
+                        <>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Highest</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--over)", fontWeight: 600 }}>${mp.toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Lowest</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--good)", fontWeight: 600 }}>${lp.toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Spread</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>${sp.toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Confidence</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>{conf}%</div>
+                          </div>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Driver</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>
+                              {sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None"}
+                            </div>
+                          </div>
+                          <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Severity</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: sev > 50 ? "var(--over)" : "var(--cobalt-bright)", fontWeight: 600 }}>
+                              {sev > 80 ? "Critical" : sev > 50 ? "High" : sev > 20 ? "Moderate" : "Low"}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Agent table */}
+                  <div className="label-mono" style={{ marginBottom: 16, color: "var(--cobalt-bright)" }}>agent evidence</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid var(--line)", textAlign: "left" as any }}>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Agent</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Region</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Device</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Price</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Raw Text</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, color: "var(--muted)", fontSize: 11, textTransform: "uppercase" }}>Method</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {returnedAgents.map((a: any, i: number) => {
+                          const ev = a.evidence;
+                          const vars = a.variables || {};
+                          return (
+                            <tr key={a.agent_id || i} style={{ borderBottom: "1px solid var(--line)" }}>
+                              <td style={{ padding: "6px 12px", color: "var(--text)", fontSize: 12 }}>{a.agent_id}</td>
+                              <td style={{ padding: "6px 12px", color: "var(--text)", fontSize: 12 }}>{vars.location || "—"}</td>
+                              <td style={{ padding: "6px 12px", color: "var(--text)", fontSize: 12 }}>{vars.device || "—"}</td>
+                              <td style={{ padding: "6px 12px", fontSize: 12, color: a.price != null ? "var(--cobalt-bright)" : "var(--muted)" }}>
+                                {a.price != null ? "$" + a.price.toLocaleString() : "—"}
+                              </td>
+                              <td style={{ padding: "6px 12px", color: "var(--text)", fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {ev?.price_raw_text || "—"}
+                              </td>
+                              <td style={{ padding: "6px 12px", color: "var(--text)", fontSize: 12 }}>{ev?.extraction_method || a.status || "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 16, textAlign: "center" }}>
+                    {returnedAgents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null).length} of {returnedAgents.length} agents captured evidence
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </div>

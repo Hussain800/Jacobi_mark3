@@ -470,6 +470,22 @@ PRICE_RANGES = {
     "default": {"min": 5, "max": 50000},
 }
 
+# JS-heavy / travel sites that BrightData needs longer to render. Measured:
+# booking.com Leela Palace returns a valid 1.5 MB page in ~21-30s, so a 25s
+# timeout sits right on the edge and many agents time out. These hosts get a
+# longer per-agent timeout; everything else (e.g. Amazon product pages, which
+# return in ~3-5s) keeps the fast timeout.
+JS_HEAVY_HOSTS = (
+    "booking.com", "hotels.com", "expedia", "agoda", "trip.com", "airbnb",
+    "kayak", "skyscanner", "google.com/travel", "flydubai", "united",
+    "delta", "emirates", "qatarairways", "makemytrip", "goibibo",
+)
+
+
+def _is_js_heavy(url: str) -> bool:
+    u = (url or "").lower()
+    return any(h in u for h in JS_HEAVY_HOSTS)
+
 
 def _parse_number(text: str) -> Optional[float]:
     digits = re.sub(r'[^\d.]', '', text.replace(',', ''))
@@ -1098,15 +1114,20 @@ class BrightDataMCPClient:
         """
         start_ts = time.time()
         headers = self._identity_headers(identity)
+        # Direct HTTP is a best-effort fallback after BrightData already failed.
+        # JS-heavy / bot-protected sites (the ones that make BD time out) will
+        # almost always block a bare request too, so don't let this burn another
+        # full BD-sized timeout on top of the one we just spent — cap it short.
+        dh_timeout = min(timeout_s, 12.0)
         try:
             r = await asyncio.wait_for(
                 self._client.get(
                     url,
                     headers=headers,
                     follow_redirects=True,
-                    timeout=timeout_s,
+                    timeout=dh_timeout,
                 ),
-                timeout=timeout_s,
+                timeout=dh_timeout,
             )
             elapsed_ms = int((time.time() - start_ts) * 1000)
             if r.status_code in (200, 201, 202, 301, 302, 304):
@@ -1116,7 +1137,7 @@ class BrightDataMCPClient:
                     "_fallback": "direct_http"}
         except asyncio.TimeoutError:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
-                    "error": f"Direct HTTP timeout {timeout_s}s", "_fallback": "direct_http"}
+                    "error": f"Direct HTTP timeout {dh_timeout}s", "_fallback": "direct_http"}
         except Exception as e:
             return {"success": False, "elapsed_ms": int((time.time() - start_ts) * 1000),
                     "error": f"Direct HTTP error: {e}", "_fallback": "direct_http"}
@@ -1151,7 +1172,14 @@ class BrightDataMCPClient:
                 "format": "raw",
                 "country": country,
             }
-            if BRIGHTDATA_CUSTOM_HEADERS_ENABLED:
+            # Custom per-identity headers improve device/cookie/referrer fidelity,
+            # but on hard anti-bot sites (booking, flights) a header fingerprint
+            # that doesn't match the proxy makes the target serve challenge pages
+            # — measured: clean requests pass, custom-header requests get
+            # captcha'd. So on JS-heavy sites we let BrightData's Unlocker manage
+            # its own fingerprint (that's its job) and skip our headers. Identity
+            # is still varied by proxy country.
+            if BRIGHTDATA_CUSTOM_HEADERS_ENABLED and not _is_js_heavy(url):
                 payload["headers"] = self._identity_headers(identity)
             response = await asyncio.wait_for(
                 self._client.post(
@@ -1381,22 +1409,60 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     session["gradients"] = gradients
     di = sum(abs(g["delta"]) for g in gradients if g["significant"])
     session["discrimination_index"] = round(di, 2)
-    session["topology_class"] = classify_topology(gradients, di, bp, session.get("max_price_spread_pct", 0))
-    session["discrimination_score"] = compute_severity_score(session)
+
+    # ── Coverage gate ───────────────────────────────────────────────────────
+    # How many agents actually returned a usable price decides whether we can
+    # make a discrimination claim at all. A handful of prices from a hard site
+    # is NOT enough to assert a topology — saying "aggressive discrimination"
+    # off 3 data points would be junk. Classify the run's coverage and, when it
+    # is too thin, report the prices we have WITHOUT a discrimination verdict.
+    #   strong  : >= 12 priced  → full topology + discrimination claims
+    #   partial :  5-11 priced  → topology shown, flagged as partial confidence
+    #   limited :  2-4  priced  → prices reported, NO discrimination claim
+    #   insufficient: <2 priced → handled by the no-valid-prices branch upstream
+    n_priced = len(valid)
+    if n_priced >= 12:
+        coverage = "strong"
+    elif n_priced >= 5:
+        coverage = "partial"
+    else:
+        coverage = "limited"
+    session["coverage"] = coverage
+    session["priced_agents"] = n_priced
+
+    if coverage == "limited":
+        # Too few comparable prices to assert discrimination. Report the data,
+        # not a verdict.
+        session["topology_class"] = "insufficient_data"
+        session["discrimination_score"] = 0.0
+        session["gradients"] = []
+    else:
+        session["topology_class"] = classify_topology(
+            gradients, di, bp, session.get("max_price_spread_pct", 0))
+        session["discrimination_score"] = compute_severity_score(session)
 
     # Controlled browser-language observations (metadata, NOT a t-tested driver).
     session["language_observations"] = compute_language_observations(session)
 
-    sig_vars = [g for g in gradients if g["significant"]]
+    sig_vars = [g for g in session["gradients"] if g["significant"]]
     sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
-    if session["topology_class"] == "uniform":
+    total_for_msg = session.get("total_agents") or len(session.get("agents", [])) or 24
+    if coverage == "limited":
+        session["summary"] = (
+            f"LIMITED COVERAGE. Only {n_priced} of {total_for_msg} identities returned a "
+            f"comparable price for this site, which is not enough to assert price "
+            f"discrimination. Observed price: ${bp:.2f}. Try a product page or a "
+            f"specific listing for a full audit."
+        )
+    elif session["topology_class"] == "uniform":
         session["summary"] = (
             f"UNIFORM PRICING DETECTED. Product price verified at ${bp:.2f}. "
             "Hidden premium: $0.00. No measurable price discrimination across returned identities."
         )
     else:
+        confidence_note = "" if coverage == "strong" else " (partial coverage — moderate confidence)"
         session["summary"] = (
-            f"TOPOLOGY: {session['topology_class'].upper()}. "
+            f"TOPOLOGY: {session['topology_class'].upper()}{confidence_note}. "
             f"Baseline: ${bp:.2f}. Spread: ${session['max_price_spread']:.2f}. "
             f"DI: ${di:.2f}. Significant: {len(sig_vars)} vars. {sig_details}."
         )
@@ -1442,12 +1508,13 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
         language_label=cfg.get("language_label"),
         language_pair_id=cfg.get("language_pair_id"),
         language_pair_role=cfg.get("language_pair_role"))
-    retry_cfg = dict(cfg)
     try:
         last_failure = "Unknown"
-        for attempt_index, attempt_cfg in enumerate((cfg, retry_cfg)):
-            if attempt_index:
-                await asyncio.sleep(0.75 * attempt_index)
+        # Single attempt per agent. A second attempt doubled wall-clock time for
+        # little gain (the same site behaves the same way seconds apart), and was
+        # the main driver of 200s+ probes on JS-heavy sites. Resilience now comes
+        # from the adaptive timeout + the global wall-clock deadline below.
+        for attempt_index, attempt_cfg in enumerate((cfg,)):
             r = await bd.probe_url(url, attempt_cfg, timeout_s)
             s["response_time_ms"] = r.get("elapsed_ms", 0)
             if not r["success"]:
@@ -1546,35 +1613,79 @@ async def _run_probe_engine(session: dict, url: str,
         else:
             session["failed_agents"] += 1
 
+    js_heavy = _is_js_heavy(url)
     try:
         if brightdata_live_ready():
-            probe_timeout_s = 25.0
+            # Adaptive per-agent timeout: JS-heavy travel pages (booking, flights)
+            # measured at ~21-30s on BrightData, so a 25s cap clipped the slow
+            # tail and forced a second 25s direct-HTTP attempt → runaway 200s+
+            # probes. Give them headroom; keep product pages snappy.
+            probe_timeout_s = 45.0 if js_heavy else 20.0
             # Phase-1 scout count scales with the matrix: 10 for Free-24, more
             # for Pro-50 so the uniform gate still samples a representative set.
             phase1_count = 10 if n_agents <= 24 else 16
-            phase1_sem = 10
-            phase2_sem = 4
+            # Adaptive concurrency, chosen from a measured sweep (14 agents each):
+            #   Amazon product page:  sem 6=40s/7ok  8=37s/12ok  10=24s/14ok  12=23s/14ok
+            #   Booking hotel page:   sem 6=70s/2ok  8=55s/3ok   10=59s/4ok   12=51s/4ok
+            # Product pages peak at sem 10 (24s, all priced; sem 6 is actually
+            # WORSE — slow + timeouts). Travel pages are parser-bound (only ~4
+            # priced regardless of sem; the rest are pages the parser can't read
+            # yet — that's Stage 2), so we pick the fastest stable setting.
+            if js_heavy:
+                phase1_sem = 12
+                phase2_sem = 12
+            else:
+                phase1_sem = 10
+                phase2_sem = 10
         else:
             probe_timeout_s = 15.0
             phase1_count = n_agents
             phase1_sem = 6
             phase2_sem = 6
 
+        # Global wall-clock deadline. The product promise is a verdict in
+        # ~60-100s, so we never let a probe run past this — whatever agents have
+        # returned by the deadline are finalized, and stragglers are cancelled.
+        # JS-heavy sites get the larger budget; fast product pages finish well
+        # under the smaller one.
+        deadline_s = 95.0 if js_heavy else 55.0
+        deadline = overall_start + deadline_s
+
         async def _limited_agent(cfg, sem):
             async with sem:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
 
-        # Phase 1: fast initial scan — process agents incrementally
-        # so the frontend sees real-time progress (not 0 -> N at once).
+        async def _drain(coros):
+            """Consume agent coroutines as they complete, but stop honouring the
+            global deadline — cancel anything still running past it so the probe
+            can finalize on time with partial results."""
+            pending = {asyncio.ensure_future(c) for c in coros}
+            while pending:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    for t in pending:
+                        t.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    break
+                done, pending = await asyncio.wait(
+                    pending, timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:  # timed out with nothing newly completed
+                    for t in pending:
+                        t.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    break
+                for t in done:
+                    try:
+                        _ingest_agent(t.result())
+                    except Exception:
+                        session["failed_agents"] += 1
+
+        # Phase 1: fast initial scan, bounded by the global deadline.
         sem1 = asyncio.Semaphore(phase1_sem)
         phase1 = agent_configs[:phase1_count]
-        tasks = [_limited_agent(c, sem1) for c in phase1]
-        for coro in asyncio.as_completed(tasks):
-            try:
-                r = await coro
-                _ingest_agent(r)
-            except Exception:
-                session["failed_agents"] += 1
+        await _drain(_limited_agent(c, sem1) for c in phase1)
 
         # Check if pricing is uniform (exact match to the cent)
         prices = [v for v in session["all_prices"].values() if v is not None]
@@ -1582,17 +1693,11 @@ async def _run_probe_engine(session: dict, url: str,
         if len(prices) >= 5:
             uniform = (max(prices) - min(prices)) < 0.01
 
-        # Phase 2: only if prices vary — also incremental for real-time UI
+        # Phase 2: only if prices vary — also bounded by the global deadline.
         if not uniform:
             sem2 = asyncio.Semaphore(phase2_sem)
             phase2 = agent_configs[phase1_count:]
-            tasks = [_limited_agent(c, sem2) for c in phase2]
-            for coro in asyncio.as_completed(tasks):
-                try:
-                    r = await coro
-                    _ingest_agent(r)
-                except Exception:
-                    session["failed_agents"] += 1
+            await _drain(_limited_agent(c, sem2) for c in phase2)
         elif brightdata_live_ready() and prices:
             bp = statistics.median(prices)
             # Carry the native price captured by a real probe so the skipped
@@ -2035,6 +2140,11 @@ async def get_result(session_id: str):
         evidence_count=session.get("evidence_count"),
         audit_depth=session.get("audit_depth", "smart24"),
         tier=session.get("tier"),
+        # Coverage: strong / partial / limited — how much of the matrix returned
+        # a usable price. The UI uses this to avoid claiming discrimination from
+        # a thin sample.
+        coverage=session.get("coverage"),
+        priced_agents=session.get("priced_agents"),
         error=session.get("error"),
     )
 
@@ -2238,6 +2348,11 @@ async def get_share(session_id: str):
         evidence_count=session.get("evidence_count"),
         audit_depth=session.get("audit_depth", "smart24"),
         tier=session.get("tier"),
+        # Coverage: strong / partial / limited — how much of the matrix returned
+        # a usable price. The UI uses this to avoid claiming discrimination from
+        # a thin sample.
+        coverage=session.get("coverage"),
+        priced_agents=session.get("priced_agents"),
         error=session.get("error"),
     )
 

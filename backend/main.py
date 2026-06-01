@@ -1446,9 +1446,10 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
 
     sig_vars = [g for g in session["gradients"] if g["significant"]]
     sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
+    total_for_msg = session.get("total_agents") or len(session.get("agents", [])) or 24
     if coverage == "limited":
         session["summary"] = (
-            f"LIMITED COVERAGE. Only {n_priced} of {n_agents} identities returned a "
+            f"LIMITED COVERAGE. Only {n_priced} of {total_for_msg} identities returned a "
             f"comparable price for this site, which is not enough to assert price "
             f"discrimination. Observed price: ${bp:.2f}. Try a product page or a "
             f"specific listing for a full audit."

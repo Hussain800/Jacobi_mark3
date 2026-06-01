@@ -291,6 +291,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   useEffect(() => {
     fetchPlan().then(setPlan).catch(() => {});
   }, []);
+  // Remember the depth the user requested for the CURRENT run, so we can tell
+  // them if the backend ran something shallower (Free → Smart 24 downgrade).
+  const requestedDepthRef = useRef<"smart24" | "pro50">("smart24");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
   // exhausted). We surface that state as a structured block instead of a
@@ -469,6 +472,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           audit_depth: auditDepth,
         }),
       });
+      requestedDepthRef.current = auditDepth;
 
       if (r1.status === 401 || r1.status === 402) {
         // Structured rejection from the backend (auth_required / quota_exceeded).
@@ -1075,6 +1079,22 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           {/* ── 2-7. THE DETAILED RESULT — full width, scrolls naturally ── */}
           {phase === "complete" && verdict && report && (
             <div style={{ maxWidth: 880, margin: "0 auto" }}>
+
+              {/* Downgrade notice: the user asked for Pro 50 but the backend ran
+                  Smart 24 (Free tier). Be explicit, don't pretend 50 ran. */}
+              {requestedDepthRef.current === "pro50" && verdict.ranDepth === "smart24" && (
+                <div style={{
+                  marginBottom: 20, padding: "12px 16px",
+                  border: "1px solid var(--line-2)", borderRadius: "var(--r-sm)",
+                  background: "var(--surface-2)", fontFamily: "var(--mono)",
+                  fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
+                }}>
+                  Pro 50 is available on the Pro plan — this scan ran the{" "}
+                  <strong style={{ color: "var(--text)" }}>Smart 24</strong> audit instead.{" "}
+                  <a href="/pricing" style={{ color: "var(--cobalt)" }}>Upgrade to Pro</a> to
+                  run the 50-agent advanced matrix.
+                </div>
+              )}
 
               {/* Tab switcher */}
               <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--line)" }}>

@@ -76,13 +76,19 @@ def _sanitize_report(report: dict) -> dict:
     }
 
 
-def _get_report(report_id: str) -> dict:
-    """Get report from session store or demo data."""
+async def _get_report(report_id: str) -> dict:
+    """Get report from session store, Supabase, or demo data."""
     if report_id == "demo_session_static":
         from main import DEMO_RESULT
         return DEMO_RESULT
     from main import SESSION_STORE
     report = SESSION_STORE.get(report_id)
+    if not report:
+        try:
+            from supabase_client import get_probe_by_session_id
+            report = await get_probe_by_session_id(report_id)
+        except Exception:
+            pass
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
@@ -91,7 +97,7 @@ def _get_report(report_id: str) -> dict:
 @router.get("/{report_id}/json")
 async def export_json(report_id: str, _: dict = Depends(_require_pro)):
     """Export as JSON file. Pro-only."""
-    report = _get_report(report_id)
+    report = await _get_report(report_id)
     data = _sanitize_report(report)
     json_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
     return StreamingResponse(
@@ -106,7 +112,7 @@ async def export_json(report_id: str, _: dict = Depends(_require_pro)):
 @router.get("/{report_id}/csv")
 async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
     """Export agent prices as CSV. Pro-only."""
-    report = _get_report(report_id)
+    report = await _get_report(report_id)
     data = _sanitize_report(report)
 
     output = io.StringIO()
@@ -140,7 +146,7 @@ async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
 @router.get("/{report_id}/pdf")
 async def export_pdf(report_id: str):
     """Export as professionally designed PDF report."""
-    report = _get_report(report_id)
+    report = await _get_report(report_id)
     data = _sanitize_report(report)
 
     buf = io.BytesIO()

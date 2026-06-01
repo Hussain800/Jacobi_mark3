@@ -1746,7 +1746,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     </table>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 16, textAlign: "center" }}>
-                    {returnedAgents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null).length} of {returnedAgents.length} agents captured evidence
+                    {(() => {
+                      const realProbes = returnedAgents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null).length;
+                      const filled = returnedAgents.length - realProbes;
+                      if (filled > 0) {
+                        return <>{realProbes} real probes · {filled} confirmed uniform (no variance detected)</>;
+                      }
+                      return <>{realProbes} of {returnedAgents.length} agents captured evidence</>;
+                    })()}
                   </div>
                 </div>
               )}

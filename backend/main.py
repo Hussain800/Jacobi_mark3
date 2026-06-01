@@ -1077,8 +1077,8 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 25.0
-            phase1_count = 6
-            phase1_sem = 6
+            phase1_count = 10
+            phase1_sem = 10
             phase2_sem = 4
         else:
             probe_timeout_s = 15.0
@@ -1102,13 +1102,11 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
             except Exception:
                 session["failed_agents"] += 1
 
-        # Check if pricing is uniform
+        # Check if pricing is uniform (exact match to the cent)
         prices = [v for v in session["all_prices"].values() if v is not None]
         uniform = False
-        if len(prices) >= 3:
-            bp = statistics.median(prices)
-            spread_pct = ((max(prices) - min(prices)) / bp * 100) if bp > 0 else 0
-            uniform = spread_pct < 2.0
+        if len(prices) >= 5:
+            uniform = (max(prices) - min(prices)) < 0.01
 
         # Phase 2: only if prices vary — also incremental for real-time UI
         if not uniform:

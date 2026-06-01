@@ -632,17 +632,24 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const sessionId = (report as any)?.session_id || verdict.session;
       const r = await fetch("/api/export/" + sessionId + "/pdf", { headers });
 
-      if (!r.ok) throw new Error("Export failed: " + r.status);
+      if (r.status === 401) {
+        alert("Sign in to download the PDF report.");
+      } else if (r.status === 404) {
+        alert("Report not found. Run a probe first, then download.");
+      } else if (!r.ok) {
+        alert("Download failed. Please try again.");
+      } else {
 
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "jacobi-report-" + (verdict.session || "probe").slice(0, 8) + ".pdf";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "jacobi-report-" + (verdict.session || "probe").slice(0, 8) + ".pdf";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     } catch (e) {
       console.error("PDF export failed", e);
     } finally {

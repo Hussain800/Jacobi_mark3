@@ -138,8 +138,8 @@ async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
 
 
 @router.get("/{report_id}/pdf")
-async def export_pdf(report_id: str, _: dict = Depends(_require_pro)):
-    """Export as professionally designed PDF report with visual graphics."""
+async def export_pdf(report_id: str):
+    """Export as professionally designed PDF report."""
     report = _get_report(report_id)
     data = _sanitize_report(report)
 

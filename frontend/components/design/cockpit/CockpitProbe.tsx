@@ -147,20 +147,34 @@ const CY = 450;
 
 interface NodeGeom { i: number; wave: number; posInWave: number; angle: number; x: number; y: number; lineLen: number; }
 
-const NODE_GEOM: NodeGeom[] = (() => {
+// Build the radial node web for ANY agent count (24 Smart, 50 Pro). Agents are
+// distributed evenly across the 3 concentric rings so the visual reflects the
+// real configured agent count instead of a hardcoded 24.
+function buildNodeGeom(n: number): NodeGeom[] {
+  const count = Math.max(1, n);
   const out: NodeGeom[] = [];
-  for (let i = 0; i < 24; i++) {
-    const wave = Math.floor(i / 8);
-    const posInWave = i % 8;
+  const ring = WAVES.length;            // 3
+  const perWaveBase = Math.floor(count / ring);
+  const remainder = count - perWaveBase * ring;
+  // Each ring gets perWaveBase agents; the remainder is spread onto the outer rings.
+  const ringCounts = WAVES.map((_, w) => perWaveBase + (w >= ring - remainder ? 1 : 0));
+  let i = 0;
+  for (let wave = 0; wave < ring; wave++) {
+    const inThisWave = ringCounts[wave];
     const w = WAVES[wave];
     const offset = wave * 0.39 - Math.PI / 2;
-    const angle = (posInWave / 8) * Math.PI * 2 + offset;
-    const x = CX + w.r * Math.cos(angle);
-    const y = CY + w.r * Math.sin(angle);
-    out.push({ i, wave, posInWave, angle, x, y, lineLen: Math.hypot(x - CX, y - CY) });
+    for (let posInWave = 0; posInWave < inThisWave; posInWave++) {
+      const angle = (posInWave / Math.max(1, inThisWave)) * Math.PI * 2 + offset;
+      const x = CX + w.r * Math.cos(angle);
+      const y = CY + w.r * Math.sin(angle);
+      out.push({ i, wave, posInWave, angle, x, y, lineLen: Math.hypot(x - CX, y - CY) });
+      i++;
+    }
   }
   return out;
-})();
+}
+
+const NODE_GEOM_24: NodeGeom[] = buildNodeGeom(24);
 
 type NodeVis = "pending" | "deploying" | "done-over" | "done-good" | "done-normal" | "blocked";
 
@@ -578,15 +592,24 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     [returnedAgents],
   );
 
+  // Radial geometry sized to the ACTUAL configured agent count: the result's
+  // configured_agents when complete (24 or 50), else the number of agents that
+  // have returned so far, else 24. So a Pro 50 scan renders 50 nodes, not 24.
+  const nodeGeom: NodeGeom[] = useMemo(() => {
+    const n = report?.configured_agents
+      ?? (returnedAgents.length > 24 ? returnedAgents.length : 24);
+    return n === 24 ? NODE_GEOM_24 : buildNodeGeom(n);
+  }, [report?.configured_agents, returnedAgents.length]);
+
   const nodeStates: NodeVis[] = useMemo(() => {
-    return NODE_GEOM.map((g) => {
+    return nodeGeom.map((g) => {
       const idStr = `AGENT_${String(g.i).padStart(2, "0")}`;
       const a = returnedAgents.find(x => x.agent_id === idStr);
       if (a) return classifyAgent(a, allPrices);
       if (phase === "deploying" && g.wave <= activeWave) return "deploying";
       return "pending";
     });
-  }, [returnedAgents, allPrices, phase, activeWave]);
+  }, [nodeGeom, returnedAgents, allPrices, phase, activeWave]);
 
   const verdict = useMemo(() => {
     if (!report) return null;
@@ -941,7 +964,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               {WAVES.map((w, i) => (
                 <circle key={`g${i}`} cx={CX} cy={CY} r={w.r} className="radial-guide" />
               ))}
-              {NODE_GEOM.map((g) => {
+              {nodeGeom.map((g) => {
                 const v = nodeStates[g.i];
                 const isFiring = v === "deploying";
                 const isDone = v === "done-over" || v === "done-good" || v === "done-normal";
@@ -966,7 +989,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               <circle cx={CX} cy={CY} r={30} className="radial-hub" />
               <circle cx={CX} cy={CY} r={20} className="radial-hub" />
               <circle cx={CX} cy={CY} r={11} className="radial-hub core" />
-              {NODE_GEOM.map((g) => {
+              {nodeGeom.map((g) => {
                 const v = nodeStates[g.i];
                 let cls = "radial-node";
                 if (v === "deploying") cls += " deploying";

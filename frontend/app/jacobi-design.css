@@ -102,41 +102,8 @@
 .jacobi-scene-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .jacobi-design .nav, .jacobi-design main, .jacobi-design header, .jacobi-design footer, .jacobi-design .footer, .jacobi-design .deck, .jacobi-design .cockpit, .jacobi-design .section, .jacobi-design .page { position: relative; z-index: 1; }
 
-/* Cursor v3 — gravity-field: sharp 1:1 dot + soft glow + 4 swirling
-   particles. No ring around the cursor (was distracting + made buttons
-   feel mis-aligned). Click targets are never displaced. */
-.has-jx-cursor, .has-jx-cursor * { cursor: none !important; }
-.jx-cursor {
-  position: fixed; inset: 0; pointer-events: none; z-index: 9990; opacity: 0;
-  transition: opacity .4s var(--ease);
-}
-.jx-cursor-dot {
-  position: fixed; top: 0; left: 0; width: 4px; height: 4px; border-radius: 50%;
-  background: #f0f3fa; box-shadow: 0 0 6px rgba(110, 146, 255, 0.7);
-  will-change: transform; transition: width .2s, height .2s;
-}
-.jx-cursor-glow {
-  position: fixed; top: 0; left: 0; width: 28px; height: 28px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(110, 146, 255, 0.18) 0%, rgba(110, 146, 255, 0.05) 50%, transparent 75%);
-  will-change: transform; transition: width .25s var(--ease), height .25s var(--ease);
-}
-.jx-particle {
-  position: fixed; top: 0; left: 0; width: 3px; height: 3px; border-radius: 50%;
-  background: rgba(140, 170, 255, 0.6); will-change: transform;
-  transition: background .25s, width .2s, height .2s;
-}
-.jx-cursor.snap .jx-cursor-dot {
-  width: 6px; height: 6px; background: var(--cobalt-bright);
-  box-shadow: 0 0 12px var(--cobalt-glow);
-}
-.jx-cursor.snap .jx-cursor-glow {
-  width: 44px; height: 44px;
-  background: radial-gradient(circle, rgba(110, 146, 255, 0.3) 0%, rgba(110, 146, 255, 0.08) 50%, transparent 75%);
-}
-.jx-cursor.snap .jx-particle { background: rgba(110, 146, 255, 0.85); }
-.jx-cursor.press .jx-cursor-dot { animation: jx-press 280ms var(--ease); }
-@keyframes jx-press { 50% { transform: scale(0.6); filter: brightness(1.5); } }
-@media (hover: none) { .jx-cursor { display: none; } }
+/* (The custom gravity-field cursor was removed earlier; the native cursor is
+   used. Its dead styles have been deleted in the visual-restraint pass.) */
 
 ::selection { background: var(--cobalt-soft); color: #fff; }
 
@@ -326,7 +293,7 @@
   font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--text-3);
 }
-.jacobi-design .nav-status .led { width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
+.jacobi-design .nav-status .led { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
 @media (max-width: 840px) { .jacobi-design .nav-links { display: none; } }
 
 /* ---- Footer --------------------------------------------------------------- */

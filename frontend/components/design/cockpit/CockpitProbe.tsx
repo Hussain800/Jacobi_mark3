@@ -102,6 +102,13 @@ interface TopologyReport {
   fx_rate_used?: number | null;
   // Controlled browser-language observations (metadata, not a driver).
   language_observations?: LanguageObservation[];
+  // Phase 5A honest probe accounting + audit depth.
+  configured_agents?: number;
+  real_probes_executed?: number | null;
+  skipped_inferred_agents?: number | null;
+  evidence_count?: number | null;
+  audit_depth?: string | null;
+  tier?: string | null;
 }
 
 interface LanguageObservation {
@@ -272,6 +279,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const [deckUrl, setDeckUrl] = useState("");
   const [deckPhaseLabel, setDeckPhaseLabel] = useState("deploying");
   const [publishToBoard, setPublishToBoard] = useState(false);
+  // Audit depth (Phase 5A): "smart24" (Free) or "pro50" (Pro). Backend enforces
+  // the tier — a Free user selecting pro50 is safely downgraded server-side.
+  const [auditDepth, setAuditDepth] = useState<"smart24" | "pro50">("smart24");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
   // exhausted). We surface that state as a structured block instead of a
@@ -445,6 +455,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           target_url: url,
           target_name: name,
           publish_to_board: publishToBoard,
+          // Pro users may request the 50-agent matrix; backend safely downgrades
+          // Free users to smart24, so sending this is harmless for everyone.
+          audit_depth: auditDepth,
         }),
       });
 
@@ -529,7 +542,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       setPhase("error");
       stopTimers();
     }
-  }, [apiBase, stopTimers, saveConv, handleAnalyze]);
+  }, [apiBase, stopTimers, saveConv, handleAnalyze, publishToBoard, auditDepth]);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -745,6 +758,33 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               />
               Include on public board
             </label>
+
+            {/* Audit depth selector (Phase 5A). Pro 50 only runs for Pro tiers;
+                Free users are safely downgraded to Smart 24 server-side. */}
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-2)",
+              letterSpacing: "0.14em", textTransform: "uppercase",
+            }}>
+              <span>Depth</span>
+              {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setAuditDepth(val)}
+                  style={{
+                    fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
+                    textTransform: "uppercase", padding: "5px 11px", cursor: "pointer",
+                    borderRadius: "var(--r-sm)",
+                    border: auditDepth === val ? "1px solid var(--cobalt-deep)" : "1px solid var(--line-2)",
+                    background: auditDepth === val ? "var(--cobalt)" : "transparent",
+                    color: auditDepth === val ? "#fff" : "var(--text-2)",
+                  }}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Backend rejection — auth required or quota exhausted. */}

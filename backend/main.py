@@ -62,6 +62,11 @@ class TargetProbeInput(BaseModel):
     # Opt-in flag for the public board. Default False → probe stays private to
     # the user's account / history. Frontend cockpit exposes this as a toggle.
     publish_to_board: bool = Field(default=False, description="If true, mark the resulting probe row is_public=true")
+    # Audit depth (Phase 5A). "smart24" (default) = Free 24-agent matrix.
+    # "pro50" = 50-agent Pro matrix — only honoured for Pro/Enterprise tiers;
+    # a Free user requesting pro50 is safely downgraded to smart24 (never errors,
+    # never silently runs a costlier probe).
+    audit_depth: Optional[str] = Field(default=None, description="smart24 | pro50")
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -224,6 +229,201 @@ for _cfg in AGENT_CONFIGS:
                      "is_control": False})
         _cfg["variables"] = dict(_UAE_PAIR_BASE["variables"])
         _apply_language(_cfg, "ar-AE")
+
+
+# ── PRO 50-agent matrix (Phase 5A) ──────────────────────────────────────────
+# The Free matrix above (24 agents) is LEFT EXACTLY AS-IS. Pro mode = those 24
+# PLUS the 26 extra agents below, for 50 total. The extras are not random
+# repetition; they add controlled pairs and bigger sample sizes for the existing
+# vectors. Every extra agent is built from the same dict shape as the Free ones,
+# then stamped with a default language (en-US) and, where it forms a controlled
+# pair, the appropriate Accept-Language — using the same _apply_language helper.
+#
+# IDs continue from AGENT_24..AGENT_49 (no collisions with the Free 0..23).
+
+_MAC_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
+           "(KHTML, like Gecko) Version/17.4 Safari/605.1.15")
+_IPHONE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 "
+              "Mobile/15E148 Safari/604.1")
+_ANDROID_UA = ("Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36")
+_SAFARI_CHUA = '"Not/A)Brand";v="99", "Safari";v="17.4"'
+_CHROME_CHUA = '"Not/A)Brand";v="99", "Google Chrome";v="124"'
+
+
+def _pro_agent(idx, label, geo, ua, ch_ua, variables, *, network_tier=1,
+               proxy_type="residential", delta_variable=None, delta_direction=None,
+               language_pair_id=None, language_pair_role=None, lang_key="en-US",
+               referrer="https://www.united.com/", cookie=None):
+    """Compact builder for a Pro-extra agent. Mirrors the Free agent dict shape."""
+    aid = f"AGENT_{idx:02d}"
+    cfg = {
+        "id": aid,
+        "label": f"{aid}  {label}",
+        "user_agent": ua,
+        "geo": geo,
+        "referrer": referrer,
+        "cookie": cookie or f"session_id=pro_{idx}; visit_count=1; last_visit=none",
+        "sec_ch_ua": ch_ua,
+        "variables": dict(variables),
+        "wave": 3,  # Pro agents run as an extra wave; never touched by Free.
+        "network_tier": network_tier,
+        "proxy_type": proxy_type,
+    }
+    if delta_variable:
+        cfg["delta_variable"] = delta_variable
+        cfg["delta_direction"] = delta_direction
+    if language_pair_id:
+        cfg["language_pair_id"] = language_pair_id
+        cfg["language_pair_role"] = language_pair_role
+    _apply_language(cfg, lang_key)
+    return cfg
+
+
+def _ctrl_lang_pair(idx_en, idx_ar, pair_id, geo, ua, ch_ua, base_vars,
+                    en_key, var_key, label_geo, device_label,
+                    network_tier=1, proxy_type="residential"):
+    """Build a controlled language pair: two agents identical on every vector
+    except Accept-Language. Returns [en_agent, variant_agent]."""
+    en = _pro_agent(idx_en, f"LANGUAGE_PAIR  {label_geo}_{device_label}_EN",
+                    geo, ua, ch_ua, base_vars, network_tier=network_tier,
+                    proxy_type=proxy_type, language_pair_id=pair_id,
+                    language_pair_role="control_en", lang_key=en_key)
+    var = _pro_agent(idx_ar, f"LANGUAGE_PAIR  {label_geo}_{device_label}_{var_key.split('-')[0].upper()}",
+                     geo, ua, ch_ua, base_vars, network_tier=network_tier,
+                     proxy_type=proxy_type, language_pair_id=pair_id,
+                     language_pair_role=f"variant_{var_key.split('-')[0]}",
+                     lang_key=var_key)
+    return [en, var]
+
+
+PRO_EXTRA_AGENT_CONFIGS: List[dict] = []
+
+# (1) Three MORE controlled language pairs (6 agents) — only Accept-Language
+#     differs within each pair. These are genuine controlled comparisons.
+PRO_EXTRA_AGENT_CONFIGS += _ctrl_lang_pair(  # UAE MOBILE EN vs AR
+    24, 25, "uae_mobile", "AE", _IPHONE_UA, _SAFARI_CHUA,
+    {"location": "uae_mobile", "device": "iphone_15_pro", "cookie": "fresh", "referrer": "direct"},
+    "en-US", "ar-AE", "UAE", "MOBILE", network_tier=2, proxy_type="mobile")
+PRO_EXTRA_AGENT_CONFIGS += _ctrl_lang_pair(  # INDIA DESKTOP EN vs HI
+    26, 27, "india_desktop", "IN", _MAC_UA, _SAFARI_CHUA,
+    {"location": "india_desktop", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+    "en-US", "hi-IN", "INDIA", "DESKTOP")
+PRO_EXTRA_AGENT_CONFIGS += _ctrl_lang_pair(  # FRANCE DESKTOP EN vs FR
+    28, 29, "france_desktop", "FR", _MAC_UA, _SAFARI_CHUA,
+    {"location": "france_desktop", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+    "en-US", "fr-FR", "FRANCE", "DESKTOP")
+
+# (2) Cookie sample-size reinforcement (4 agents) — adds high/low cookie
+#     replicates so the cookie_profile comparison isn't n=2.
+PRO_EXTRA_AGENT_CONFIGS += [
+    _pro_agent(30, "COOKIE_HIGH  60D_FREQUENT", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "aged_high_intent", "referrer": "direct"},
+               delta_variable="cookie_profile", delta_direction="high",
+               cookie="session_id=aged_30; search_history=JFK-SFO,SFO-LAX; visit_count=44; loyalty=gold"),
+    _pro_agent(31, "COOKIE_LOW  FRESH_REPEAT", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="cookie_profile", delta_direction="low"),
+    _pro_agent(32, "COOKIE_HIGH  120D_VIP", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "loyalty_120day", "referrer": "direct"},
+               delta_variable="cookie_profile", delta_direction="high",
+               cookie="session_id=vip_32; visit_count=140; loyalty=platinum; miles=210000"),
+    _pro_agent(33, "COOKIE_LOW  FRESH_REPEAT_2", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="cookie_profile", delta_direction="low"),
+]
+
+# (3) Referrer sample-size reinforcement (4 agents).
+PRO_EXTRA_AGENT_CONFIGS += [
+    _pro_agent(34, "REFERRER_HIGH  VIA_EXPEDIA", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "expedia"},
+               delta_variable="referrer", delta_direction="high",
+               referrer="https://www.expedia.com/Flights"),
+    _pro_agent(35, "REFERRER_LOW  DIRECT_REPEAT", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="referrer", delta_direction="low"),
+    _pro_agent(36, "REFERRER_HIGH  VIA_GOOGLE", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "google"},
+               delta_variable="referrer", delta_direction="high",
+               referrer="https://www.google.com/travel/flights"),
+    _pro_agent(37, "REFERRER_LOW  DIRECT_REPEAT_2", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="referrer", delta_direction="low"),
+]
+
+# (4) Geo coverage (6 agents) — more high/low location replicates.
+PRO_EXTRA_AGENT_CONFIGS += [
+    _pro_agent(38, "LOCATION_HIGH  SINGAPORE", "SG", _MAC_UA, _SAFARI_CHUA,
+               {"location": "singapore_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="high"),
+    _pro_agent(39, "LOCATION_HIGH  ABU_DHABI", "AE", _MAC_UA, _SAFARI_CHUA,
+               {"location": "abudhabi_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="high"),
+    _pro_agent(40, "LOCATION_LOW  CAIRO", "EG", _MAC_UA, _SAFARI_CHUA,
+               {"location": "cairo_low", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="low"),
+    _pro_agent(41, "LOCATION_HIGH  ZURICH", "CH", _MAC_UA, _SAFARI_CHUA,
+               {"location": "zurich_high", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="high"),
+    _pro_agent(42, "LOCATION_LOW  MANILA", "PH", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manila_low", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="low"),
+    _pro_agent(43, "LOCATION_LOW  LAGOS", "NG", _MAC_UA, _SAFARI_CHUA,
+               {"location": "lagos_low", "device": "macbook_pro", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="location", delta_direction="low"),
+]
+
+# (5) Device controlled pairs (6 agents) — high/low device, location held.
+PRO_EXTRA_AGENT_CONFIGS += [
+    _pro_agent(44, "DEVICE_HIGH  IPHONE_15_PRO_MAX", "US-NY", _IPHONE_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "iphone_15_pro_max", "cookie": "fresh", "referrer": "direct"},
+               network_tier=2, proxy_type="mobile", delta_variable="device", delta_direction="high"),
+    _pro_agent(45, "DEVICE_LOW  ANDROID_GO", "US-NY", _ANDROID_UA, _CHROME_CHUA,
+               {"location": "manhattan_high", "device": "android_go", "cookie": "fresh", "referrer": "direct"},
+               network_tier=2, proxy_type="mobile", delta_variable="device", delta_direction="low"),
+    _pro_agent(46, "DEVICE_HIGH  MACBOOK_PRO_M3_MAX", "US-NY", _MAC_UA, _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "macbook_pro_m3_max", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="device", delta_direction="high"),
+    _pro_agent(47, "DEVICE_LOW  WINDOWS_BUDGET", "US-NY",
+               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+               _CHROME_CHUA,
+               {"location": "manhattan_high", "device": "windows_budget", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="device", delta_direction="low"),
+    _pro_agent(48, "DEVICE_HIGH  IPAD_PRO_M4", "US-NY",
+               "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+               _SAFARI_CHUA,
+               {"location": "manhattan_high", "device": "ipad_pro_m4", "cookie": "fresh", "referrer": "direct"},
+               network_tier=2, proxy_type="mobile", delta_variable="device", delta_direction="high"),
+    _pro_agent(49, "DEVICE_LOW  CHROMEBOOK_2", "US-NY",
+               "Mozilla/5.0 (X11; CrOS x86_64 14526.57.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.109 Safari/537.36",
+               _CHROME_CHUA,
+               {"location": "manhattan_high", "device": "chromebook_budget", "cookie": "fresh", "referrer": "direct"},
+               delta_variable="device", delta_direction="low"),
+]
+
+# The Pro 50 matrix = Free 24 (unchanged) + the 26 extras.
+PRO_AGENT_CONFIGS: List[dict] = AGENT_CONFIGS + PRO_EXTRA_AGENT_CONFIGS
+
+
+def get_agent_configs_for_tier(tier_or_count) -> List[dict]:
+    """Return the agent matrix for a tier name or requested count.
+
+    - 'free' / 24 / None / unknown  -> the 24-agent Free matrix (unchanged).
+    - 'pro' / 50                     -> the 50-agent Pro matrix.
+    - 'enterprise'                   -> Pro 50 for now (100-agent runtime is NOT
+                                        implemented; Enterprise stays contact-us).
+    Defaults to Free for anything unrecognised, so a bad value can never silently
+    run a bigger/costlier probe.
+    """
+    if isinstance(tier_or_count, str):
+        t = tier_or_count.strip().lower()
+        if t in ("pro", "enterprise"):
+            return PRO_AGENT_CONFIGS
+        return AGENT_CONFIGS
+    if isinstance(tier_or_count, int):
+        return PRO_AGENT_CONFIGS if tier_or_count >= 50 else AGENT_CONFIGS
+    return AGENT_CONFIGS
 
 
 WAVE_CONFIGS: Dict[int, List[dict]] = {}
@@ -1210,6 +1410,19 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     session["min_discrimination_scenario"] = (
         f"Min: {min_a['label']} @ ${min_a['price']:.2f}" if min_a else "N/A"
     )
+    # Honest probe accounting (Phase 5A): how many agents were REALLY probed vs
+    # filled by the exact-uniform gate. response_time_ms > 0 marks a real probe;
+    # inferred=True marks a gate-skipped agent. Never conflate the two.
+    agents_all = session.get("agents", [])
+    real = sum(1 for a in agents_all if (a.get("response_time_ms") or 0) > 0)
+    skipped = sum(1 for a in agents_all if a.get("inferred"))
+    ev_count = sum(1 for a in agents_all
+                   if isinstance(a.get("evidence"), dict)
+                   and a["evidence"].get("extraction_method") not in (None, "none", ""))
+    session["real_probes_executed"] = real
+    session["skipped_inferred_agents"] = skipped
+    session["evidence_count"] = ev_count
+
     session["status"] = "completed"
     session["error"] = None
     session["elapsed_seconds"] = round(time.time() - overall_start, 2)
@@ -1288,15 +1501,19 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
         s["status"] = "failed"; s["error_message"] = str(e); return s
 
 
-async def run_full_probe(url: str, name: str) -> dict:
+async def run_full_probe(url: str, name: str, tier: str = "free") -> dict:
     """Synchronous wrapper for callers that want the full result. The
     /api/probe endpoint now launches the engine via run_probe_in_background()
-    instead, so this blocking variant is only used by scripts / tests."""
+    instead, so this blocking variant is only used by scripts / tests.
+
+    tier selects the matrix: 'free' -> 24 agents, 'pro' -> 50 agents.
+    """
     sid, session = create_session(url, name)
-    return await _run_probe_engine(session, url)
+    return await _run_probe_engine(session, url, agent_configs=get_agent_configs_for_tier(tier))
 
 
-async def _run_probe_engine(session: dict, url: str) -> dict:
+async def _run_probe_engine(session: dict, url: str,
+                            agent_configs: Optional[List[dict]] = None) -> dict:
     """Run the 24-agent probe engine with progressive probing.
 
     Phase 1: 8 fast agents (US-data proxies) run in parallel. If prices
@@ -1307,6 +1524,12 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     Runs the remaining 16 agents for full statistical gradient analysis.
     """
     overall_start = time.time()
+    # Default to the Free 24-agent matrix so existing callers are byte-identical.
+    if agent_configs is None:
+        agent_configs = AGENT_CONFIGS
+    n_agents = len(agent_configs)
+    session["total_agents"] = n_agents
+    session["configured_agents"] = n_agents
     bd = BrightDataMCPClient()
     await bd.start()
 
@@ -1326,12 +1549,14 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
     try:
         if brightdata_live_ready():
             probe_timeout_s = 25.0
-            phase1_count = 10
+            # Phase-1 scout count scales with the matrix: 10 for Free-24, more
+            # for Pro-50 so the uniform gate still samples a representative set.
+            phase1_count = 10 if n_agents <= 24 else 16
             phase1_sem = 10
             phase2_sem = 4
         else:
             probe_timeout_s = 15.0
-            phase1_count = 24
+            phase1_count = n_agents
             phase1_sem = 6
             phase2_sem = 6
 
@@ -1340,9 +1565,9 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                 return await launch_single_agent(bd, url, cfg, probe_timeout_s)
 
         # Phase 1: fast initial scan — process agents incrementally
-        # so the frontend sees real-time progress (not 0 -> 24 at once).
+        # so the frontend sees real-time progress (not 0 -> N at once).
         sem1 = asyncio.Semaphore(phase1_sem)
-        phase1 = AGENT_CONFIGS[:phase1_count]
+        phase1 = agent_configs[:phase1_count]
         tasks = [_limited_agent(c, sem1) for c in phase1]
         for coro in asyncio.as_completed(tasks):
             try:
@@ -1360,7 +1585,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
         # Phase 2: only if prices vary — also incremental for real-time UI
         if not uniform:
             sem2 = asyncio.Semaphore(phase2_sem)
-            phase2 = AGENT_CONFIGS[phase1_count:]
+            phase2 = agent_configs[phase1_count:]
             tasks = [_limited_agent(c, sem2) for c in phase2]
             for coro in asyncio.as_completed(tasks):
                 try:
@@ -1413,7 +1638,7 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
             # the AR side would just be filled with the baseline and the
             # EN-vs-AR comparison would be fabricated. So: real-probe any
             # language_pair agent; fill the rest.
-            remaining = AGENT_CONFIGS[phase1_count:]
+            remaining = agent_configs[phase1_count:]
             lang_pair_cfgs = [c for c in remaining if c.get("language_pair_id")]
             fill_cfgs = [c for c in remaining if not c.get("language_pair_id")]
             for c in lang_pair_cfgs:
@@ -1426,20 +1651,32 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                 r = await coro
                 _ingest_agent(r)
 
+        # Honest probe accounting on EVERY exit path (not only the success path).
+        def _set_accounting():
+            al = session.get("agents", [])
+            session["real_probes_executed"] = sum(
+                1 for a in al if (a.get("response_time_ms") or 0) > 0)
+            session["skipped_inferred_agents"] = sum(1 for a in al if a.get("inferred"))
+            session["evidence_count"] = sum(
+                1 for a in al if isinstance(a.get("evidence"), dict)
+                and a["evidence"].get("extraction_method") not in (None, "none", ""))
+
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
         if not valid and session["detected_agents"] > 12:
             session["status"] = "completed"
-            session["error"] = f"TARGET BLOCKED PROBE — {session['detected_agents']}/24 agents hit honeypot pages."
+            session["error"] = f"TARGET BLOCKED PROBE — {session['detected_agents']}/{n_agents} agents hit honeypot pages."
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+            _set_accounting()
             await bd.close()
             return session
         if not valid:
             session["status"] = "failed"
+            _set_accounting()
             if session["detected_agents"] > 0:
                 session["error"] = (
                     f"This site blocked our agents at the perimeter — "
-                    f"{session['detected_agents']}/24 hit a honeypot / captcha. "
+                    f"{session['detected_agents']}/{n_agents} hit a honeypot / captcha. "
                     f"Try a different URL or use one of the case studies."
                 )
             else:
@@ -1660,14 +1897,28 @@ async def launch_probe(
     #
     # The frontend already polls /api/result/{session_id} every 1s, so the
     # async-launch pattern fits its existing flow.
+    # Resolve the audit matrix (Phase 5A). Pro/Enterprise tiers may request the
+    # 50-agent matrix via audit_depth="pro50"; everyone else (and any Free user
+    # who asks for pro50) gets the 24-agent Free matrix. Default for Pro when no
+    # depth is given stays smart24 so cost/behaviour is unchanged unless asked.
+    tier = (quota.get("tier") or "free").lower()
+    requested = (input.audit_depth or "").strip().lower()
+    if requested == "pro50" and tier in ("pro", "enterprise"):
+        engine_tier = "pro"
+    else:
+        engine_tier = "free"
+
     sid, session = create_session(input.target_url, input.target_name)
+    session["tier"] = tier
+    session["audit_depth"] = "pro50" if engine_tier == "pro" else "smart24"
     asyncio.create_task(_complete_probe_in_background(
         session=session,
         url=input.target_url,
         user_id=user["id"],
         publish_to_board=bool(input.publish_to_board),
+        engine_tier=engine_tier,
     ))
-    return {"session_id": sid, "status": "running"}
+    return {"session_id": sid, "status": "running", "audit_depth": session["audit_depth"]}
 
 
 async def _complete_probe_in_background(
@@ -1675,6 +1926,7 @@ async def _complete_probe_in_background(
     url: str,
     user_id: str,
     publish_to_board: bool,
+    engine_tier: str = "free",
 ) -> None:
     """Run the probe engine, persist the result, increment the quota.
     Wrapped so the launch endpoint can fire-and-forget.
@@ -1684,7 +1936,8 @@ async def _complete_probe_in_background(
     /api/result and see whatever the engine produced.
     """
     try:
-        await _run_probe_engine(session, url)
+        await _run_probe_engine(session, url,
+                                agent_configs=get_agent_configs_for_tier(engine_tier))
     except Exception as e:
         # Engine itself crashed. Mark the session as failed so the
         # frontend's polling loop can surface a clean error state instead
@@ -1775,6 +2028,13 @@ async def get_result(session_id: str):
         fx_rate_used=session.get("fx_rate_used"),
         # Controlled browser-language observations (metadata, not a driver).
         language_observations=session.get("language_observations", []),
+        # Phase 5A honest probe accounting + audit depth.
+        configured_agents=session.get("configured_agents", session.get("total_agents", 24)),
+        real_probes_executed=session.get("real_probes_executed"),
+        skipped_inferred_agents=session.get("skipped_inferred_agents"),
+        evidence_count=session.get("evidence_count"),
+        audit_depth=session.get("audit_depth", "smart24"),
+        tier=session.get("tier"),
         error=session.get("error"),
     )
 
@@ -1971,6 +2231,13 @@ async def get_share(session_id: str):
         fx_rate_used=session.get("fx_rate_used"),
         # Controlled browser-language observations (metadata, not a driver).
         language_observations=session.get("language_observations", []),
+        # Phase 5A honest probe accounting + audit depth.
+        configured_agents=session.get("configured_agents", session.get("total_agents", 24)),
+        real_probes_executed=session.get("real_probes_executed"),
+        skipped_inferred_agents=session.get("skipped_inferred_agents"),
+        evidence_count=session.get("evidence_count"),
+        audit_depth=session.get("audit_depth", "smart24"),
+        tier=session.get("tier"),
         error=session.get("error"),
     )
 

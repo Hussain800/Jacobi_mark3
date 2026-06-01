@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "../../../lib/supabase/client";
+import { fetchPlan, type Plan } from "../../../lib/billing";
 
 /* ─── Types & data ──────────────────────────────────────────────────── */
 
@@ -282,6 +283,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   // Audit depth (Phase 5A): "smart24" (Free) or "pro50" (Pro). Backend enforces
   // the tier — a Free user selecting pro50 is safely downgraded server-side.
   const [auditDepth, setAuditDepth] = useState<"smart24" | "pro50">("smart24");
+  // User's plan, used to gate the Pro 50 option in the UI (the backend is the
+  // real enforcement; this is just so Free users aren't misled into thinking a
+  // 50-agent scan will run). Defaults to "anon"/"free" until the fetch resolves.
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const isPro = plan?.tier === "pro";
+  useEffect(() => {
+    fetchPlan().then(setPlan).catch(() => {});
+  }, []);
+  // Remember the depth the user requested for the CURRENT run, so we can tell
+  // them if the backend ran something shallower (Free → Smart 24 downgrade).
+  const requestedDepthRef = useRef<"smart24" | "pro50">("smart24");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
   // exhausted). We surface that state as a structured block instead of a
@@ -460,6 +472,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           audit_depth: auditDepth,
         }),
       });
+      requestedDepthRef.current = auditDepth;
 
       if (r1.status === 401 || r1.status === 402) {
         // Structured rejection from the backend (auth_required / quota_exceeded).
@@ -596,6 +609,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     const pct = Math.round(report.max_price_spread_pct || 0);
     const index = Math.round(report.discrimination_index || 0);
 
+    // Audit depth + honest probe accounting — driven by what the BACKEND
+    // actually ran (report.audit_depth), never by what the user selected. A
+    // Free user who picked Pro 50 sees "Smart 24" here because that's the real
+    // run.
+    const ranDepth = report.audit_depth === "pro50" ? "pro50" : "smart24";
+    const ranDepthLabel = ranDepth === "pro50" ? "Pro 50 advanced matrix" : "Smart 24 audit";
+    const configuredAgents = report.configured_agents ?? report.total_agents ?? null;
+    const realProbes = report.real_probes_executed ?? null;
+    const skippedInferred = report.skipped_inferred_agents ?? null;
+    const evidenceCount = report.evidence_count ?? null;
+
     const successAgents = report.agents.filter(a => a.status === "success" && a.price != null);
     const sortedByPrice = successAgents.slice().sort((a, b) => (b.price! - a.price!));
     const top = sortedByPrice[0];
@@ -624,6 +648,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       // Native (on-page) currency for the headline; USD is normalized basis.
       nativeCurrency: report.native_currency ?? null,
       nativeBaseline: report.native_baseline_price ?? null,
+      // Audit depth + honest accounting (from the actual run).
+      ranDepth, ranDepthLabel, configuredAgents, realProbes, skippedInferred, evidenceCount,
     };
   }, [report]);
 
@@ -767,23 +793,45 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               letterSpacing: "0.14em", textTransform: "uppercase",
             }}>
               <span>Depth</span>
-              {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setAuditDepth(val)}
+              {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => {
+                // Pro 50 is locked for non-Pro users: the button is disabled and
+                // labelled "Upgrade", so a Free user is never misled into thinking
+                // a 50-agent scan will run. (The backend also enforces this.)
+                const locked = val === "pro50" && !isPro;
+                const active = auditDepth === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    disabled={locked}
+                    title={locked ? "Pro 50 is available on the Pro plan" : undefined}
+                    onClick={() => { if (!locked) setAuditDepth(val); }}
+                    style={{
+                      fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
+                      textTransform: "uppercase", padding: "5px 11px",
+                      cursor: locked ? "not-allowed" : "pointer",
+                      borderRadius: "var(--r-sm)",
+                      border: active ? "1px solid var(--cobalt-deep)" : "1px solid var(--line-2)",
+                      background: active ? "var(--cobalt)" : "transparent",
+                      color: active ? "#fff" : locked ? "var(--text-4)" : "var(--text-2)",
+                      opacity: locked ? 0.7 : 1,
+                    }}
+                  >
+                    {lbl}{locked && " 🔒"}
+                  </button>
+                );
+              })}
+              {!isPro && (
+                <a
+                  href="/pricing"
                   style={{
-                    fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
-                    textTransform: "uppercase", padding: "5px 11px", cursor: "pointer",
-                    borderRadius: "var(--r-sm)",
-                    border: auditDepth === val ? "1px solid var(--cobalt-deep)" : "1px solid var(--line-2)",
-                    background: auditDepth === val ? "var(--cobalt)" : "transparent",
-                    color: auditDepth === val ? "#fff" : "var(--text-2)",
+                    fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.1em",
+                    textTransform: "uppercase", color: "var(--cobalt)", marginLeft: 2,
                   }}
                 >
-                  {lbl}
-                </button>
-              ))}
+                  Upgrade
+                </a>
+              )}
             </div>
           </div>
 
@@ -1032,6 +1080,22 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           {phase === "complete" && verdict && report && (
             <div style={{ maxWidth: 880, margin: "0 auto" }}>
 
+              {/* Downgrade notice: the user asked for Pro 50 but the backend ran
+                  Smart 24 (Free tier). Be explicit, don't pretend 50 ran. */}
+              {requestedDepthRef.current === "pro50" && verdict.ranDepth === "smart24" && (
+                <div style={{
+                  marginBottom: 20, padding: "12px 16px",
+                  border: "1px solid var(--line-2)", borderRadius: "var(--r-sm)",
+                  background: "var(--surface-2)", fontFamily: "var(--mono)",
+                  fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
+                }}>
+                  Pro 50 is available on the Pro plan — this scan ran the{" "}
+                  <strong style={{ color: "var(--text)" }}>Smart 24</strong> audit instead.{" "}
+                  <a href="/pricing" style={{ color: "var(--cobalt)" }}>Upgrade to Pro</a> to
+                  run the 50-agent advanced matrix.
+                </div>
+              )}
+
               {/* Tab switcher */}
               <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--line)" }}>
                 <button onClick={() => setActiveTab("verdict")} style={{
@@ -1066,6 +1130,23 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     style={{ background: verdict.color, boxShadow: `0 0 8px ${verdict.color}` }}
                   />
                   {verdict.label} pricing
+                </div>
+                {/* Honest audit-depth line — reflects the run the backend
+                    actually performed (verdict.ranDepth), never the selection. */}
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--text-3)" }}>
+                  {verdict.ranDepthLabel} completed
+                  {verdict.configuredAgents != null && (
+                    <> · {verdict.configuredAgents} configured agents</>
+                  )}
+                  {verdict.realProbes != null && (
+                    <> · {verdict.realProbes} real probes</>
+                  )}
+                  {verdict.skippedInferred != null && verdict.skippedInferred > 0 && (
+                    <> · {verdict.skippedInferred} skipped (uniform gate)</>
+                  )}
+                  {verdict.evidenceCount != null && (
+                    <> · {verdict.evidenceCount} with evidence</>
+                  )}
                 </div>
                 <div className="ev-spread-label label-mono">Hidden premium · what you're overpaying</div>
                 <div className="ev-spread serif tnum" style={{ marginBottom: 10 }}>

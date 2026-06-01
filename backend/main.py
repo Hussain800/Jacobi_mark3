@@ -13,7 +13,7 @@ import re
 import statistics
 import time
 import uuid
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
 
@@ -255,6 +255,52 @@ def _to_usd(val: float, code: str) -> float:
     return round(val * rate, 2)
 
 
+def _fmt_native(val: Optional[float], code: Optional[str]) -> Optional[str]:
+    """Human-readable native price string, e.g. 'AED 11,600.00'. None-safe."""
+    if val is None or not code:
+        return None
+    return f"{code} {val:,.2f}"
+
+
+def _native_price_fields(raw_text: Optional[str], currency_hint: Optional[str]) -> dict:
+    """Derive the verifiable NATIVE price (as shown on the page) plus the USD
+    normalization, from the evidence raw text.
+
+    This reads the SAME raw on-page string the evidence layer already captured
+    (e.g. 'AED11,600.00'), so the native value is exactly what the shopper sees —
+    no re-extraction, no guessing. Returns all-None fields when the raw text
+    carries no parseable price, so callers can render N/A gracefully.
+
+    Deliberately does NOT touch parse_page_prices: the USD comparison math the
+    statistics depend on is unchanged.
+    """
+    out = {
+        "native_price": None,          # float, value on the page
+        "native_currency": None,       # ISO-ish code, e.g. 'AED'
+        "normalized_price_usd": None,  # float, USD for cross-identity comparison
+        "fx_rate_used": None,          # float native->USD multiplier, if known
+    }
+    parsed = _parse_price_text(raw_text) if raw_text else None
+    if not parsed:
+        return out
+    val, code = parsed
+    # Prefer the code parsed from the raw text; fall back to the detector hint.
+    code = code or currency_hint
+    if val is None or not code:
+        return out
+    out["native_price"] = round(float(val), 2)
+    out["native_currency"] = code
+    if code == "USD":
+        out["normalized_price_usd"] = round(float(val), 2)
+        out["fx_rate_used"] = 1.0
+    else:
+        rate = CURRENCY_RATES.get(code)
+        if rate is not None:
+            out["fx_rate_used"] = rate
+            out["normalized_price_usd"] = round(float(val) * rate, 2)
+    return out
+
+
 def parse_page_prices(html: str, url: str) -> List[float]:
     """Extract the product price(s) from a page's HTML.
 
@@ -482,6 +528,11 @@ def _extraction_evidence(html: str, url: str, prices: List[float]) -> dict:
         "extraction_method": "none",
         "price_raw_text": None,
         "currency_detected": None,
+        # Native (on-page) price fields — populated from price_raw_text below.
+        "native_price": None,
+        "native_currency": None,
+        "normalized_price_usd": None,
+        "fx_rate_used": None,
     }
     if not html or not prices:
         return evidence
@@ -945,6 +996,39 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     session["max_price_spread"] = round(spread, 2)
     session["max_price_spread_pct"] = round((spread / bp) * 100, 2) if bp else 0
 
+    # ── Native (on-page) currency for the headline ──────────────────────────
+    # Use the dominant native currency captured across priced agents and report
+    # the baseline in that currency, so the headline matches what a shopper sees
+    # (e.g. "AED 11,600.00"). The USD figures above remain the comparison basis.
+    _native_codes = [
+        a.get("native_currency") for a in session.get("agents", [])
+        if a.get("native_currency") and a.get("native_price") is not None
+    ]
+    if _native_codes:
+        dominant = Counter(_native_codes).most_common(1)[0][0]
+        fx = CURRENCY_RATES.get(dominant, 1.0) if dominant != "USD" else 1.0
+        # Native baseline: prefer an actual captured native value at the USD
+        # baseline; else convert the USD baseline back via the known fx rate.
+        native_baseline = None
+        for a in session.get("agents", []):
+            if (a.get("native_currency") == dominant
+                    and a.get("normalized_price_usd") is not None
+                    and abs((a["normalized_price_usd"] or 0) - bp) < 0.01
+                    and a.get("native_price") is not None):
+                native_baseline = a["native_price"]
+                break
+        if native_baseline is None and fx:
+            native_baseline = round(bp / fx, 2) if fx else None
+        session["native_currency"] = dominant
+        session["native_baseline_price"] = native_baseline
+        session["fx_rate_used"] = fx
+        session["normalized_currency"] = "USD"
+    else:
+        session["native_currency"] = None
+        session["native_baseline_price"] = None
+        session["fx_rate_used"] = None
+        session["normalized_currency"] = "USD"
+
     controls = [
         a["price"]
         for a in session.get("agents", [])
@@ -1028,7 +1112,19 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
-            s["evidence"] = _extraction_evidence(r.get("text", ""), url, prices)
+            ev = _extraction_evidence(r.get("text", ""), url, prices)
+            # Derive the verifiable native price from the raw on-page text and
+            # fold it into both the evidence dict and the agent top-level so the
+            # UI/PDF can show "AED 11,600.00" instead of only the USD figure.
+            native = _native_price_fields(
+                ev.get("price_raw_text"), ev.get("currency_detected")
+            )
+            ev.update(native)
+            s["evidence"] = ev
+            s["native_price"] = native["native_price"]
+            s["native_currency"] = native["native_currency"]
+            s["normalized_price_usd"] = native["normalized_price_usd"]
+            s["fx_rate_used"] = native["fx_rate_used"]
             return s
         s["error_message"] = None if s["status"] == "detected" else last_failure
         if s["status"] == "in_flight":
@@ -1121,6 +1217,19 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                     session["failed_agents"] += 1
         elif brightdata_live_ready() and prices:
             bp = statistics.median(prices)
+            # Carry the native price captured by a real probe so the skipped
+            # agents display the same on-page currency (e.g. AED) rather than
+            # only the USD figure. Taken from a real agent whose USD price equals
+            # the uniform baseline.
+            _fill_native_price = _fill_native_currency = _fill_fx = None
+            for a in session.get("agents", []):
+                if (a.get("native_price") is not None
+                        and a.get("price") is not None
+                        and abs(a["price"] - bp) < 0.01):
+                    _fill_native_price = a.get("native_price")
+                    _fill_native_currency = a.get("native_currency")
+                    _fill_fx = a.get("fx_rate_used")
+                    break
             import asyncio as _asyncio
             async def _fill_agent(cfg):
                 await _asyncio.sleep(0.15)  # small stagger for visual effect
@@ -1134,6 +1243,11 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                     is_control=cfg.get("is_control", False),
                     network_tier=cfg.get("network_tier"),
                     proxy_type=cfg.get("proxy_type"),
+                    native_price=_fill_native_price,
+                    native_currency=_fill_native_currency,
+                    normalized_price_usd=bp,
+                    fx_rate_used=_fill_fx,
+                    inferred=True,  # marks an exact-uniform-gate skipped agent
                 )
                 return agent
             fill_tasks = [_fill_agent(c) for c in AGENT_CONFIGS[phase1_count:]]
@@ -1439,6 +1553,11 @@ def build_agent_list(session: dict) -> list:
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
             is_control=a.get("is_control", False), network_tier=a.get("network_tier"),
             proxy_type=a.get("proxy_type"),
+            native_price=a.get("native_price"),
+            native_currency=a.get("native_currency"),
+            normalized_price_usd=a.get("normalized_price_usd"),
+            fx_rate_used=a.get("fx_rate_used"),
+            inferred=a.get("inferred", False),
             evidence=a.get("evidence"),
         ))
     return agents
@@ -1472,6 +1591,12 @@ async def get_result(session_id: str):
         summary=session.get("summary"),         max_discrimination_scenario=session.get("max_discrimination_scenario"),
         min_discrimination_scenario=session.get("min_discrimination_scenario"), agents=agents,
         discrimination_score=session.get("discrimination_score", 0),
+        # Native (on-page) currency for the headline; USD figures above are the
+        # normalized comparison basis. All None-safe → UI renders N/A.
+        native_currency=session.get("native_currency"),
+        native_baseline_price=session.get("native_baseline_price"),
+        normalized_currency=session.get("normalized_currency", "USD"),
+        fx_rate_used=session.get("fx_rate_used"),
         error=session.get("error"),
     )
 
@@ -1660,6 +1785,12 @@ async def get_share(session_id: str):
         summary=session.get("summary"),         max_discrimination_scenario=session.get("max_discrimination_scenario"),
         min_discrimination_scenario=session.get("min_discrimination_scenario"), agents=agents,
         discrimination_score=session.get("discrimination_score", 0),
+        # Native (on-page) currency for the headline; USD figures above are the
+        # normalized comparison basis. All None-safe → UI renders N/A.
+        native_currency=session.get("native_currency"),
+        native_baseline_price=session.get("native_baseline_price"),
+        normalized_currency=session.get("normalized_currency", "USD"),
+        fx_rate_used=session.get("fx_rate_used"),
         error=session.get("error"),
     )
 

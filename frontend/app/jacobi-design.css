@@ -371,10 +371,11 @@
   display: block; width: 62px; height: 2px; margin-top: 26px;
   background: linear-gradient(90deg, var(--cobalt), transparent);
 }
-.jacobi-design .hero-typed { margin-top: 24px; font-size: clamp(14px,1.55vw,17px); color: var(--text); min-height: 1.5em; letter-spacing: 0.005em; }
-.jacobi-design .caret { color: var(--cobalt-bright); margin-left: 1px; animation: blink 1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.jacobi-design .hero-para { margin-top: 18px; font-size: 15.5px; line-height: 1.62; max-width: 458px; }
+/* Clarity lede — sans-serif, states what Jacobi is in one line. */
+.jacobi-design .hero-lede { margin-top: 22px; font-size: clamp(15px,1.6vw,18px); line-height: 1.5; color: var(--text); max-width: 480px; font-weight: 500; }
+.jacobi-design .hero-para { margin-top: 14px; font-size: 15.5px; line-height: 1.62; max-width: 480px; }
+.jacobi-design .hero-secondary-cta { color: var(--cobalt); border-bottom: 1px solid transparent; transition: border-color .2s var(--ease); }
+.jacobi-design .hero-secondary-cta:hover { border-bottom-color: var(--cobalt); }
 
 .jacobi-design .probe-bar {
   margin-top: 30px; display: flex; align-items: center; gap: 8px;

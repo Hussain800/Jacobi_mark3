@@ -140,8 +140,7 @@ export default function LandingPage() {
         <div className="hero-grid wrap">
           <div className="hero-copy">
             <div className="chip" data-reveal>
-              <span className="pulse" />{" "}
-              24 identities · 4 vectors · evidence-grade
+              Evidence-grade pricing intelligence
             </div>
 
             <h1 className="hero-h1" data-reveal>
@@ -150,15 +149,15 @@ export default function LandingPage() {
               <span className="hero-sub-rule" />
             </h1>
 
-            <p className="hero-typed mono" data-reveal>
-              <span id="typed" />
-              <span className="caret">▌</span>
+            <p className="hero-lede sec" data-reveal>
+              Evidence-grade pricing intelligence that detects regional, device,
+              language, and session-based price differences.
             </p>
 
             <p className="hero-para sec" data-reveal>
-              JACOBI deploys 24 shopper profiles against your URL and
-              surfaces the pricing&nbsp;discrimination algorithms hide behind
-              your digital&nbsp;fingerprint.
+              JACOBI runs controlled buyer-context probes against your URL,
+              compares what each identity is shown, captures the raw evidence, and
+              exports an audit-ready report.
             </p>
 
             <form
@@ -172,7 +171,7 @@ export default function LandingPage() {
             >
               <div className="pi-row">
                 <span className="pi-meta">
-                  <span className="pi-glyph">⌖</span> 24 agents
+                  Run a pricing audit
                 </span>
                 <input
                   ref={heroInputRef}
@@ -188,16 +187,17 @@ export default function LandingPage() {
                   aria-label="Paste a URL to probe"
                 />
                 <button className="pi-submit" type="submit">
-                  Inspect <span className="pi-arrow">→</span>
+                  Run a pricing audit <span className="pi-arrow">→</span>
                 </button>
               </div>
               <span className="pi-rule" />
             </form>
 
             <div className="hero-proof label-mono" data-reveal>
-              4 discrimination vectors <span className="sep">·</span>{" "}
-              verdict in seconds <span className="sep">·</span>{" "}
-              no login required
+              <a href="#case-studies" className="hero-secondary-cta">View a sample report</a>
+              <span className="sep">·</span>{" "}
+              Smart 24 &amp; Pro 50 matrices <span className="sep">·</span>{" "}
+              native-currency evidence
             </div>
           </div>
 

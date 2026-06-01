@@ -65,7 +65,11 @@ def _sanitize_report(report: dict) -> dict:
         "total_agents": report.get("total_agents"),
         "control_stability": report.get("control_stability"),
         "elapsed_seconds": report.get("elapsed_seconds"),
+        # Native (on-page) currency for the headline; USD is the normalized basis.
         "native_currency": report.get("native_currency"),
+        "native_baseline_price": report.get("native_baseline_price"),
+        "normalized_currency": report.get("normalized_currency", "USD"),
+        "fx_rate_used": report.get("fx_rate_used"),
         "gradients": report.get("gradients", []),
         "agents": [
             {
@@ -79,6 +83,9 @@ def _sanitize_report(report: dict) -> dict:
                 "referrer": a.get("variables", {}).get("referrer"),
                 "language": a.get("variables", {}).get("language"),
                 "proxy_type": a.get("proxy_type"),
+                "native_price": a.get("native_price"),
+                "native_currency": a.get("native_currency"),
+                "normalized_price_usd": a.get("normalized_price_usd"),
                 "evidence": a.get("evidence"),
             }
             for a in report.get("agents", [])
@@ -304,6 +311,18 @@ async def export_pdf(report_id: str):
     score = _num(data.get("discrimination_score"))
     disc_index = _num(data.get("discrimination_index"))
 
+    # Native (on-page) currency — the value the shopper actually sees. USD below
+    # is the normalized comparison basis. All None-safe.
+    native_ccy = data.get("native_currency")
+    native_bp = _num(data.get("native_baseline_price"))
+
+    def _native(val, dash="n/a"):
+        """Format a native-currency amount, e.g. 'AED 11,600.00'. None-safe."""
+        v = _num(val)
+        if v is None or not native_ccy:
+            return dash
+        return f"{_esc(native_ccy)} {v:,.2f}"
+
     gradients = data.get("gradients") or []
     if not isinstance(gradients, list):
         gradients = []
@@ -513,11 +532,19 @@ async def export_pdf(report_id: str):
     story.append(Paragraph(res_lead, sBody))
 
     # Table 1 — summary of key metrics (booktabs style).
+    # Native (on-page) price is shown first when available; the USD figure is
+    # explicitly labelled as the normalized comparison value.
     def _kv_rows():
         rows = [
             ("Target", _esc(target_name)),
             ("Topology class", _esc(topo.capitalize())),
-            ("Baseline price", _money(bp)),
+        ]
+        if native_bp is not None and native_ccy:
+            rows.append(("Baseline price (native)", _native(native_bp)))
+            rows.append(("Baseline price (USD, normalized)", _money(bp)))
+        else:
+            rows.append(("Baseline price", _money(bp)))
+        rows += [
             ("Mean price", _money(mean_price)),
             ("Price range",
              (f"{_money(rmin)} &ndash; {_money(rmax)}"
@@ -704,25 +731,36 @@ async def export_pdf(report_id: str):
             Paragraph("Agent", sTblHead),
             Paragraph("Location", sTblHead),
             Paragraph("Device", sTblHead),
-            Paragraph("Price", sTblHeadR),
+            Paragraph("Native price", sTblHeadR),
+            Paragraph("USD (norm.)", sTblHeadR),
             Paragraph("Raw text", sTblHead),
-            Paragraph("Cur.", sTblHead),
             Paragraph("Method", sTblHead),
         ]
         e_data = [e_head]
         for a in ev_agents[:24]:
             ev = a.get("evidence") or {}
+            # Native price + currency: prefer the agent-level fields, fall back
+            # to the evidence dict; render n/a when truly absent.
+            a_native_val = a.get("native_price")
+            if a_native_val is None:
+                a_native_val = ev.get("native_price")
+            a_native_ccy = a.get("native_currency") or ev.get("native_currency")
+            native_cell = (f"{_esc(a_native_ccy)} {_num(a_native_val):,.2f}"
+                           if (_num(a_native_val) is not None and a_native_ccy) else "n/a")
+            usd_val = a.get("normalized_price_usd")
+            if usd_val is None:
+                usd_val = a.get("price")
             e_data.append([
                 Paragraph(_esc(a.get("agent_id") or "n/a"), sCell),
                 Paragraph(_esc(_titleize(a.get("location")) or "n/a"), sCellMuted),
                 Paragraph(_esc(_titleize(a.get("device")) or "n/a"), sCellMuted),
-                Paragraph(_money(a.get("price")), sCellR),
+                Paragraph(native_cell, sCellR),
+                Paragraph(_money(usd_val), sCellR),
                 Paragraph(_esc(ev.get("price_raw_text") or "n/a"), sCellMuted),
-                Paragraph(_esc(ev.get("currency_detected") or "n/a"), sCell),
                 Paragraph(_esc(ev.get("extraction_method") or "n/a"), sCellMuted),
             ])
         w = CONTENT_W
-        ecw = [w * 0.12, w * 0.16, w * 0.16, w * 0.12, w * 0.20, w * 0.08, w * 0.16]
+        ecw = [w * 0.11, w * 0.15, w * 0.15, w * 0.15, w * 0.13, w * 0.16, w * 0.15]
         e_table = Table(e_data, colWidths=ecw, hAlign="CENTER", repeatRows=1)
         e_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

@@ -33,6 +33,11 @@ export interface Agent {
   variables: Record<string, string>;
   network_tier?: number;
   proxy_type?: string;
+  // Native (on-page) price fields; optional, absent on demo/cached results.
+  native_price?: number | null;
+  native_currency?: string | null;
+  normalized_price_usd?: number | null;
+  inferred?: boolean;
 }
 
 export interface TopologyReport {
@@ -62,6 +67,12 @@ export interface TopologyReport {
   agents: Agent[];
   error: string | null;
   discrimination_score?: number;
+  // Native (on-page) currency for the headline; USD figures are the normalized
+  // comparison basis. Optional → render N/A when absent.
+  native_currency?: string | null;
+  native_baseline_price?: number | null;
+  normalized_currency?: string | null;
+  fx_rate_used?: number | null;
 }
 
 export interface Message {

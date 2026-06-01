@@ -75,12 +75,19 @@ export default function AgentDetailDrawer({ agent, onClose }: Props) {
               Price quoted
             </div>
             <div className="font-serif text-5xl text-primary tabular-nums leading-none">
-              {agent.price !== null ? (
+              {agent.native_currency && agent.native_price != null ? (
+                `${agent.native_currency} ${agent.native_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              ) : agent.price !== null ? (
                 `$${agent.price}`
               ) : (
                 <span className="text-overcharge">blocked</span>
               )}
             </div>
+            {agent.native_currency && agent.native_price != null && agent.price != null && (
+              <div className="mt-1 font-mono text-[11px] text-muted tabular-nums">
+                ≈ ${agent.price.toLocaleString()} USD normalized
+              </div>
+            )}
             <div className={`mt-2 font-mono text-[11px] uppercase tracking-[0.2em] ${statusColor}`}>
               {agent.status}
               {agent.bot_detected && agent.detection_signal && (

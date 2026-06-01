@@ -59,6 +59,11 @@ interface BackendAgent {
   variables: Record<string, string>;
   network_tier?: number;
   proxy_type?: string;
+  // Native (on-page) price fields. May be absent on demo / cached results.
+  native_price?: number | null;
+  native_currency?: string | null;
+  normalized_price_usd?: number | null;
+  inferred?: boolean;
 }
 
 interface TopologyReport {
@@ -83,6 +88,12 @@ interface TopologyReport {
   topology_class: string;
   agents: BackendAgent[];
   error: string | null;
+  // Native (on-page) currency for the headline; USD figures above are the
+  // normalized comparison basis. All optional → render N/A when absent.
+  native_currency?: string | null;
+  native_baseline_price?: number | null;
+  normalized_currency?: string | null;
+  fx_rate_used?: number | null;
 }
 
 // Preset case studies — always use the curated demo result so the
@@ -577,6 +588,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       target: report.target_url,
       session: report.session_id,
       targetName: report.target_name,
+      // Native (on-page) currency for the headline; USD is normalized basis.
+      nativeCurrency: report.native_currency ?? null,
+      nativeBaseline: report.native_baseline_price ?? null,
     };
   }, [report]);
 
@@ -916,7 +930,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                       <span className="tele-city">{agentLabelCity(a)}</span>
                       <span className="tele-net">{net}</span>
                       <span className="tele-price tnum">
-                        {a.price != null ? `$${a.price}` : "—"}
+                        {a.native_currency && a.native_price != null
+                          ? `${a.native_currency} ${a.native_price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                          : a.price != null ? `$${a.price}` : "—"}
                       </span>
                     </div>
                   );
@@ -1028,7 +1044,19 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
                   gap: 28,
                 }}>
-                  <Stat label="Baseline" value={verdict.baseline != null ? `$${verdict.baseline}` : "—"} />
+                  <Stat
+                    label="Baseline"
+                    value={
+                      verdict.nativeCurrency && verdict.nativeBaseline != null
+                        ? `${verdict.nativeCurrency} ${verdict.nativeBaseline.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : verdict.baseline != null ? `$${verdict.baseline}` : "—"
+                    }
+                    sub={
+                      verdict.nativeCurrency && verdict.nativeBaseline != null && verdict.baseline != null
+                        ? `≈ $${verdict.baseline.toLocaleString()} USD normalized`
+                        : undefined
+                    }
+                  />
                   <Stat label="Mean" value={verdict.mean != null ? `$${Math.round(verdict.mean)}` : "—"} />
                   <Stat label="Range" value={verdict.range ? `$${verdict.range[0]} – $${verdict.range[1]}` : "—"} />
                   <Stat label="Spread" value={`$${verdict.spread}`} accent="over" />
@@ -1161,8 +1189,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                         }}>
                           {a.status}
                         </span>
-                        <span style={{ color: priceColor, textAlign: "right", fontWeight: 600 }}>
-                          {a.price != null ? `$${a.price}` : "—"}
+                        <span style={{ color: priceColor, textAlign: "right", fontWeight: 600, lineHeight: 1.3 }}>
+                          {a.native_currency && a.native_price != null ? (
+                            <>
+                              {a.native_currency} {a.native_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              <span style={{ display: "block", fontSize: 10, color: "var(--muted)", fontWeight: 500 }}>
+                                ≈ ${a.price ?? a.normalized_price_usd ?? "—"}
+                              </span>
+                            </>
+                          ) : (
+                            a.price != null ? `$${a.price}` : "—"
+                          )}
                         </span>
                       </div>
                     );
@@ -1321,7 +1358,7 @@ function ResultSection({ eyebrow, children }: { eyebrow: string; children: React
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "over" | "good" }) {
+function Stat({ label, value, accent, sub }: { label: string; value: string; accent?: "over" | "good"; sub?: string }) {
   const c =
     accent === "over" ? "var(--over)" :
     accent === "good" ? "var(--good)" :
@@ -1338,6 +1375,17 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       >
         {value}
       </div>
+      {sub && (
+        <div
+          className="tnum"
+          style={{
+            fontFamily: "var(--mono)", fontSize: 12,
+            color: "var(--muted)", marginTop: 4, letterSpacing: "-0.01em",
+          }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

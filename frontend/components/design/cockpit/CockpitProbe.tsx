@@ -626,634 +626,173 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const mod = await import("jspdf");
       const jsPDF = mod.jsPDF || (mod as { default: typeof mod.jsPDF }).default;
       const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const W = doc.internal.pageSize.getWidth();   // 595
-      const H = doc.internal.pageSize.getHeight();  // 842
-      const M = 50;                                  // generous outer margin
-      const COL_W = W - 2 * M;                       // usable content width
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      const M = 56;
+      const CW = W - 2 * M;
 
-      /* ──────────────────────────────────────────────────────────────
-       * JACOBI · TWO-PAGE FORENSIC REPORT
-       *
-       * Design discipline:
-       *  - All vertical layout uses a `y` cursor that gets incremented
-       *    AFTER each section by a measured/reserved height. Never
-       *    place by absolute Y.
-       *  - Multi-line text always renders via splitTextToSize +
-       *    iterating all lines; never `lines[0]` which silently truncates.
-       *  - Each section has a fixed reserved height; if its content is
-       *    shorter, we leave whitespace (that's good design, not waste).
-       *  - Numbers and currency use Courier for tabular alignment.
-       *  - Dark canvas + monochrome typography + cobalt accent only —
-       *    no rainbow charts, no AI-slop gradients.
-       * ──────────────────────────────────────────────────────────── */
+      const BLACK = [30, 30, 30] as const;
+      const DARK = [60, 60, 60] as const;
+      const GRAY = [130, 130, 130] as const;
+      const LIGHT = [200, 200, 200] as const;
+      const ACCENT = [0, 100, 0] as const;
+      const RED_A = [180, 40, 40] as const;
 
-      // ─── Palette (matches the live app brand) ─────────────────
-      const C = {
-        ink:     [10, 12, 18] as const,    // canvas
-        surface: [20, 24, 34] as const,    // card tint
-        surface2:[26, 31, 44] as const,    // panel tint
-        line:    [42, 50, 70] as const,    // hairline
-        line2:   [56, 65, 88] as const,    // stronger divider
-        text:    [240, 243, 250] as const, // primary
-        text2:   [180, 188, 204] as const, // body
-        text3:   [115, 125, 145] as const, // muted
-        cobalt:  [110, 146, 255] as const, // accent
-        over:    [255, 84, 104] as const,  // alert / high price
-        good:    [58, 215, 159] as const,  // baseline / low price
-        amber:   [255, 167, 82] as const,  // mid-warning
-      };
       const setFill = (c: readonly [number, number, number]) => doc.setFillColor(c[0], c[1], c[2]);
       const setText = (c: readonly [number, number, number]) => doc.setTextColor(c[0], c[1], c[2]);
       const setStroke = (c: readonly [number, number, number]) => doc.setDrawColor(c[0], c[1], c[2]);
 
-      const dateLine = new Date().toLocaleDateString("en-US", {
-        year: "numeric", month: "short", day: "numeric",
-      });
+      const dateLine = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
       const sessionShort = (verdict.session || "—").slice(0, 8);
+      const topoLabel = verdict.label.toUpperCase();
+      const topoColor = topoLabel === "UNIFORM" ? ACCENT : topoLabel === "AGGRESSIVE" ? RED_A : DARK;
 
-      // Topology accent color
-      const topoColor =
-        verdict.label.toLowerCase() === "uniform" ? C.good :
-        verdict.label.toLowerCase() === "aggressive" ? C.over :
-        C.amber;
-
-      // ─── Reusable: page chrome ────────────────────────────────
-      const drawPageChrome = (pageNum: 1 | 2) => {
-        // Dark canvas
-        setFill(C.ink);
-        doc.rect(0, 0, W, H, "F");
-
-        // Top accent tick
-        setStroke(C.cobalt);
-        doc.setLineWidth(1.6);
-        doc.line(M, 38, M + 36, 38);
-
-        // Brand mark — JAC[ ]BI rendered as text-only, monospaced.
-        // CRITICAL: measure ALL widths in the brand font BEFORE switching
-        // to the tagline font, otherwise the tagline X is computed in
-        // the wrong font and overlaps the wordmark.
-        doc.setFont("courier", "bold").setFontSize(11);
-        const jacW = doc.getTextWidth("JAC");
-        const bracketW = doc.getTextWidth("[ ]");
-        const biW = doc.getTextWidth("BI");
-        const brandTotalW = jacW + 2 + bracketW + 4 + biW;
-        setText(C.text);
-        doc.text("JAC", M, 60);
-        setText(C.cobalt);
-        doc.text("[ ]", M + jacW + 2, 60);
-        setText(C.text);
-        doc.text("BI", M + jacW + 2 + bracketW + 4, 60);
-
-        // Tagline — anchor X off pre-measured brand width.
-        doc.setFont("helvetica", "normal").setFontSize(7);
-        setText(C.text3);
-        doc.text("PRICING TOPOLOGY · FORENSIC REPORT", M + brandTotalW + 16, 60);
-
-        // Right header: date + session
-        doc.setFont("courier", "normal").setFontSize(7.5);
-        setText(C.text3);
-        doc.text(dateLine.toUpperCase(), W - M, 54, { align: "right" });
-        doc.text(`SESSION ${sessionShort}`, W - M, 65, { align: "right" });
-
-        // Header rule
-        setStroke(C.line);
-        doc.setLineWidth(0.5);
-        doc.line(M, 78, W - M, 78);
-
-        // Footer rule
+      let pageNum = 0; let totalPages = 2;
+      const newPage = () => { pageNum++; doc.addPage(); };
+      const drawPage = (pn: number) => {
+        setStroke(LIGHT); doc.setLineWidth(0.5); doc.line(M, 62, W - M, 62);
+        doc.setFont("times", "normal").setFontSize(9); setText(GRAY);
+        doc.text("Jacobi · Pricing Topology Report", M, 54);
+        doc.text(`${pn} / ${totalPages}`, W - M, 54, { align: "right" });
         doc.line(M, H - 50, W - M, H - 50);
-
-        // Footer text
-        doc.setFont("helvetica", "normal").setFontSize(7);
-        setText(C.text3);
-        doc.text(
-          "24-agent adversarial pricing probe",
-          M, H - 32,
-        );
-        doc.text(
-          `Page ${pageNum} of 2  ·  jacobi.report/${sessionShort}`,
-          W - M, H - 32, { align: "right" },
-        );
+        doc.setFont("times", "italic").setFontSize(8); setText(GRAY);
+        doc.text("Session " + sessionShort + " · " + dateLine, M, H - 34);
+        doc.text("Confidential", W - M, H - 34, { align: "right" });
       };
 
-      /* ═══════════════════════════════════════════════════════════
-       * PAGE 1 — VERDICT
-       * ═══════════════════════════════════════════════════════════ */
-
-      drawPageChrome(1);
-      let y = 110;
-
-      // ─── 1. Title + target ─────────────────────────────────────
-      doc.setFont("helvetica", "bold").setFontSize(22);
-      setText(C.text);
-      doc.text("Pricing topology analysis", M, y);
-      y += 26;
-
-      // Target name (italic, big)
-      if (verdict.targetName) {
-        doc.setFont("helvetica", "italic").setFontSize(13);
-        setText(C.text2);
-        const nameLines = doc.splitTextToSize(verdict.targetName, COL_W);
-        doc.text(nameLines, M, y);
-        y += nameLines.length * 16;
-      }
-
-      // Target URL (courier, smaller, muted)
-      doc.setFont("courier", "normal").setFontSize(8.5);
-      setText(C.text3);
-      const urlLines = doc.splitTextToSize(verdict.target || "—", COL_W);
-      doc.text(urlLines.slice(0, 2), M, y);
-      y += Math.min(urlLines.length, 2) * 11 + 18;
-
-      // ─── 2. Hero verdict card ─────────────────────────────────
-      // Reserved height: 200 pts. Contents:
-      //   left half: HIDDEN PREMIUM label · big $X · pct over baseline
-      //   right half: DISCRIMINATION INDEX · big N/100 · gauge bar
-      //   top of card: topology pill, centered horizontally
-      const heroH = 180;
-      setFill(C.surface);
-      setStroke(C.line2);
-      doc.setLineWidth(0.8);
-      doc.roundedRect(M, y, COL_W, heroH, 8, 8, "FD");
-
-      // Topology pill (top, centered)
-      const pillLabel = verdict.label.toUpperCase();
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      const pillTextW = doc.getTextWidth(pillLabel);
-      const pillW = pillTextW + 36;
-      const pillX = M + (COL_W - pillW) / 2;
-      const pillY = y - 11;
-      setFill(C.ink);  // outer ring (same as canvas) for "punched out" look
-      doc.roundedRect(pillX - 4, pillY - 4, pillW + 8, 30, 14, 14, "F");
-      setFill(topoColor);
-      doc.roundedRect(pillX, pillY, pillW, 22, 11, 11, "F");
-      // dot
-      setFill(C.ink);
-      doc.circle(pillX + 12, pillY + 11, 2.4, "F");
-      setText(C.ink);
-      doc.text(pillLabel, pillX + pillW / 2 + 5, pillY + 14.5, { align: "center" });
-
-      // Divider down the middle
-      setStroke(C.line);
-      doc.setLineWidth(0.5);
-      doc.line(M + COL_W / 2, y + 28, M + COL_W / 2, y + heroH - 18);
-
-      // LEFT HALF — Hidden Premium
-      const lhx = M + 28;
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.text3);
-      doc.text("HIDDEN PREMIUM", lhx, y + 54);
-
-      doc.setFont("helvetica", "bold").setFontSize(40);
-      setText(C.text);
-      const heroNum = verdict.spread > 0 ? `+$${verdict.spread}` : "$0";
-      doc.text(heroNum, lhx, y + 100);
-
-      doc.setFont("helvetica", "normal").setFontSize(9);
-      setText(C.text2);
-      doc.text(`${verdict.pct}% over baseline`, lhx, y + 122);
-
-      doc.setFont("courier", "normal").setFontSize(8);
-      setText(C.text3);
-      doc.text(
-        `${verdict.successCount}/${verdict.totalCount} IDENTITIES · ${(verdict.elapsed || 0).toFixed(1)}s`,
-        lhx, y + 144,
-      );
-
-      // RIGHT HALF — Discrimination Index
-      const rhx = M + COL_W / 2 + 28;
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.text3);
-      doc.text("DISCRIMINATION INDEX", rhx, y + 54);
-
-      doc.setFont("helvetica", "bold").setFontSize(40);
-      setText(C.text);
-      const indexStr = String(verdict.index);
-      doc.text(indexStr, rhx, y + 100);
-      // /100 suffix
-      const indexW = doc.getTextWidth(indexStr);
-      doc.setFont("helvetica", "normal").setFontSize(13);
-      setText(C.text3);
-      doc.text("/ 100", rhx + indexW + 6, y + 100);
-
-      // Gauge bar
-      const gaugeX = rhx, gaugeY = y + 122, gaugeW = COL_W / 2 - 56, gaugeH = 6;
-      setFill(C.line);
-      doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3, 3, "F");
-      const idxClamp = Math.max(0, Math.min(100, verdict.index));
-      const fillW = (idxClamp / 100) * gaugeW;
-      // 3-zone color: cobalt → amber → over
-      const s1 = Math.min(fillW, gaugeW * 0.4);
-      const s2 = Math.max(0, Math.min(fillW - gaugeW * 0.4, gaugeW * 0.3));
-      const s3 = Math.max(0, fillW - gaugeW * 0.7);
-      if (s1 > 0) { setFill(C.cobalt); doc.roundedRect(gaugeX, gaugeY, s1, gaugeH, 3, 3, "F"); }
-      if (s2 > 0) { setFill(C.amber);  doc.rect(gaugeX + gaugeW * 0.4, gaugeY, s2, gaugeH, "F"); }
-      if (s3 > 0) { setFill(C.over);   doc.rect(gaugeX + gaugeW * 0.7, gaugeY, s3, gaugeH, "F"); }
-
-      doc.setFont("courier", "normal").setFontSize(7.5);
-      setText(C.text3);
-      doc.text("FAIR", gaugeX, gaugeY + 18);
-      doc.text("HOSTILE", gaugeX + gaugeW, gaugeY + 18, { align: "right" });
-
-      y += heroH + 26;
-
-      // ─── 3. What this means — plain English ───────────────────
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.cobalt);
-      doc.text("WHAT THIS MEANS", M, y);
-      y += 16;
-
-      doc.setFont("helvetica", "normal").setFontSize(10.5);
-      setText(C.text);
-      const summary =
-        verdict.top && verdict.low && verdict.top.price !== verdict.low.price
-          ? `An identity presenting as "${agentLabelCity(verdict.top)}" was quoted $${verdict.top.price}. ` +
-            `An identity presenting as "${agentLabelCity(verdict.low)}" was quoted $${verdict.low.price} for the identical listing — ` +
-            `a $${verdict.spread} gap${verdict.dominantName ? `. The dominant signal in the data was ${verdict.dominantName}.` : "."}`
-          : verdict.label.toLowerCase() === "uniform"
-            ? `All 24 synthetic identities received the same price across the four discrimination vectors tested. ` +
-              `This is a positive finding — the listing's price does not appear to depend on the shopper's identity.`
-            : verdict.blurb;
-      const summaryLines = doc.splitTextToSize(summary, COL_W);
-      doc.text(summaryLines, M, y);
-      y += summaryLines.length * 14 + 22;
-
-      // ─── 4. Endpoint cards (TOP / LOW quote) ──────────────────
-      if (verdict.top && verdict.low) {
-        const cardW = (COL_W - 16) / 2;
-        const cardH = 84;
-
-        // TOP quote (red)
-        setFill(C.surface);
-        setStroke(C.over);
-        doc.setLineWidth(0.8);
-        doc.roundedRect(M, y, cardW, cardH, 6, 6, "FD");
-        // Cobalt-bar stripe top
-        setFill(C.over);
-        doc.rect(M, y, cardW, 2, "F");
-        doc.setFont("helvetica", "bold").setFontSize(7.5);
-        setText(C.over);
-        doc.text("TOP QUOTE", M + 14, y + 18);
-        doc.setFont("helvetica", "bold").setFontSize(24);
-        setText(C.text);
-        doc.text(`$${verdict.top.price}`, M + 14, y + 46);
-        doc.setFont("helvetica", "normal").setFontSize(8.5);
-        setText(C.text2);
-        const topName = doc.splitTextToSize(agentLabelCity(verdict.top), cardW - 28);
-        doc.text(topName.slice(0, 2), M + 14, y + 64);
-
-        // LOW quote (green)
-        const lowX = M + cardW + 16;
-        setFill(C.surface);
-        setStroke(C.good);
-        doc.roundedRect(lowX, y, cardW, cardH, 6, 6, "FD");
-        setFill(C.good);
-        doc.rect(lowX, y, cardW, 2, "F");
-        doc.setFont("helvetica", "bold").setFontSize(7.5);
-        setText(C.good);
-        doc.text("LOW QUOTE", lowX + 14, y + 18);
-        doc.setFont("helvetica", "bold").setFontSize(24);
-        setText(C.text);
-        doc.text(`$${verdict.low.price}`, lowX + 14, y + 46);
-        doc.setFont("helvetica", "normal").setFontSize(8.5);
-        setText(C.text2);
-        const lowName = doc.splitTextToSize(agentLabelCity(verdict.low), cardW - 28);
-        doc.text(lowName.slice(0, 2), lowX + 14, y + 64);
-
-        y += cardH + 26;
-      }
-
-      // ─── 5. Driver chart — what moved the price ───────────────
-      if (topVectors.length > 0) {
-        doc.setFont("helvetica", "bold").setFontSize(8);
-        setText(C.cobalt);
-        doc.text("WHAT MOVED THE PRICE", M, y);
-        y += 18;
-
-        const labelW = 130;
-        const valueW = 50;
-        const barX = M + labelW + 10;
-        const barAvailW = COL_W - labelW - valueW - 20;
-        const tvMax = Math.max(1, ...topVectors.map(v => v.pct));
-
-        topVectors.forEach(v => {
-          // Label
-          doc.setFont("helvetica", "normal").setFontSize(10);
-          setText(C.text);
-          doc.text(v.info.label, M, y + 4);
-
-          // Background track
-          setFill(C.line);
-          doc.roundedRect(barX, y - 2, barAvailW, 8, 4, 4, "F");
-
-          // Fill (cobalt for significant, lighter line for non-significant)
-          if (v.significant) {
-            const w = Math.max(2, (v.pct / tvMax) * barAvailW);
-            setFill(C.cobalt);
-            doc.roundedRect(barX, y - 2, w, 8, 4, 4, "F");
-          }
-
-          // Value (right-aligned)
-          doc.setFont("courier", "bold").setFontSize(10);
-          setText(v.significant ? C.text : C.text3);
-          const valStr = v.significant ? `${v.pct}%` : "n/s";
-          doc.text(valStr, W - M, y + 4, { align: "right" });
-
-          y += 22;
-        });
-      }
-
-      /* ═══════════════════════════════════════════════════════════
-       * PAGE 2 — METHOD + AGENT DATA
-       * ═══════════════════════════════════════════════════════════ */
-      doc.addPage();
-      drawPageChrome(2);
-      y = 110;
-
-      // ─── Page 2 title ─────────────────────────────────────────
-      doc.setFont("helvetica", "bold").setFontSize(22);
-      setText(C.text);
-      doc.text("Methodology & raw data", M, y);
-      y += 32;
-
-      // ─── 1. Method panel ──────────────────────────────────────
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.cobalt);
-      doc.text("METHOD", M, y);
-      y += 16;
-
-      const methodPoints: [string, string][] = [
-        ["24 synthetic identities",
-         "8 datacenter + 8 residential + 8 mobile network tiers, dispatched in three waves over a 30-second window."],
-        ["Four discrimination vectors",
-         "Location (IP geo), device (user-agent + fingerprint), cookie profile (session history), referrer (origin)."],
-        ["One variable at a time",
-         "Identities are paired so each pair differs on exactly one vector. Confounders are held constant."],
-        ["Welch's t-test per vector",
-         "Bot-detected and failed responses are excluded. The remaining prices feed an unequal-variance t-test; an effect is reported when |t| > 2.0."],
-      ];
-
-      methodPoints.forEach(([heading, body]) => {
-        doc.setFont("helvetica", "bold").setFontSize(10);
-        setText(C.text);
-        doc.text("•", M, y);
-        doc.text(heading, M + 12, y);
-        y += 14;
-        doc.setFont("helvetica", "normal").setFontSize(9);
-        setText(C.text2);
-        const lines = doc.splitTextToSize(body, COL_W - 12);
-        doc.text(lines, M + 12, y);
-        y += lines.length * 12 + 10;
-      });
-
-      y += 10;
-
-      // ─── 2. Distribution + table header in one band ───────────
-      // (Stat cards were eating 78pt of vertical space, pushing the
-      // 24-row table into the footer. Collapsed to a single inline
-      // summary line so all 24 rows fit cleanly above the footer.)
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.cobalt);
-      doc.text("DISTRIBUTION", M, y);
-      doc.setFont("courier", "normal").setFontSize(9);
-      setText(C.text);
-      const distStr = [
-        verdict.baseline != null ? `BASELINE $${Math.round(verdict.baseline)}` : null,
-        verdict.mean     != null ? `MEAN $${Math.round(verdict.mean)}` : null,
-        verdict.range    ? `RANGE $${Math.round(verdict.range[0])}–$${Math.round(verdict.range[1])}` : null,
-        verdict.spread > 0 ? `SPREAD $${verdict.spread}` : "SPREAD $0",
-      ].filter(Boolean).join("   ·   ");
-      doc.text(distStr, M + 90, y);
-      y += 20;
-
-      // ─── 3. All 24 agents table ───────────────────────────────
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      setText(C.cobalt);
-      doc.text("ALL 24 IDENTITIES", M, y);
-      y += 14;
-
-      // Column widths sum to COL_W = 495
-      const col = { num: 32, profile: 245, network: 80, status: 60, price: 78 };
-      const rowH = 14;   // tightened from 16 so 24 rows fit above footer
-
-      // Header row
-      setFill(C.surface2);
-      doc.roundedRect(M, y, COL_W, rowH + 4, 3, 3, "F");
-      doc.setFont("helvetica", "bold").setFontSize(7);
-      setText(C.text3);
-      let cx = M + 10;
-      doc.text("#", cx, y + 12); cx += col.num;
-      doc.text("PROFILE", cx, y + 12); cx += col.profile;
-      doc.text("NETWORK", cx, y + 12); cx += col.network;
-      doc.text("STATUS", cx, y + 12); cx += col.status;
-      doc.text("PRICE", W - M - 10, y + 12, { align: "right" });
-      y += rowH + 6;
-
-      const sortedAgents = report.agents
-        .slice()
-        .sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
-
-      const validPrices = sortedAgents.map(a => a.price).filter((p): p is number => p != null);
-      const hi = validPrices.length ? Math.max(...validPrices) : null;
-      const lo = validPrices.length ? Math.min(...validPrices) : null;
-
-      sortedAgents.forEach((a, idx) => {
-        // Alternating row tint
-        if (idx % 2 === 0) {
-          setFill(C.surface);
-          doc.rect(M, y - 4, COL_W, rowH, "F");
-        }
-
-        const tier = a.network_tier ?? 0;
-        const net = ["Datacenter", "Residential", "Mobile"][tier] || "—";
-        const profile = agentLabelCity(a);
-        const profileShort = profile.length > 40 ? profile.slice(0, 38) + "…" : profile;
-
-        // # column
-        doc.setFont("courier", "normal").setFontSize(8);
-        setText(C.text3);
-        cx = M + 10;
-        doc.text(a.agent_id.replace("AGENT_", "#"), cx, y + 8);
-        cx += col.num;
-
-        // Profile
-        doc.setFont("helvetica", "normal").setFontSize(8.5);
-        setText(C.text2);
-        doc.text(profileShort, cx, y + 8);
-        cx += col.profile;
-
-        // Network
-        doc.setFont("helvetica", "normal").setFontSize(8);
-        setText(C.text3);
-        doc.text(net, cx, y + 8);
-        cx += col.network;
-
-        // Status (color-coded)
-        const statusColor =
-          a.status === "success" ? C.good :
-          a.status === "detected" ? C.amber : C.text3;
-        doc.setFont("helvetica", "bold").setFontSize(7.5);
-        setText(statusColor);
-        doc.text((a.status || "—").toUpperCase(), cx, y + 8);
-
-        // Price (right-aligned, color-coded high/low)
-        const priceColor =
-          a.price == null ? C.text3 :
-          (hi !== null && a.price === hi) ? C.over :
-          (lo !== null && a.price === lo) ? C.good : C.text;
-        doc.setFont("courier", "bold").setFontSize(9);
-        setText(priceColor);
-        doc.text(
-          a.price != null ? `$${a.price}` : "—",
-          W - M - 10, y + 8, { align: "right" },
-        );
-
-        y += rowH;
-      });
-
-      // ══════════════════════════════════════════════════
-      // PAGE 2 CONTINUED — EXECUTIVE SUMMARY
-      // ══════════════════════════════════════════════════
-      y += 24;
-      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
-      
-      setFill(C.surface); setStroke(C.line);
-      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
-      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
-      doc.text("EXECUTIVE SUMMARY", M + 10, y + 12.5);
-      y += 28;
-
+      const agents = (report as any)?.agents || [];
+      const pricesArr = agents.filter((a: any) => a.price != null).map((a: any) => a.price as number);
+      const sortedPrices = [...pricesArr].sort((a: any, b: any) => a - b);
+      const hi = sortedPrices.length > 0 ? sortedPrices[sortedPrices.length - 1] : null;
+      const lo = sortedPrices.length > 0 ? sortedPrices[0] : null;
+      const spread = verdict.spread || 0;
       const realProbes = agents.filter((a: any) => (a.response_time_ms || 0) > 0).length;
       const filled = agents.length - realProbes;
-      const succ2 = report?.successful_agents || 0;
-      const tot2 = report?.total_agents || 24;
-      const conf = tot2 > 0 ? Math.round((succ2 / tot2) * 100) : 0;
+      const succ = report?.successful_agents || 0;
+      const tot = report?.total_agents || 24;
+      const confidence = tot > 0 ? Math.round((succ / tot) * 100) : 0;
       const sigG = (report?.gradients || []).filter((g: any) => g.significant).sort((a: any, b: any) => Math.abs(b.delta) - Math.abs(a.delta));
       const sevRaw = (report as any)?.discrimination_score || 0;
       const sev = sevRaw > 80 ? "Critical" : sevRaw > 50 ? "High" : sevRaw > 20 ? "Moderate" : "Low";
 
-      const summaryRows: [string, string][] = [
-        ["Target URL", (verdict.target || "").substring(0, 90)],
-        ["Timestamp", dateLine],
-        ["Real probes run", String(realProbes)],
-      ];
-      if (filled > 0) summaryRows.push(["Agents skipped", `${filled} (exact-uniform gate passed)`]);
-      summaryRows.push(
-        ["Highest price", hi != null ? `$${hi.toLocaleString()}` : "—"],
-        ["Lowest price", lo != null ? `$${lo.toLocaleString()}` : "—"],
-        ["Max spread", spread > 0 ? `$${spread.toLocaleString()} (${verdict.pct}%)` : "$0"],
-        ["Topology verdict", verdict.label.toUpperCase()],
-        ["Confidence score", `${conf}%`],
-        ["Suspected driver", sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None detected"],
+      drawPage(1); let y = 84;
+
+      // Title
+      doc.setFont("times", "bold").setFontSize(22); setText(BLACK);
+      doc.text("Pricing Topology Audit Report", M, y); y += 30;
+
+      // Target name
+      doc.setFont("times", "italic").setFontSize(12); setText(DARK);
+      const nameLines = doc.splitTextToSize(verdict.targetName || "Untitled Probe", CW);
+      doc.text(nameLines, M, y); y += nameLines.length * 15 + 6;
+
+      // Target URL
+      doc.setFont("courier", "normal").setFontSize(8.5); setText(GRAY);
+      const urlLines = doc.splitTextToSize(verdict.target || "—", CW);
+      doc.text(urlLines.slice(0, 2), M, y); y += Math.min(urlLines.length, 2) * 11 + 24;
+
+      setStroke(LIGHT); doc.line(M, y, W - M, y); y += 16;
+
+      // Section 1: Abstract
+      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
+      doc.text("1. Abstract", M, y); y += 16;
+      const abstractText = "This report presents the results of an automated pricing discrimination audit. Twenty-four synthetic buyer identities were deployed against the target URL, varying across location, device type, cookie profile, referrer source, and browser language. Prices were extracted from raw HTML responses via site-specific selectors and normalized to USD. The audit classified the observed pricing strategy as " + topoLabel + " with a discrimination score of " + sevRaw.toFixed(0) + "/100.";
+      doc.setFont("times", "normal").setFontSize(10); setText(DARK);
+      const absLines = doc.splitTextToSize(abstractText, CW);
+      doc.text(absLines, M, y); y += absLines.length * 13 + 20;
+
+      // Section 2: Key Findings
+      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
+      doc.text("2. Key Findings", M, y); y += 18;
+      const findings: [string, string, readonly [number, number, number]?][] = [
+        ["Verdict", topoLabel, topoColor],
+        ["Baseline Price", hi != null ? "$" + hi.toLocaleString() : "N/A"],
+        ["Price Spread", spread > 0 ? "$" + spread.toLocaleString() + " (" + verdict.pct + "%)" : "$0.00 (0.0%)"],
+        ["Real Probes Run", String(realProbes)],
+        ["Confidence", confidence + "%"],
+        ["Suspected Driver", sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None detected"],
         ["Severity", sev],
-      );
+      ];
+      if (filled > 0) findings.splice(4, 0, ["Agents Skipped", filled + " (uniform-gate passed)"]);
+      findings.forEach(([label, value, color]) => {
+        doc.setFont("times", "normal").setFontSize(10); setText(DARK);
+        doc.text(label, M, y);
+        doc.setFont("times", "bold").setFontSize(10); setText(color || BLACK);
+        doc.text(value, M + 140, y); y += 16;
+      }); y += 12;
 
-      const rowH2 = 16;
-      summaryRows.forEach(([k, v]) => {
-        if (y > H - 60) { doc.addPage(); drawPageChrome(2); y = 100; }
-        doc.setFont("helvetica", "normal").setFontSize(7.5); setText(C.text3);
-        doc.text(k, M + 4, y + 5);
-        doc.setFont("courier", "normal").setFontSize(7.5); setText(C.text);
-        doc.text(v, M + 150, y + 5);
-        setStroke(C.line); doc.setLineWidth(0.3);
-        doc.line(M, y + rowH2 - 2, W - M, y + rowH2 - 2);
-        y += rowH2;
-      });
-
-      // ══════════════════════════════════════════════════
-      // EVIDENCE TABLE
-      // ══════════════════════════════════════════════════
-      y += 18;
-      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
-      
-      setFill(C.surface); setStroke(C.line);
-      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
-      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
-      doc.text("EVIDENCE APPENDIX", M + 10, y + 12.5);
-      y += 28;
-
-      const evAgents = agents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null);
-      if (evAgents.length > 0) {
-        // Table header
-        const cols = [
-          { label: "AGENT", w: 50 }, { label: "REGION", w: 55 }, { label: "DEVICE", w: 55 },
-          { label: "PRICE", w: 55 }, { label: "RAW TEXT", w: 105 }, { label: "METHOD", w: 80 },
-        ];
-        let cx2 = M;
-        doc.setFont("helvetica", "bold").setFontSize(6.5); setText(C.text3);
-        cols.forEach(c => {
-          doc.text(c.label, cx2 + 3, y + 6);
-          cx2 += c.w;
-        });
-        y += 12;
-        setStroke(C.line); doc.setLineWidth(0.5);
-        doc.line(M, y, W - M, y);
-        y += 6;
-
-        evAgents.slice(0, 20).forEach((a: any) => {
-          if (y > H - 60) { doc.addPage(); drawPageChrome(2); y = 100; }
-          const ev = a.evidence || {};
-          const vars = a.variables || {};
-          const vals = [
-            a.agent_id || "—",
-            vars.location || "—",
-            vars.device || "—",
-            a.price != null ? `$${a.price}` : "—",
-            (ev.price_raw_text || "N/A").substring(0, 18),
-            ev.extraction_method || "N/A",
-          ];
-          let cx3 = M;
-          doc.setFont("courier", "normal").setFontSize(6.5);
-          vals.forEach((v, i) => {
-            setText(i === 3 && a.price != null ? C.good : C.text2);
-            doc.text(v.substring(0, cols[i].w / 5.5), cx3 + 2, y + 6);
-            cx3 += cols[i].w;
-          });
-          y += 12;
-        });
-
-        // Evidence stats
-        y += 4;
-        doc.setFont("helvetica", "normal").setFontSize(7); setText(C.text3);
-        doc.text(`${evAgents.length} of ${agents.length} agents captured evidence · ${realProbes} real probes · ${filled} skipped`, M, y + 5);
+      // Section 3: Variable Impact
+      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
+      doc.text("3. Variable Impact Analysis", M, y); y += 18;
+      const gradients = report?.gradients || [];
+      if (gradients.length > 0) {
+        doc.setFont("times", "bold").setFontSize(9); setText(GRAY);
+        const gh = ["Factor", "High State", "Low State", "Mean (High)", "Mean (Low)", "Delta", "Sig"];
+        const gw = [90, 100, 100, 70, 70, 55, 35];
+        let cx = M; gh.forEach((h, i) => { doc.text(h, cx, y); cx += gw[i]; }); y += 12;
+        setStroke(LIGHT); doc.line(M, y, W - M, y); y += 8;
+        gradients.forEach((g: any) => {
+          doc.setFont("courier", "normal").setFontSize(8);
+          setText(g.significant ? BLACK : GRAY);
+          const vals = [g.variable_name?.replace(/_/g, " ") || "—", g.state_high || "—", g.state_low || "—", "$" + ((g.mean_price_high || 0) as number).toFixed(0), "$" + ((g.mean_price_low || 0) as number).toFixed(0), "$" + ((g.delta || 0) as number).toFixed(0), g.significant ? "Yes" : "No"];
+          cx = M; vals.forEach((v, i) => { doc.text(v.substring(0, 14), cx, y); cx += gw[i]; }); y += 13;
+        }); y += 8;
       } else {
-        doc.setFont("helvetica", "normal").setFontSize(8); setText(C.text3);
-        doc.text("No evidence data available. Evidence requires live BrightData probes.", M, y + 5);
+        doc.setFont("times", "italic").setFontSize(10); setText(GRAY);
+        doc.text("No variable-level gradients computed for this probe.", M, y); y += 14;
       }
 
-      // ══════════════════════════════════════════════════
-      // METHODOLOGY
-      // ══════════════════════════════════════════════════
-      y += 24;
-      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
-      
-      setFill(C.surface); setStroke(C.line);
-      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
-      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
-      doc.text("METHODOLOGY", M + 10, y + 12.5);
-      y += 24;
+      if (y > H - 280) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
 
-      const methodLines = [
-        "Jacobi runs controlled buyer-context probes against target URLs. Each probe deploys synthetic shopper identities — varying location, device, cookie profile, referrer, and browser language — to detect price discrimination on e-commerce and travel sites.",
+      // Section 4: Evidence
+      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
+      doc.text("4. Evidence Appendix", M, y); y += 18;
+      const evAgents = agents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null);
+      if (evAgents.length > 0) {
+        doc.setFont("times", "bold").setFontSize(8); setText(GRAY);
+        const eh = ["Agent", "Location", "Device", "Price", "Raw Price Text", "Method"];
+        const ew = [48, 60, 60, 50, 120, 75];
+        cx = M; eh.forEach((h, i) => { doc.text(h, cx, y); cx += ew[i]; }); y += 10;
+        setStroke(LIGHT); doc.line(M, y, W - M, y); y += 6;
+        evAgents.slice(0, 25).forEach((a: any) => {
+          if (y > H - 60) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
+          const ev = a.evidence || {}; const vars = a.variables || {};
+          doc.setFont("courier", "normal").setFontSize(7); setText(DARK);
+          const evals = [a.agent_id || "—", (vars.location || "—").substring(0, 12), (vars.device || "—").substring(0, 12), a.price != null ? "$" + a.price : "—", (ev.price_raw_text || "N/A").substring(0, 22), ev.extraction_method || "N/A"];
+          cx = M; evals.forEach((v, i) => { doc.text(v.substring(0, 20), cx, y); cx += ew[i]; }); y += 11;
+        }); y += 4;
+        doc.setFont("times", "italic").setFontSize(8); setText(GRAY);
+        doc.text(evAgents.length + " of " + agents.length + " agents captured evidence · " + realProbes + " real probes", M, y);
+      } else {
+        doc.setFont("times", "italic").setFontSize(10); setText(GRAY);
+        doc.text("No evidence data available. Evidence capture requires live BrightData requests.", M, y);
+      }
+      y += 20;
+
+      // Section 5: Methodology
+      if (y > H - 250) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
+      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
+      doc.text("5. Methodology", M, y); y += 18;
+      const methodText = [
+        "Jacobi deploys controlled buyer-context probes against target URLs. Each probe identity varies location (via BrightData proxy geolocation), device type (via User-Agent header), cookie profile (via Cookie header), referrer source (via Referer header), and browser language (via Accept-Language header). All requests are real HTTP transactions routed through BrightData's global proxy network.",
         "",
-        "HOW IT WORKS: Jacobi sends real HTTP requests through BrightData's global proxy network. Each identity is routed through a different IP and geographic region. The target HTML is parsed using site-specific selectors (e.g., Amazon's corePriceDisplay, Booking.com's data-testid elements). Prices are normalized to USD for comparison.",
+        "Price extraction uses site-specific HTML selectors: Amazon container IDs, Booking.com data-testid attributes, and airline fare-price elements. Fallback extraction uses JSON-LD structured data, OpenGraph meta tags, and regex pattern matching. All prices are normalized to USD using published exchange rates.",
         "",
-        "UNIFORM-GATE OPTIMIZATION: If the first 10 real probes return the exact same price (to the cent), remaining agents are skipped. This saves time and BrightData credits without sacrificing accuracy. If any agent sees a different price, the full 24-agent audit runs.",
+        "Uniform-gate optimization: When the first 10 real probes return the exact same price (to the cent), the remaining 14 agents are not fired. This saves BrightData credits and probe time without sacrificing accuracy. If any agent observes a different price, the full 24-agent audit executes.",
         "",
-        "STATISTICAL ANALYSIS: Prices are grouped by variable and compared using Welch's t-test. Variables with |t| > 2.0 are flagged as significant. The Discrimination Index measures total USD spread from significant variables.",
+        "Statistical analysis: Prices are grouped by discrimination variable and compared using Welch's t-test (unequal variance). Variables with |t| > 2.0 are flagged as statistically significant. The Discrimination Index measures the total USD spread attributable to significant variables. Topology classification follows a four-tier system: Uniform, Selective, Progressive, Aggressive.",
         "",
-        "EVIDENCE INTEGRITY: Every real probe captures raw HTML excerpt, exact price text, currency, and extraction method for independent verification.",
+        "Evidence integrity: Every real probe captures the first 5 KB of raw response HTML, the exact price text as rendered on the target page, the detected currency, and the extraction method used. This metadata is stored with the probe result for independent verification.",
       ];
-
-      doc.setFont("helvetica", "normal").setFontSize(7.5); setText(C.text2);
-      methodLines.forEach(line => {
-        if (y > H - 40) { doc.addPage(); drawPageChrome(2); y = 100; }
+      doc.setFont("times", "normal").setFontSize(9); setText(DARK);
+      methodText.forEach(line => {
+        if (y > H - 50) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
         if (line === "") { y += 6; return; }
-        const wrapped = doc.splitTextToSize(line, COL_W - 8);
-        doc.text(wrapped, M + 4, y + 5);
-        y += wrapped.length * 10 + 2;
+        const wrapped = doc.splitTextToSize(line, CW);
+        doc.text(wrapped, M, y); y += wrapped.length * 11 + 3;
       });
 
+      doc.save("jacobi-report-" + sessionShort + ".pdf");
       doc.save(`jacobi-report-${sessionShort}.pdf`);
     } catch (e) {
       console.error("PDF generation failed", e);

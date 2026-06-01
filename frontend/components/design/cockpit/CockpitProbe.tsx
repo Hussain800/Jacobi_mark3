@@ -623,182 +623,32 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     if (!verdict || !report) return;
     setPdfBusy(true);
     try {
-      const mod = await import("jspdf");
-      const jsPDF = mod.jsPDF || (mod as { default: typeof mod.jsPDF }).default;
-      const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const W = doc.internal.pageSize.getWidth();
-      const H = doc.internal.pageSize.getHeight();
-      const M = 56;
-      const CW = W - 2 * M;
+      const sb = createClient();
+      const { data: { session } } = await sb.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = "Bearer " + token;
 
-      const BLACK: number[] = [30, 30, 30];
-      const DARK: number[] = [60, 60, 60];
-      const GRAY: number[] = [130, 130, 130];
-      const LIGHT: number[] = [200, 200, 200];
-      const ACCENT: number[] = [0, 100, 0];
-      const RED_A: number[] = [180, 40, 40];
+      const sessionId = (report as any)?.session_id || verdict.session;
+      const r = await fetch("/api/export/" + sessionId + "/pdf", { headers });
 
-      const setFill = (c: number[]) => doc.setFillColor(c[0], c[1], c[2]);
-      const setText = (c: number[]) => doc.setTextColor(c[0], c[1], c[2]);
-      const setStroke = (c: number[]) => doc.setDrawColor(c[0], c[1], c[2]);
+      if (!r.ok) throw new Error("Export failed: " + r.status);
 
-      const dateLine = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-      const sessionShort = (verdict.session || "—").slice(0, 8);
-      const topoLabel = verdict.label.toUpperCase();
-      const topoColor = topoLabel === "UNIFORM" ? ACCENT : topoLabel === "AGGRESSIVE" ? RED_A : DARK;
-
-      let pageNum = 0; let totalPages = 2;
-      const newPage = () => { pageNum++; doc.addPage(); };
-      const drawPage = (pn: number) => {
-        setStroke(LIGHT); doc.setLineWidth(0.5); doc.line(M, 62, W - M, 62);
-        doc.setFont("times", "normal").setFontSize(9); setText(GRAY);
-        doc.text("Jacobi · Pricing Topology Report", M, 54);
-        doc.text(`${pn} / ${totalPages}`, W - M, 54, { align: "right" });
-        doc.line(M, H - 50, W - M, H - 50);
-        doc.setFont("times", "italic").setFontSize(8); setText(GRAY);
-        doc.text("Session " + sessionShort + " · " + dateLine, M, H - 34);
-        doc.text("Confidential", W - M, H - 34, { align: "right" });
-      };
-
-      const agents = (report as any)?.agents || [];
-      const pricesArr = agents.filter((a: any) => a.price != null).map((a: any) => a.price as number);
-      const sortedPrices = [...pricesArr].sort((a: any, b: any) => a - b);
-      const hi = sortedPrices.length > 0 ? sortedPrices[sortedPrices.length - 1] : null;
-      const lo = sortedPrices.length > 0 ? sortedPrices[0] : null;
-      const spread = verdict.spread || 0;
-      const realProbes = agents.filter((a: any) => (a.response_time_ms || 0) > 0).length;
-      const filled = agents.length - realProbes;
-      const succ = report?.successful_agents || 0;
-      const tot = report?.total_agents || 24;
-      const confidence = tot > 0 ? Math.round((succ / tot) * 100) : 0;
-      const sigG = (report?.gradients || []).filter((g: any) => g.significant).sort((a: any, b: any) => Math.abs(b.delta) - Math.abs(a.delta));
-      const sevRaw = (report as any)?.discrimination_score || 0;
-      const sev = sevRaw > 80 ? "Critical" : sevRaw > 50 ? "High" : sevRaw > 20 ? "Moderate" : "Low";
-
-      drawPage(1); let y = 84;
-
-      // Title
-      doc.setFont("times", "bold").setFontSize(22); setText(BLACK);
-      doc.text("Pricing Topology Audit Report", M, y); y += 30;
-
-      // Target name
-      doc.setFont("times", "italic").setFontSize(12); setText(DARK);
-      const nameLines = doc.splitTextToSize(verdict.targetName || "Untitled Probe", CW);
-      doc.text(nameLines, M, y); y += nameLines.length * 15 + 6;
-
-      // Target URL
-      doc.setFont("courier", "normal").setFontSize(8.5); setText(GRAY);
-      const urlLines = doc.splitTextToSize(verdict.target || "—", CW);
-      doc.text(urlLines.slice(0, 2), M, y); y += Math.min(urlLines.length, 2) * 11 + 24;
-
-      setStroke(LIGHT); doc.line(M, y, W - M, y); y += 16;
-
-      // Section 1: Abstract
-      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
-      doc.text("1. Abstract", M, y); y += 16;
-      const abstractText = "This report presents the results of an automated pricing discrimination audit. Twenty-four synthetic buyer identities were deployed against the target URL, varying across location, device type, cookie profile, referrer source, and browser language. Prices were extracted from raw HTML responses via site-specific selectors and normalized to USD. The audit classified the observed pricing strategy as " + topoLabel + " with a discrimination score of " + sevRaw.toFixed(0) + "/100.";
-      doc.setFont("times", "normal").setFontSize(10); setText(DARK);
-      const absLines = doc.splitTextToSize(abstractText, CW);
-      doc.text(absLines, M, y); y += absLines.length * 13 + 20;
-
-      // Section 2: Key Findings
-      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
-      doc.text("2. Key Findings", M, y); y += 18;
-      const findings: Array<[string, string, number[]?]> = [
-        ["Verdict", topoLabel, topoColor],
-        ["Baseline Price", hi != null ? "$" + hi.toLocaleString() : "N/A"],
-        ["Price Spread", spread > 0 ? "$" + spread.toLocaleString() + " (" + verdict.pct + "%)" : "$0.00 (0.0%)"],
-        ["Real Probes Run", String(realProbes)],
-        ["Confidence", confidence + "%"],
-        ["Suspected Driver", sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None detected"],
-        ["Severity", sev],
-      ];
-      if (filled > 0) findings.splice(4, 0, ["Agents Skipped", filled + " (uniform-gate passed)"]);
-      findings.forEach(([label, value, color]) => {
-        doc.setFont("times", "normal").setFontSize(10); setText(DARK);
-        doc.text(label, M, y);
-        doc.setFont("times", "bold").setFontSize(10); setText(color || BLACK);
-        doc.text(value, M + 140, y); y += 16;
-      }); y += 12;
-
-      // Section 3: Variable Impact
-      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
-      doc.text("3. Variable Impact Analysis", M, y); y += 18;
-      const gradients = report?.gradients || [];
-      if (gradients.length > 0) {
-        doc.setFont("times", "bold").setFontSize(9); setText(GRAY);
-        const gh = ["Factor", "High State", "Low State", "Mean (High)", "Mean (Low)", "Delta", "Sig"];
-        const gw = [90, 100, 100, 70, 70, 55, 35];
-        let cx = M; gh.forEach((h, i) => { doc.text(h, cx, y); cx += gw[i]; }); y += 12;
-        setStroke(LIGHT); doc.line(M, y, W - M, y); y += 8;
-        gradients.forEach((g: any) => {
-          doc.setFont("courier", "normal").setFontSize(8);
-          setText(g.significant ? BLACK : GRAY);
-          const vals = [g.variable_name?.replace(/_/g, " ") || "—", g.state_high || "—", g.state_low || "—", "$" + ((g.mean_price_high || 0) as number).toFixed(0), "$" + ((g.mean_price_low || 0) as number).toFixed(0), "$" + ((g.delta || 0) as number).toFixed(0), g.significant ? "Yes" : "No"];
-          cx = M; vals.forEach((v, i) => { doc.text(v.substring(0, 14), cx, y); cx += gw[i]; }); y += 13;
-        }); y += 8;
-      } else {
-        doc.setFont("times", "italic").setFontSize(10); setText(GRAY);
-        doc.text("No variable-level gradients computed for this probe.", M, y); y += 14;
-      }
-
-      if (y > H - 280) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
-
-      // Section 4: Evidence
-      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
-      doc.text("4. Evidence Appendix", M, y); y += 18;
-      const evAgents = agents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null);
-      if (evAgents.length > 0) {
-        doc.setFont("times", "bold").setFontSize(8); setText(GRAY);
-        const eh = ["Agent", "Location", "Device", "Price", "Raw Price Text", "Method"];
-        const ew = [48, 60, 60, 50, 120, 75];
-        cx = M; eh.forEach((h, i) => { doc.text(h, cx, y); cx += ew[i]; }); y += 10;
-        setStroke(LIGHT); doc.line(M, y, W - M, y); y += 6;
-        evAgents.slice(0, 25).forEach((a: any) => {
-          if (y > H - 60) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
-          const ev = a.evidence || {}; const vars = a.variables || {};
-          doc.setFont("courier", "normal").setFontSize(7); setText(DARK);
-          const evals = [a.agent_id || "—", (vars.location || "—").substring(0, 12), (vars.device || "—").substring(0, 12), a.price != null ? "$" + a.price : "—", (ev.price_raw_text || "N/A").substring(0, 22), ev.extraction_method || "N/A"];
-          cx = M; evals.forEach((v, i) => { doc.text(v.substring(0, 20), cx, y); cx += ew[i]; }); y += 11;
-        }); y += 4;
-        doc.setFont("times", "italic").setFontSize(8); setText(GRAY);
-        doc.text(evAgents.length + " of " + agents.length + " agents captured evidence · " + realProbes + " real probes", M, y);
-      } else {
-        doc.setFont("times", "italic").setFontSize(10); setText(GRAY);
-        doc.text("No evidence data available. Evidence capture requires live BrightData requests.", M, y);
-      }
-      y += 20;
-
-      // Section 5: Methodology
-      if (y > H - 250) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
-      doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
-      doc.text("5. Methodology", M, y); y += 18;
-      const methodText = [
-        "Jacobi deploys controlled buyer-context probes against target URLs. Each probe identity varies location (via BrightData proxy geolocation), device type (via User-Agent header), cookie profile (via Cookie header), referrer source (via Referer header), and browser language (via Accept-Language header). All requests are real HTTP transactions routed through BrightData's global proxy network.",
-        "",
-        "Price extraction uses site-specific HTML selectors: Amazon container IDs, Booking.com data-testid attributes, and airline fare-price elements. Fallback extraction uses JSON-LD structured data, OpenGraph meta tags, and regex pattern matching. All prices are normalized to USD using published exchange rates.",
-        "",
-        "Uniform-gate optimization: When the first 10 real probes return the exact same price (to the cent), the remaining 14 agents are not fired. This saves BrightData credits and probe time without sacrificing accuracy. If any agent observes a different price, the full 24-agent audit executes.",
-        "",
-        "Statistical analysis: Prices are grouped by discrimination variable and compared using Welch's t-test (unequal variance). Variables with |t| > 2.0 are flagged as statistically significant. The Discrimination Index measures the total USD spread attributable to significant variables. Topology classification follows a four-tier system: Uniform, Selective, Progressive, Aggressive.",
-        "",
-        "Evidence integrity: Every real probe captures the first 5 KB of raw response HTML, the exact price text as rendered on the target page, the detected currency, and the extraction method used. This metadata is stored with the probe result for independent verification.",
-      ];
-      doc.setFont("times", "normal").setFontSize(9); setText(DARK);
-      methodText.forEach(line => {
-        if (y > H - 50) { newPage(); totalPages++; drawPage(pageNum + 1); y = 84; }
-        if (line === "") { y += 6; return; }
-        const wrapped = doc.splitTextToSize(line, CW);
-        doc.text(wrapped, M, y); y += wrapped.length * 11 + 3;
-      });
-
-      doc.save("jacobi-report-" + sessionShort + ".pdf");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "jacobi-report-" + (verdict.session || "probe").slice(0, 8) + ".pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (e) {
-      console.error("PDF generation failed", e);
+      console.error("PDF export failed", e);
     } finally {
       setPdfBusy(false);
     }
-  }, [verdict, report, topVectors]);
+  }, [verdict, report]);
 
   /* ─── Render ──────────────────────────────────────────────────────── */
 

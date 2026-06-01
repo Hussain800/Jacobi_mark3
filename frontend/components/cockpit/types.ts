@@ -38,6 +38,12 @@ export interface Agent {
   native_currency?: string | null;
   normalized_price_usd?: number | null;
   inferred?: boolean;
+  // Browser-language vector (Phase 4); optional → render N/A when absent.
+  browser_language?: string | null;
+  accept_language_header?: string | null;
+  language_label?: string | null;
+  language_pair_id?: string | null;
+  language_pair_role?: string | null;
 }
 
 export interface TopologyReport {

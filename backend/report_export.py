@@ -71,6 +71,12 @@ def _sanitize_report(report: dict) -> dict:
         "normalized_currency": report.get("normalized_currency", "USD"),
         "fx_rate_used": report.get("fx_rate_used"),
         "language_observations": report.get("language_observations", []),
+        # Phase 5A honest probe accounting.
+        "configured_agents": report.get("configured_agents") or report.get("total_agents"),
+        "real_probes_executed": report.get("real_probes_executed"),
+        "skipped_inferred_agents": report.get("skipped_inferred_agents"),
+        "evidence_count": report.get("evidence_count"),
+        "audit_depth": report.get("audit_depth"),
         "gradients": report.get("gradients", []),
         "agents": [
             {
@@ -349,10 +355,19 @@ async def export_pdf(report_id: str):
     if rmax is None:
         rmax = p_max
 
-    # Probe accounting (all guarded).
+    # Probe accounting (all guarded). Prefer the session's authoritative Phase-5A
+    # counts when present; fall back to deriving them from the agent list.
     total_agents = len(agents)
-    real_probes = sum(1 for a in agents if (_num(a.get("response_time_ms")) or 0) > 0)
-    filled = max(0, total_agents - real_probes)
+    configured_agents = int(_num(data.get("configured_agents")) or total_agents or 0)
+    real_probes = (int(_num(data.get("real_probes_executed")))
+                   if data.get("real_probes_executed") is not None
+                   else sum(1 for a in agents if (_num(a.get("response_time_ms")) or 0) > 0))
+    filled = (int(_num(data.get("skipped_inferred_agents")))
+              if data.get("skipped_inferred_agents") is not None
+              else max(0, total_agents - real_probes))
+    evidence_count = (int(_num(data.get("evidence_count")))
+                      if data.get("evidence_count") is not None else None)
+    audit_depth = data.get("audit_depth")
     succ = int(_num(data.get("successful_agents")) or 0)
     tot = int(_num(data.get("total_agents")) or total_agents or 0)
     confidence = min(100, round((succ / tot) * 100)) if tot > 0 else None
@@ -561,11 +576,15 @@ async def export_pdf(report_id: str):
             ("Discrimination score",
              (f"{score:.0f} / 100" if score is not None else "n/a")),
             ("Severity", _esc(sev_label)),
-            ("Real probes run", f"{real_probes} of {total_agents or tot}"),
+            ("Configured agents", str(configured_agents)
+             + (f" ({_esc(audit_depth)})" if audit_depth else "")),
+            ("Real probes executed", f"{real_probes} of {configured_agents}"),
         ]
         if filled > 0:
-            rows.append(("Identities skipped",
+            rows.append(("Agents skipped (inferred)",
                          f"{filled} (exact-uniform gate)"))
+        if evidence_count is not None:
+            rows.append(("Evidence captured", f"{evidence_count} agents"))
         if confidence is not None:
             rows.append(("Confidence", f"{confidence}%"))
         rows.append(("Suspected driver",

@@ -1288,7 +1288,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                       const realProbes = returnedAgents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null).length;
                       const filled = returnedAgents.length - realProbes;
                       if (filled > 0) {
-                        return <>{realProbes} real probes · {filled} confirmed uniform (no variance detected)</>;
+                        return <>{realProbes} real probes · exact-uniform gate passed · {filled} agents skipped</>;
                       }
                       return <>{realProbes} of {returnedAgents.length} agents captured evidence</>;
                     })()}

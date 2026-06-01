@@ -86,9 +86,15 @@ def _sanitize_report(report: dict) -> dict:
     }
 
 
+# Session ids the frontend uses for the curated demo / case-study reports.
+# All resolve to the static DEMO_RESULT so "Download PDF" works on case studies
+# and investor demos (which never hit the live engine or persist a row).
+_DEMO_IDS = {"demo", "demo_session_static", "demo_analyzed"}
+
+
 async def _get_report(report_id: str) -> dict:
     """Get report from session store, Supabase, or demo data."""
-    if report_id == "demo_session_static":
+    if report_id in _DEMO_IDS or report_id.startswith("demo"):
         from main import DEMO_RESULT
         return DEMO_RESULT
     from main import SESSION_STORE
@@ -100,6 +106,12 @@ async def _get_report(report_id: str) -> dict:
         except Exception:
             pass
     if not report:
+        # Last-resort: a fallback_* id (Next.js proxy fallback) or any unknown id
+        # still gets a usable PDF from the demo result rather than a dead 404 in
+        # the user's face. Real probes always resolve above.
+        if report_id.startswith("fallback") or report_id.startswith("demo"):
+            from main import DEMO_RESULT
+            return DEMO_RESULT
         raise HTTPException(status_code=404, detail="Report not found")
     return report
 
@@ -247,7 +259,10 @@ async def export_pdf(report_id: str):
                   leftIndent=20, rightIndent=20)
 
     sSection = S("Section", fontName="Times-Bold", fontSize=12, leading=15,
-                 textColor=INK, spaceBefore=14, spaceAfter=5)
+                 textColor=INK, spaceBefore=14, spaceAfter=5,
+                 # Never leave a section heading stranded at the bottom of a page;
+                 # it is pulled to the next page with its following content.
+                 keepWithNext=True)
     sBody = S("Body", fontName="Times-Roman", fontSize=10, leading=14,
               textColor=INK, alignment=4, spaceAfter=6)
     sCaption = S("Caption", fontName="Times-Italic", fontSize=8.5, leading=11,
@@ -545,7 +560,10 @@ async def export_pdf(report_id: str):
     ]))
 
     # Figure 1 — price distribution (clean greyscale axis).
-    if (rmin is not None and rmax is not None and rmax >= rmin):
+    # Only meaningful when prices actually vary; a single uniform price collapses
+    # all ticks onto one point (the "$3,159$3,159" overlap), so we skip it and
+    # state the uniform finding in prose instead.
+    if (rmin is not None and rmax is not None and (rmax - rmin) > 0.01):
         fig = _price_axis_figure(
             CONTENT_W, rmin, rmax, bp, mean_price,
             HAIR, RULE, INK, GREY, SLATE,
@@ -558,12 +576,24 @@ async def export_pdf(report_id: str):
                 "identities. Ticks mark the minimum, maximum, baseline, and mean.",
                 sCaption),
         ]))
+    elif bp is not None:
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(
+            f"All identities that returned a price observed the same value, "
+            f"{_money(bp)}; no distribution figure is shown because the prices do "
+            f"not vary.", sBody))
 
     # ---- 4. Evidence --------------------------------------------------------
     story.append(Paragraph("4.&nbsp;&nbsp;Evidence", sSection))
 
     # 4a. Variable-impact table + simple bar figure.
-    if gradients:
+    # A uniform result often carries gradients whose deltas are all $0 — a table
+    # of zeros and an all-empty bar chart is noise, so only render the impact
+    # analysis when at least one attribute actually moved the price.
+    gradients_meaningful = [
+        g for g in gradients if abs(_num(g.get("delta")) or 0.0) > 0.005
+    ]
+    if gradients_meaningful:
         story.append(Paragraph(
             "Table 2 reports the per-attribute price differential. Statistically "
             "significant attributes (|<i>t</i>|&nbsp;&gt;&nbsp;2.0) are emphasised "
@@ -581,7 +611,7 @@ async def export_pdf(report_id: str):
         ]
         t2_data = [t2_head]
         sig_rows = []
-        for gi, g in enumerate(gradients):
+        for gi, g in enumerate(gradients_meaningful):
             sig = bool(g.get("significant"))
             delta = _num(g.get("delta"))
             delta_pct = _num(g.get("delta_pct"))
@@ -627,7 +657,7 @@ async def export_pdf(report_id: str):
 
         # Figure 2 — greyscale impact bars.
         fig2 = _impact_bars_figure(
-            CONTENT_W, gradients, _num, _titleize, _esc,
+            CONTENT_W, gradients_meaningful, _num, _titleize, _esc,
             BARFILL, BARLITE, SIGRED, INK, GREY, HAIR,
         )
         if fig2 is not None:
@@ -639,6 +669,11 @@ async def export_pdf(report_id: str):
                     "Significant attributes are drawn darker.",
                     sCaption),
             ]))
+    elif topo == "uniform":
+        story.append(Paragraph(
+            "Because every identity observed the same price, there are no "
+            "per-attribute differentials to report; no attribute moved the price.",
+            sBody))
     else:
         story.append(Paragraph(
             "No per-attribute price differentials were available for this session, "

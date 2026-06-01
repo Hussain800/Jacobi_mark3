@@ -596,6 +596,17 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     const pct = Math.round(report.max_price_spread_pct || 0);
     const index = Math.round(report.discrimination_index || 0);
 
+    // Audit depth + honest probe accounting — driven by what the BACKEND
+    // actually ran (report.audit_depth), never by what the user selected. A
+    // Free user who picked Pro 50 sees "Smart 24" here because that's the real
+    // run.
+    const ranDepth = report.audit_depth === "pro50" ? "pro50" : "smart24";
+    const ranDepthLabel = ranDepth === "pro50" ? "Pro 50 advanced matrix" : "Smart 24 audit";
+    const configuredAgents = report.configured_agents ?? report.total_agents ?? null;
+    const realProbes = report.real_probes_executed ?? null;
+    const skippedInferred = report.skipped_inferred_agents ?? null;
+    const evidenceCount = report.evidence_count ?? null;
+
     const successAgents = report.agents.filter(a => a.status === "success" && a.price != null);
     const sortedByPrice = successAgents.slice().sort((a, b) => (b.price! - a.price!));
     const top = sortedByPrice[0];
@@ -624,6 +635,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       // Native (on-page) currency for the headline; USD is normalized basis.
       nativeCurrency: report.native_currency ?? null,
       nativeBaseline: report.native_baseline_price ?? null,
+      // Audit depth + honest accounting (from the actual run).
+      ranDepth, ranDepthLabel, configuredAgents, realProbes, skippedInferred, evidenceCount,
     };
   }, [report]);
 
@@ -1066,6 +1079,23 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     style={{ background: verdict.color, boxShadow: `0 0 8px ${verdict.color}` }}
                   />
                   {verdict.label} pricing
+                </div>
+                {/* Honest audit-depth line — reflects the run the backend
+                    actually performed (verdict.ranDepth), never the selection. */}
+                <div className="label-mono" style={{ marginBottom: 14, color: "var(--text-3)" }}>
+                  {verdict.ranDepthLabel} completed
+                  {verdict.configuredAgents != null && (
+                    <> · {verdict.configuredAgents} configured agents</>
+                  )}
+                  {verdict.realProbes != null && (
+                    <> · {verdict.realProbes} real probes</>
+                  )}
+                  {verdict.skippedInferred != null && verdict.skippedInferred > 0 && (
+                    <> · {verdict.skippedInferred} skipped (uniform gate)</>
+                  )}
+                  {verdict.evidenceCount != null && (
+                    <> · {verdict.evidenceCount} with evidence</>
+                  )}
                 </div>
                 <div className="ev-spread-label label-mono">Hidden premium · what you're overpaying</div>
                 <div className="ev-spread serif tnum" style={{ marginBottom: 10 }}>

@@ -631,16 +631,16 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const M = 56;
       const CW = W - 2 * M;
 
-      const BLACK = [30, 30, 30] as const;
-      const DARK = [60, 60, 60] as const;
-      const GRAY = [130, 130, 130] as const;
-      const LIGHT = [200, 200, 200] as const;
-      const ACCENT = [0, 100, 0] as const;
-      const RED_A = [180, 40, 40] as const;
+      const BLACK: number[] = [30, 30, 30];
+      const DARK: number[] = [60, 60, 60];
+      const GRAY: number[] = [130, 130, 130];
+      const LIGHT: number[] = [200, 200, 200];
+      const ACCENT: number[] = [0, 100, 0];
+      const RED_A: number[] = [180, 40, 40];
 
-      const setFill = (c: readonly [number, number, number]) => doc.setFillColor(c[0], c[1], c[2]);
-      const setText = (c: readonly [number, number, number]) => doc.setTextColor(c[0], c[1], c[2]);
-      const setStroke = (c: readonly [number, number, number]) => doc.setDrawColor(c[0], c[1], c[2]);
+      const setFill = (c: number[]) => doc.setFillColor(c[0], c[1], c[2]);
+      const setText = (c: number[]) => doc.setTextColor(c[0], c[1], c[2]);
+      const setStroke = (c: number[]) => doc.setDrawColor(c[0], c[1], c[2]);
 
       const dateLine = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
       const sessionShort = (verdict.session || "—").slice(0, 8);
@@ -704,7 +704,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       // Section 2: Key Findings
       doc.setFont("times", "bold").setFontSize(10); setText(BLACK);
       doc.text("2. Key Findings", M, y); y += 18;
-      const findings: [string, string, readonly [number, number, number]?][] = [
+      const findings: Array<[string, string, number[]?]> = [
         ["Verdict", topoLabel, topoColor],
         ["Baseline Price", hi != null ? "$" + hi.toLocaleString() : "N/A"],
         ["Price Spread", spread > 0 ? "$" + spread.toLocaleString() + " (" + verdict.pct + "%)" : "$0.00 (0.0%)"],

@@ -110,6 +110,9 @@ interface TopologyReport {
   evidence_count?: number | null;
   audit_depth?: string | null;
   tier?: string | null;
+  // Coverage: how much of the matrix returned a usable price.
+  coverage?: "strong" | "partial" | "limited" | null;
+  priced_agents?: number | null;
 }
 
 interface LanguageObservation {
@@ -225,6 +228,7 @@ const TOPO: Record<string, [string, string, string]> = {
   selective:   ["#d8b06a", "Selective",   "One variable is driving most of the price difference. Worth changing that one signal."],
   progressive: ["#ff9d52", "Progressive", "Several variables stack together. The more 'premium' your fingerprint looks, the more you pay."],
   aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
+  insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert price discrimination. We've shown the prices we captured; try a product page or a specific listing for a full audit."],
 };
 
 /* ─── Demo data (unchanged) ──────────────────────────────────────────── */
@@ -662,6 +666,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       ranDepth, ranDepthLabel, configuredAgents, realProbes, skippedInferred, evidenceCount,
       // True when a case study fell back to the curated sample (probe didn't complete).
       curatedFallback: (report as unknown as { _curated_fallback?: boolean })._curated_fallback === true,
+      // Coverage: how much of the matrix returned a usable price.
+      coverage: report.coverage ?? null,
+      pricedAgents: report.priced_agents ?? null,
     };
   }, [report]);
 
@@ -1143,6 +1150,32 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   />
                   {verdict.label} pricing
                 </div>
+                {/* Coverage notices — be honest when few profiles returned a
+                    price. "limited" makes no discrimination claim at all;
+                    "partial" flags moderate confidence. */}
+                {verdict.coverage === "limited" && (
+                  <div className="label-mono" style={{
+                    marginBottom: 12, padding: "8px 12px", borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--line-2)", background: "var(--surface-2)",
+                    color: "var(--text-3)", lineHeight: 1.5,
+                  }}>
+                    Limited coverage — only {verdict.pricedAgents ?? "a few"} of{" "}
+                    {verdict.configuredAgents ?? "the"} profiles returned a comparable price
+                    on this site, which isn't enough to assert price discrimination. We've
+                    shown the prices we captured; try a product page or a specific listing
+                    for a full audit.
+                  </div>
+                )}
+                {verdict.coverage === "partial" && (
+                  <div className="label-mono" style={{
+                    marginBottom: 12, padding: "8px 12px", borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--line-2)", background: "var(--surface-2)",
+                    color: "var(--text-3)",
+                  }}>
+                    Partial coverage — {verdict.pricedAgents} profiles returned a price;
+                    treat the verdict as moderate confidence.
+                  </div>
+                )}
                 {/* Curated-sample notice: a case study whose live probe didn't
                     complete falls back to a deterministic sample. Be explicit. */}
                 {verdict.curatedFallback && (

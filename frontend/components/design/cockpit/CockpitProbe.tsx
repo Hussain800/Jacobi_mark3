@@ -793,7 +793,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       });
 
       doc.save("jacobi-report-" + sessionShort + ".pdf");
-      doc.save(`jacobi-report-${sessionShort}.pdf`);
     } catch (e) {
       console.error("PDF generation failed", e);
     } finally {

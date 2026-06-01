@@ -770,9 +770,14 @@ async def export_pdf(report_id: str):
             story.append(Paragraph(body, sBody))
 
     # 4b. Per-agent evidence appendix (raw captured prices).
+    # Only REAL probes belong in the evidence appendix. Exclude exact-uniform-gate
+    # agents (inferred=True): they copy a real probe's price for display but were
+    # never independently fetched, so presenting their "evidence" would imply a
+    # probe that did not happen.
     ev_agents = [
         a for a in agents
-        if isinstance(a.get("evidence"), dict)
+        if not a.get("inferred")
+        and isinstance(a.get("evidence"), dict)
         and a["evidence"].get("extraction_method") not in (None, "none", "")
     ]
     if ev_agents:

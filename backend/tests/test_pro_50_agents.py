@@ -144,3 +144,50 @@ def test_get_result_serializes_50(client):
     rp = client.get(f"/api/export/{sid}/pdf")
     assert rp.status_code == 200
     assert rp.content[:5] == b"%PDF-"
+
+
+def test_evidence_appendix_excludes_inferred_agents():
+    """The PDF evidence appendix must list only REAL probes — exact-uniform-gate
+    inferred agents (which copy a real probe's price) must never appear as if
+    they were independently fetched."""
+    import report_export as RE
+    agents = []
+    for i in range(5):
+        inferred = i >= 2  # first 2 real, last 3 inferred
+        agents.append({
+            "agent_id": f"AGENT_{i:02d}", "inferred": inferred,
+            "evidence": {"extraction_method": "scoped_amazon",
+                         "price_raw_text": "AED11,600.00", "currency_detected": "AED"},
+        })
+    ev_agents = [
+        a for a in agents
+        if not a.get("inferred")
+        and isinstance(a.get("evidence"), dict)
+        and a["evidence"].get("extraction_method") not in (None, "none", "")
+    ]
+    assert len(ev_agents) == 2
+    assert [a["agent_id"] for a in ev_agents] == ["AGENT_00", "AGENT_01"]
+    # And the full PDF render with a mix of real + inferred must not crash.
+    import asyncio
+    from main import SESSION_STORE
+    SESSION_STORE["ev_excl"] = {
+        "session_id": "ev_excl", "target_url": "https://x.com/p", "target_name": "x",
+        "timestamp": "2026-06-01", "status": "completed", "total_agents": 5,
+        "configured_agents": 5, "successful_agents": 5, "real_probes_executed": 2,
+        "skipped_inferred_agents": 3, "evidence_count": 2, "audit_depth": "smart24",
+        "baseline_price": 100.0, "topology_class": "uniform", "discrimination_score": 0,
+        "max_price_spread": 0.0, "max_price_spread_pct": 0.0, "gradients": [],
+        "agents": [dict(a, status="success", price=100.0,
+                        response_time_ms=(0 if a["inferred"] else 1200),
+                        variables={"location": "x", "device": "y"}) for a in agents],
+    }
+
+    async def render():
+        resp = await RE.export_pdf("ev_excl")
+        body = b""
+        async for c in resp.body_iterator:
+            body += c if isinstance(c, bytes) else c.encode()
+        return body
+
+    body = asyncio.run(render())
+    assert body[:5] == b"%PDF-"

@@ -62,10 +62,14 @@ def _sanitize_report(report: dict) -> dict:
                 "agent_id": a.get("agent_id"),
                 "price": a.get("price"),
                 "status": a.get("status"),
+                "response_time_ms": a.get("response_time_ms"),
                 "location": a.get("variables", {}).get("location"),
                 "device": a.get("variables", {}).get("device"),
                 "cookie": a.get("variables", {}).get("cookie"),
                 "referrer": a.get("variables", {}).get("referrer"),
+                "language": a.get("variables", {}).get("language"),
+                "proxy_type": a.get("proxy_type"),
+                "evidence": a.get("evidence"),
             }
             for a in report.get("agents", [])
         ],
@@ -333,7 +337,7 @@ async def export_pdf(report_id: str, _: dict = Depends(_require_pro)):
 
     # ═══════════ TOPOLOGY VERDICT ═══════════
     verdicts = {
-        "uniform": "No price discrimination detected. All 24 agent identities observed the same price.",
+        "uniform": "No price discrimination detected. All agent identities observed the same price.",
         "selective": "Mild discrimination. 1-2 factors show small price differences (< 12%).",
         "progressive": "Significant discrimination. Multiple factors create meaningful price gaps.",
         "aggressive": "Systematic discrimination. Large, consistent gaps across multiple variables.",
@@ -341,6 +345,135 @@ async def export_pdf(report_id: str, _: dict = Depends(_require_pro)):
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"<font size='9' color='{topo_c}'><b>{topo.upper()}</b></font>  "
                            f"<font size='9' color='#64748b'>{verdicts.get(topo, '')}</font>", sBody))
+
+    # ═══════════ EXECUTIVE SUMMARY ═══════════
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("EXECUTIVE SUMMARY", sH2))
+
+    agents = data.get("agents", [])
+    real_probes = sum(1 for a in agents if a.get("response_time_ms", 0) > 0)
+    total_agents = len(agents)
+    filled = total_agents - real_probes
+
+    # Compute confidence
+    succ = report.get("successful_agents", 0) or 0
+    tot = report.get("total_agents", 24) or 24
+    confidence = min(100, round((succ / tot) * 100)) if tot > 0 else 0
+
+    # Suspected driver
+    sig_gradients = [g for g in gradients if g.get("significant")]
+    top_driver = sorted(sig_gradients, key=lambda g: abs(g.get("delta", 0)), reverse=True)[0] if sig_gradients else None
+    sev_score = report.get("discrimination_score", 0) or 0
+    sev_label = "Critical" if sev_score > 80 else ("High" if sev_score > 50 else ("Moderate" if sev_score > 20 else "Low"))
+
+    summary_data = [
+        ("Target URL", (data.get("target_url") or "")[:100]),
+        ("Scan Timestamp", data.get("timestamp") or datetime.now().isoformat()),
+        ("Real Probes Run", str(real_probes)),
+    ]
+    if filled > 0:
+        summary_data.append(("Agents Skipped", f"{filled} (exact-uniform gate passed)"))
+    summary_data.extend([
+        ("Highest Price", f"${max([a.get('price', 0) or 0 for a in agents] or [0]):,.2f}"),
+        ("Lowest Price", f"${min([a.get('price', 0) or 0 for a in agents if a.get('price') is not None] or [0]):,.2f}"),
+        ("Max Spread", f"${spread:,.2f} ({spread_pct:.1f}%)"),
+        ("Topology Verdict", topo.upper()),
+        ("Confidence Score", f"{confidence}%"),
+        ("Suspected Driver", top_driver["variable_name"].replace("_", " ").title() if top_driver else "None detected"),
+        ("Severity", sev_label),
+    ])
+
+    sum_table = Table(
+        [[Paragraph(f"<font size='8' color='#64748b'>{k}</font>", sSmall),
+          Paragraph(f"<font size='8'><b>{v}</b></font>", S("SV", fontSize=8, fontName="Helvetica-Bold", textColor=DARK))]
+         for k, v in summary_data],
+        colWidths=[160, PW - 2*M - 160]
+    )
+    sum_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, BORDER),
+    ]))
+    story.append(sum_table)
+
+    # ═══════════ EVIDENCE APPENDIX ═══════════
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("EVIDENCE APPENDIX", sH2))
+    ev_agents = [a for a in agents if a.get("evidence") and a["evidence"].get("extraction_method") != "none"]
+    if ev_agents:
+        # Table header
+        ev_header = ["Agent", "Region", "Device", "Price", "Raw Text", "Currency", "Method"]
+        ev_widths = [50, 60, 70, 55, 130, 50, 80]
+        ev_rows = [[
+            Paragraph(f"<font size='7' color='#64748b'>{h}</font>",
+                      S(f"EH{i}", fontSize=7, fontName="Helvetica-Bold", textColor=GRAY))
+            for h in ev_header
+        ]]
+        for a in ev_agents:
+            ev = a.get("evidence", {})
+            vars_ = {"location": a.get("location", ""), "device": a.get("device", "")}
+            ev_rows.append([
+                Paragraph(f"<font size='7'>{a.get('agent_id', '')}</font>", sSmall),
+                Paragraph(f"<font size='7'>{vars_.get('location', '—')}</font>", sSmall),
+                Paragraph(f"<font size='7'>{vars_.get('device', '—')}</font>", sSmall),
+                Paragraph(f"<font size='7'><b>${(a.get('price') or 0):,.2f}</b></font>",
+                          S("EP", fontSize=7, fontName="Helvetica-Bold", textColor=DARK)),
+                Paragraph(f"<font size='7'>{ev.get('price_raw_text') or 'N/A'}</font>", sSmall),
+                Paragraph(f"<font size='7'>{ev.get('currency_detected') or 'N/A'}</font>", sSmall),
+                Paragraph(f"<font size='7'>{ev.get('extraction_method') or 'N/A'}</font>", sSmall),
+            ])
+
+        ev_table = Table(ev_rows, colWidths=ev_widths)
+        ev_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.5, BORDER),
+        ]))
+        story.append(ev_table)
+
+        # Evidence stats
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(
+            f"<font size='7' color='#94a3b8'>{len(ev_agents)} of {total_agents} agents captured evidence "
+            f"· {real_probes} real probes · {filled} skipped (uniform gate)</font>",
+            sSmall
+        ))
+    else:
+        story.append(Paragraph(
+            "<font size='8' color='#64748b'>No evidence data available for this probe. "
+            "Evidence capture requires a live BrightData probe (not a demo or cached result).</font>",
+            sBody
+        ))
+
+    # ═══════════ METHODOLOGY ═══════════
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("METHODOLOGY", sH2))
+    methodology_text = (
+        "Jacobi is an evidence-grade pricing intelligence platform that runs controlled "
+        "buyer-context probes against target URLs. Each probe deploys synthetic shopper "
+        "identities — varying location, device type, cookie profile, referrer source, and "
+        "browser language — to detect price discrimination.</p><p>"
+        "<b>How it works:</b> Jacobi sends real HTTP requests through BrightData's global "
+        "proxy network. Each agent identity is routed through a different IP address and "
+        "geographic region. The target page's HTML is parsed, and the listed price is "
+        "extracted using site-specific selectors (e.g., Amazon's corePriceDisplay container, "
+        "Booking.com's data-testid elements). Prices are normalized to USD for comparison.</p><p>"
+        "<b>Uniform-gate optimization:</b> If the first 10 real probes return the exact same "
+        "price (to the cent), the remaining agents are skipped. This saves time and BrightData "
+        "credits without sacrificing accuracy — identical pricing means no discrimination "
+        "exists. If any agent sees a different price, the full 24-agent audit runs.</p><p>"
+        "<b>Statistical analysis:</b> Prices are grouped by discrimination variable (location, "
+        "device, etc.) and compared using Welch's t-test. Variables with |t| > 2.0 are "
+        "flagged as statistically significant. The discrimination index measures the total "
+        "USD spread attributable to significant variables.</p><p>"
+        "<b>Evidence integrity:</b> Every real probe captures the raw HTML excerpt, the "
+        "exact price text as rendered on the page, the detected currency, and the extraction "
+        "method used. This evidence is stored and can be independently verified."
+    )
+    story.append(Paragraph(methodology_text, S("Method", fontSize=8, textColor=DARK, leading=12)))
 
     # ═══════════ FOOTER ═══════════
     story.append(Spacer(1, 20))

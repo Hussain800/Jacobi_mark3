@@ -1441,6 +1441,7 @@ def build_agent_list(session: dict) -> list:
             delta_variable=a.get("delta_variable"), delta_direction=a.get("delta_direction"),
             is_control=a.get("is_control", False), network_tier=a.get("network_tier"),
             proxy_type=a.get("proxy_type"),
+            evidence=a.get("evidence"),
         ))
     return agents
 

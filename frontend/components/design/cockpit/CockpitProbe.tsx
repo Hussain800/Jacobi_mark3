@@ -1111,6 +1111,149 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         y += rowH;
       });
 
+      // ══════════════════════════════════════════════════
+      // PAGE 2 CONTINUED — EXECUTIVE SUMMARY
+      // ══════════════════════════════════════════════════
+      y += 24;
+      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
+      
+      setFill(C.surface); setStroke(C.line);
+      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
+      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
+      doc.text("EXECUTIVE SUMMARY", M + 10, y + 12.5);
+      y += 28;
+
+      const realProbes = agents.filter((a: any) => (a.response_time_ms || 0) > 0).length;
+      const filled = agents.length - realProbes;
+      const succ2 = report?.successful_agents || 0;
+      const tot2 = report?.total_agents || 24;
+      const conf = tot2 > 0 ? Math.round((succ2 / tot2) * 100) : 0;
+      const sigG = (report?.gradients || []).filter((g: any) => g.significant).sort((a: any, b: any) => Math.abs(b.delta) - Math.abs(a.delta));
+      const sevRaw = (report as any)?.discrimination_score || 0;
+      const sev = sevRaw > 80 ? "Critical" : sevRaw > 50 ? "High" : sevRaw > 20 ? "Moderate" : "Low";
+
+      const summaryRows: [string, string][] = [
+        ["Target URL", (verdict.target || "").substring(0, 90)],
+        ["Timestamp", dateLine],
+        ["Real probes run", String(realProbes)],
+      ];
+      if (filled > 0) summaryRows.push(["Agents skipped", `${filled} (exact-uniform gate passed)`]);
+      summaryRows.push(
+        ["Highest price", hi != null ? `$${hi.toLocaleString()}` : "—"],
+        ["Lowest price", lo != null ? `$${lo.toLocaleString()}` : "—"],
+        ["Max spread", spread > 0 ? `$${spread.toLocaleString()} (${verdict.pct}%)` : "$0"],
+        ["Topology verdict", verdict.label.toUpperCase()],
+        ["Confidence score", `${conf}%`],
+        ["Suspected driver", sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None detected"],
+        ["Severity", sev],
+      );
+
+      const rowH2 = 16;
+      summaryRows.forEach(([k, v]) => {
+        if (y > H - 60) { doc.addPage(); drawPageChrome(2); y = 100; }
+        doc.setFont("helvetica", "normal").setFontSize(7.5); setText(C.text3);
+        doc.text(k, M + 4, y + 5);
+        doc.setFont("courier", "normal").setFontSize(7.5); setText(C.text);
+        doc.text(v, M + 150, y + 5);
+        setStroke(C.line); doc.setLineWidth(0.3);
+        doc.line(M, y + rowH2 - 2, W - M, y + rowH2 - 2);
+        y += rowH2;
+      });
+
+      // ══════════════════════════════════════════════════
+      // EVIDENCE TABLE
+      // ══════════════════════════════════════════════════
+      y += 18;
+      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
+      
+      setFill(C.surface); setStroke(C.line);
+      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
+      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
+      doc.text("EVIDENCE APPENDIX", M + 10, y + 12.5);
+      y += 28;
+
+      const evAgents = agents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null);
+      if (evAgents.length > 0) {
+        // Table header
+        const cols = [
+          { label: "AGENT", w: 50 }, { label: "REGION", w: 55 }, { label: "DEVICE", w: 55 },
+          { label: "PRICE", w: 55 }, { label: "RAW TEXT", w: 105 }, { label: "METHOD", w: 80 },
+        ];
+        let cx2 = M;
+        doc.setFont("helvetica", "bold").setFontSize(6.5); setText(C.text3);
+        cols.forEach(c => {
+          doc.text(c.label, cx2 + 3, y + 6);
+          cx2 += c.w;
+        });
+        y += 12;
+        setStroke(C.line); doc.setLineWidth(0.5);
+        doc.line(M, y, W - M, y);
+        y += 6;
+
+        evAgents.slice(0, 20).forEach((a: any) => {
+          if (y > H - 60) { doc.addPage(); drawPageChrome(2); y = 100; }
+          const ev = a.evidence || {};
+          const vars = a.variables || {};
+          const vals = [
+            a.agent_id || "—",
+            vars.location || "—",
+            vars.device || "—",
+            a.price != null ? `$${a.price}` : "—",
+            (ev.price_raw_text || "N/A").substring(0, 18),
+            ev.extraction_method || "N/A",
+          ];
+          let cx3 = M;
+          doc.setFont("courier", "normal").setFontSize(6.5);
+          vals.forEach((v, i) => {
+            setText(i === 3 && a.price != null ? C.good : C.text2);
+            doc.text(v.substring(0, cols[i].w / 5.5), cx3 + 2, y + 6);
+            cx3 += cols[i].w;
+          });
+          y += 12;
+        });
+
+        // Evidence stats
+        y += 4;
+        doc.setFont("helvetica", "normal").setFontSize(7); setText(C.text3);
+        doc.text(`${evAgents.length} of ${agents.length} agents captured evidence · ${realProbes} real probes · ${filled} skipped`, M, y + 5);
+      } else {
+        doc.setFont("helvetica", "normal").setFontSize(8); setText(C.text3);
+        doc.text("No evidence data available. Evidence requires live BrightData probes.", M, y + 5);
+      }
+
+      // ══════════════════════════════════════════════════
+      // METHODOLOGY
+      // ══════════════════════════════════════════════════
+      y += 24;
+      if (y > H - 200) { doc.addPage(); drawPageChrome(2); y = 100; }
+      
+      setFill(C.surface); setStroke(C.line);
+      doc.roundedRect(M, y, COL_W, 18, 4, 4, "FD");
+      doc.setFont("helvetica", "bold").setFontSize(8); setText(C.cobalt);
+      doc.text("METHODOLOGY", M + 10, y + 12.5);
+      y += 24;
+
+      const methodLines = [
+        "Jacobi runs controlled buyer-context probes against target URLs. Each probe deploys synthetic shopper identities — varying location, device, cookie profile, referrer, and browser language — to detect price discrimination on e-commerce and travel sites.",
+        "",
+        "HOW IT WORKS: Jacobi sends real HTTP requests through BrightData's global proxy network. Each identity is routed through a different IP and geographic region. The target HTML is parsed using site-specific selectors (e.g., Amazon's corePriceDisplay, Booking.com's data-testid elements). Prices are normalized to USD for comparison.",
+        "",
+        "UNIFORM-GATE OPTIMIZATION: If the first 10 real probes return the exact same price (to the cent), remaining agents are skipped. This saves time and BrightData credits without sacrificing accuracy. If any agent sees a different price, the full 24-agent audit runs.",
+        "",
+        "STATISTICAL ANALYSIS: Prices are grouped by variable and compared using Welch's t-test. Variables with |t| > 2.0 are flagged as significant. The Discrimination Index measures total USD spread from significant variables.",
+        "",
+        "EVIDENCE INTEGRITY: Every real probe captures raw HTML excerpt, exact price text, currency, and extraction method for independent verification.",
+      ];
+
+      doc.setFont("helvetica", "normal").setFontSize(7.5); setText(C.text2);
+      methodLines.forEach(line => {
+        if (y > H - 40) { doc.addPage(); drawPageChrome(2); y = 100; }
+        if (line === "") { y += 6; return; }
+        const wrapped = doc.splitTextToSize(line, COL_W - 8);
+        doc.text(wrapped, M + 4, y + 5);
+        y += wrapped.length * 10 + 2;
+      });
+
       doc.save(`jacobi-report-${sessionShort}.pdf`);
     } catch (e) {
       console.error("PDF generation failed", e);

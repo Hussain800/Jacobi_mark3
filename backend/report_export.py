@@ -15,6 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Flowable,
+    HRFlowable, KeepTogether,
 )
 from reportlab.graphics.shapes import Drawing, Rect, String, Line
 
@@ -51,11 +52,20 @@ def _sanitize_report(report: dict) -> dict:
         "target_url": report.get("target_url"),
         "timestamp": report.get("timestamp"),
         "baseline_price": report.get("baseline_price"),
+        "mean_price": report.get("mean_price"),
+        "price_range": report.get("price_range"),
         "max_price_spread": report.get("max_price_spread"),
         "max_price_spread_pct": report.get("max_price_spread_pct"),
         "topology_class": report.get("topology_class"),
         "discrimination_index": report.get("discrimination_index"),
         "discrimination_score": report.get("discrimination_score", 0),
+        "successful_agents": report.get("successful_agents"),
+        "failed_agents": report.get("failed_agents"),
+        "detected_agents": report.get("detected_agents"),
+        "total_agents": report.get("total_agents"),
+        "control_stability": report.get("control_stability"),
+        "elapsed_seconds": report.get("elapsed_seconds"),
+        "native_currency": report.get("native_currency"),
         "gradients": report.get("gradients", []),
         "agents": [
             {
@@ -145,348 +155,587 @@ async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
 
 @router.get("/{report_id}/pdf")
 async def export_pdf(report_id: str):
-    """Export as professionally designed PDF report."""
+    """Export the probe as a research-grade, LaTeX-article-style PDF report.
+
+    Pure white background, black Times-Roman serif text, a centered title block
+    with an italic Abstract, numbered sections, booktabs-style tables, and a
+    couple of restrained greyscale figures. Built entirely with ReportLab
+    flowables so pagination is automatic and content never overlaps the footer.
+
+    Hardened against real-world session shapes: every numeric field may be None
+    or absent, agent/price lists may be empty, and divisions are guarded. Missing
+    values render a clean "n/a" rather than a fabricated number.
+    """
     report = await _get_report(report_id)
     data = _sanitize_report(report)
 
-    buf = io.BytesIO()
-    PW, PH = letter
-    M = 36
+    # ------------------------------------------------------------------ helpers
+    def _num(x):
+        """Return a float if x is a real number, else None (treats None/''/bad as missing)."""
+        if x is None:
+            return None
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
 
-    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=M, rightMargin=M, topMargin=0, bottomMargin=M)
+    def _money(x, dash="n/a"):
+        v = _num(x)
+        if v is None:
+            return dash
+        return f"${v:,.2f}"
 
-    # Brand
-    GREEN = colors.HexColor("#00d992")
-    NAVY = colors.HexColor("#0f1123")
-    DARK = colors.HexColor("#1e293b")
-    CARD = colors.HexColor("#f1f5f9")
-    GRAY = colors.HexColor("#94a3b8")
-    MUTED = colors.HexColor("#64748b")
-    RED = colors.HexColor("#ef4444")
-    AMBER = colors.HexColor("#f59e0b")
-    BLUE = colors.HexColor("#3b82f6")
+    def _money0(x, dash="n/a"):
+        v = _num(x)
+        if v is None:
+            return dash
+        return f"${v:,.0f}"
+
+    def _pct(x, dash="n/a"):
+        v = _num(x)
+        if v is None:
+            return dash
+        return f"{v:.1f}%"
+
+    def _esc(s):
+        """Escape text for ReportLab inline markup."""
+        if s is None:
+            return ""
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+    def _titleize(s):
+        if not s:
+            return ""
+        return str(s).replace("_", " ").title()
+
+    # ------------------------------------------------------------------ palette
+    # Restrained, print-safe academic palette. White paper, black ink.
+    INK = colors.HexColor("#111111")     # body / headings
+    SLATE = colors.HexColor("#1a2b4a")   # single dark accent (rules, eyebrows)
+    GREY = colors.HexColor("#555555")    # secondary captions
+    LIGHTGREY = colors.HexColor("#888888")
+    RULE = colors.HexColor("#333333")    # table rules
+    HAIR = colors.HexColor("#bbbbbb")    # very light hairlines / axis
+    SIGRED = colors.HexColor("#a11111")  # significant-value emphasis (text only)
+    BARFILL = colors.HexColor("#444444") # greyscale figure bars
+    BARLITE = colors.HexColor("#cccccc") # de-emphasised bars
+    PANEL = colors.HexColor("#f5f5f5")   # very light header tint (optional)
     WHITE = colors.white
-    BORDER = colors.HexColor("#e2e8f0")
 
-    TOPO_C = {"uniform": GREEN, "selective": AMBER, "progressive": colors.HexColor("#f97316"), "aggressive": RED}
+    PW, PH = letter
+    M = 72  # ~1 inch margins, like a paper
+    CONTENT_W = PW - 2 * M
 
     styles = getSampleStyleSheet()
+
     def S(name, **kw):
         return ParagraphStyle(name, parent=styles["Normal"], **kw)
 
-    sH1 = S("H1", fontSize=20, fontName="Helvetica-Bold", textColor=WHITE, leading=24)
-    sH2 = S("H2", fontSize=11, fontName="Helvetica-Bold", textColor=DARK, spaceBefore=16, spaceAfter=6)
-    sBody = S("Body", fontSize=9, textColor=MUTED, leading=13)
-    sSmall = S("Small", fontSize=7, textColor=GRAY)
-    sMetric = S("Metric", fontSize=24, fontName="Helvetica-Bold", textColor=DARK, leading=28)
-    sLabel = S("Label", fontSize=8, textColor=GRAY, fontName="Helvetica-Bold")
-    sBadge = S("Badge", fontSize=9, fontName="Helvetica-Bold", textColor=WHITE, leading=12)
-    sFooter = S("Footer", fontSize=7, textColor=GRAY, alignment=1)
-    sRight = S("Right", fontSize=7, textColor=GRAY, alignment=2)
+    sTitle = S("PaperTitle", fontName="Times-Bold", fontSize=19, leading=23,
+               textColor=INK, alignment=1, spaceAfter=4)
+    sAuthor = S("Author", fontName="Times-Roman", fontSize=11, leading=14,
+                textColor=INK, alignment=1, spaceAfter=2)
+    sAffil = S("Affil", fontName="Times-Italic", fontSize=9.5, leading=12,
+               textColor=GREY, alignment=1)
+    sDate = S("Date", fontName="Times-Roman", fontSize=9.5, leading=12,
+              textColor=GREY, alignment=1)
 
+    sAbstractHead = S("AbsHead", fontName="Times-Bold", fontSize=9.5, leading=13,
+                      textColor=INK, alignment=1, spaceBefore=4, spaceAfter=4)
+    sAbstract = S("Abstract", fontName="Times-Italic", fontSize=9.5, leading=13.5,
+                  textColor=INK, alignment=4,
+                  leftIndent=20, rightIndent=20)
+
+    sSection = S("Section", fontName="Times-Bold", fontSize=12, leading=15,
+                 textColor=INK, spaceBefore=14, spaceAfter=5)
+    sBody = S("Body", fontName="Times-Roman", fontSize=10, leading=14,
+              textColor=INK, alignment=4, spaceAfter=6)
+    sCaption = S("Caption", fontName="Times-Italic", fontSize=8.5, leading=11,
+                 textColor=GREY, alignment=1, spaceBefore=4, spaceAfter=10)
+    sTblHead = S("TblHead", fontName="Times-Bold", fontSize=8.5, leading=11,
+                 textColor=INK)
+    sTblHeadR = S("TblHeadR", fontName="Times-Bold", fontSize=8.5, leading=11,
+                  textColor=INK, alignment=2)
+    sCell = S("Cell", fontName="Times-Roman", fontSize=8.5, leading=11,
+              textColor=INK)
+    sCellR = S("CellR", fontName="Times-Roman", fontSize=8.5, leading=11,
+               textColor=INK, alignment=2)
+    sCellMuted = S("CellMuted", fontName="Times-Roman", fontSize=8.5, leading=11,
+                   textColor=GREY)
+    sCellSig = S("CellSig", fontName="Times-Bold", fontSize=8.5, leading=11,
+                 textColor=SIGRED, alignment=2)
+
+    # ------------------------------------------------------------------ extracted, coerced values
     topo = (data.get("topology_class") or "unknown").lower()
-    topo_c = TOPO_C.get(topo, BLUE)
-    bp = data.get("baseline_price", 0) or 0
-    spread = data.get("max_price_spread", 0) or 0
-    spread_pct = data.get("max_price_spread_pct", 0) or 0
-    score = data.get("discrimination_score", 0) or 0
+    target_name = data.get("target_name") or "Unknown Target"
+    target_url = data.get("target_url") or ""
+    session_id = data.get("session_id") or report_id
+
+    bp = _num(data.get("baseline_price"))
+    mean_price = _num(data.get("mean_price"))
+    spread = _num(data.get("max_price_spread"))
+    spread_pct = _num(data.get("max_price_spread_pct"))
+    score = _num(data.get("discrimination_score"))
+    disc_index = _num(data.get("discrimination_index"))
+
+    gradients = data.get("gradients") or []
+    if not isinstance(gradients, list):
+        gradients = []
+
+    agents = data.get("agents") or []
+    if not isinstance(agents, list):
+        agents = []
+
+    # Prices present across agents (guarded for None / non-numeric).
+    agent_prices = [p for p in (_num(a.get("price")) for a in agents) if p is not None]
+    p_min = min(agent_prices) if agent_prices else None
+    p_max = max(agent_prices) if agent_prices else None
+
+    # price_range from session (fall back to observed agent prices).
+    pr = data.get("price_range")
+    rmin = rmax = None
+    if isinstance(pr, (list, tuple)) and len(pr) >= 2:
+        rmin, rmax = _num(pr[0]), _num(pr[1])
+    if rmin is None:
+        rmin = p_min
+    if rmax is None:
+        rmax = p_max
+
+    # Probe accounting (all guarded).
+    total_agents = len(agents)
+    real_probes = sum(1 for a in agents if (_num(a.get("response_time_ms")) or 0) > 0)
+    filled = max(0, total_agents - real_probes)
+    succ = int(_num(data.get("successful_agents")) or 0)
+    tot = int(_num(data.get("total_agents")) or total_agents or 0)
+    confidence = min(100, round((succ / tot) * 100)) if tot > 0 else None
+
+    sig_gradients = [g for g in gradients if g.get("significant")]
+    top_driver = None
+    if sig_gradients:
+        top_driver = sorted(
+            sig_gradients,
+            key=lambda g: abs(_num(g.get("delta")) or 0),
+            reverse=True,
+        )[0]
+
+    sev_label = "Indeterminate"
+    if score is not None:
+        sev_label = ("Critical" if score > 80 else
+                     "High" if score > 50 else
+                     "Moderate" if score > 20 else "Low")
+
+    topo_titles = {
+        "uniform": "No Price Discrimination Detected",
+        "selective": "Selective Price Discrimination",
+        "progressive": "Progressive Price Discrimination",
+        "aggressive": "Aggressive Price Discrimination",
+        "unknown": "Inconclusive Pricing Topology",
+    }
+    topo_findings = {
+        "uniform": ("all synthetic buyer identities observed an identical listed "
+                    "price, indicating no detectable personalisation along the "
+                    "tested dimensions"),
+        "selective": ("one or two buyer attributes produced small but measurable "
+                      "price differences, consistent with selective personalisation"),
+        "progressive": ("several buyer attributes independently shifted the listed "
+                        "price, producing a graded structure of price discrimination"),
+        "aggressive": ("large and consistent price gaps appeared across multiple "
+                       "buyer attributes, consistent with systematic price "
+                       "discrimination"),
+        "unknown": ("the probe did not return enough comparable observations to "
+                    "classify the pricing topology"),
+    }
+
+    # ------------------------------------------------------------------ document
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=M, rightMargin=M, topMargin=M, bottomMargin=M + 6,
+        title=f"JACOBI Pricing Topology Report — {target_name}",
+        author="JACOBI Pricing Intelligence",
+    )
+
+    footer_label = (f"JACOBI  ·  Pricing Topology Report  ·  "
+                    f"{datetime.now().strftime('%B %d, %Y')}  ·  "
+                    f"Session {str(session_id)[:16]}")
+
+    def _on_page(canvas, doc_):
+        canvas.saveState()
+        # Thin footer rule.
+        canvas.setStrokeColor(HAIR)
+        canvas.setLineWidth(0.5)
+        canvas.line(M, M - 22, PW - M, M - 22)
+        canvas.setFont("Times-Roman", 7.5)
+        canvas.setFillColor(GREY)
+        canvas.drawString(M, M - 33, footer_label)
+        page_num = canvas.getPageNumber()
+        canvas.drawRightString(PW - M, M - 33, f"Page {page_num}")
+        canvas.restoreState()
 
     story = []
 
-    # ═══════════ HEADER BANNER ═══════════
-    class HeaderBanner(Flowable):
-        def __init__(self, w, h):
-            Flowable.__init__(self)
-            self.width = w
-            self.height = h
-        def draw(self):
-            c = self.canv
-            w, h = self.width, self.height
-            c.setFillColor(NAVY)
-            c.rect(0, 0, w, h, fill=1, stroke=0)
-            c.setFillColor(GREEN)
-            c.rect(0, h - 3, w, 3, fill=1, stroke=0)
-            c.setFont("Helvetica-Bold", 20)
-            c.setFillColor(WHITE)
-            c.drawString(0, h - 30, "JACOBI")
-            c.setFont("Helvetica", 10)
-            c.setFillColor(GRAY)
-            c.drawString(70, h - 30, "Pricing Topology Report")
-            c.setFillColor(topo_c)
-            bw = c.stringWidth(topo.upper(), "Helvetica-Bold", 11)
-            c.roundRect(w - bw - 24, h - 34, bw + 20, 20, 4, fill=1, stroke=0)
-            c.setFillColor(WHITE)
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(w - bw - 14, h - 28, topo.upper())
-    story.append(HeaderBanner(PW - 2*M, 72))
-    story.append(Spacer(1, 12))
+    # ---- Title block --------------------------------------------------------
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        f"Algorithmic Price Discrimination Audit:<br/>{_esc(target_name)}",
+        sTitle,
+    ))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("JACOBI Pricing Intelligence", sAuthor))
+    story.append(Paragraph(
+        "Adversarial Pricing-Topology Probe &mdash; Evidence-Grade Report",
+        sAffil,
+    ))
+    ts_display = data.get("timestamp") or datetime.now().strftime("%Y-%m-%d")
+    story.append(Paragraph(_esc(ts_display), sDate))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="60%", thickness=0.8, color=SLATE,
+                            spaceBefore=2, spaceAfter=12, hAlign="CENTER"))
 
-    # ═══════════ TARGET URL ═══════════
-    story.append(Paragraph(f"<font size='8' color='#94a3b8'>{data.get('target_url', '')[:110]}</font>", sSmall))
-    story.append(Spacer(1, 14))
-
-    # ═══════════ KEY METRICS ═══════════
-    card_w = (PW - 2*M - 16) / 3
-    def metric_card(label, value, accent):
-        d = Drawing(card_w, 56)
-        d.add(Rect(0, 0, card_w, 56, 6, 6, fillColor=CARD, strokeColor=BORDER, strokeWidth=0.5))
-        d.add(String(10, 35, label, fontSize=7, fontName="Helvetica-Bold", fillColor=GRAY))
-        d.add(String(10, 8, value, fontSize=20, fontName="Helvetica-Bold", fillColor=accent))
-        return d
-
-    m1 = metric_card("BASELINE PRICE", f"${bp:,.0f}", GREEN)
-    spread_color = RED if spread > 0 else GRAY
-    m2 = metric_card("PRICE SPREAD", f"${spread:,.0f}" if spread > 0 else "$0", spread_color)
-    score_color = RED if score > 50 else (AMBER if score > 20 else GREEN)
-    m3 = metric_card("DISCRIMINATION", f"{score:.0f}/100", score_color)
-
-    card_table = Table([[m1, m2, m3]], colWidths=[card_w + 8, card_w + 8, card_w + 8])
-    card_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
-    story.append(card_table)
-    story.append(Spacer(1, 16))
-
-    # ═══════════ SPREAD % under cards ═══════════
-    if spread > 0:
-        story.append(Paragraph(f"<font size='8'>Price spread: <b>{spread_pct:.1f}%</b> of baseline</font>", sBody))
-    else:
-        story.append(Paragraph("<font size='8'>All agents observed identical pricing</font>", sBody))
-    story.append(Spacer(1, 10))
-
-    # ═══════════ GRADIENT BARS (drawn) ═══════════
-    gradients = data.get("gradients", [])
-    if gradients:
-        story.append(Paragraph("VARIABLE IMPACT", sH2))
-        max_delta = max(abs(g.get("delta", 0)) for g in gradients) or 1
-        bar_area_w = PW - 2*M - 160
-
-        for g in gradients:
-            var = g.get("variable_name", "").replace("_", " ").title()
-            delta = abs(g.get("delta", 0))
-            delta_str = f"${g.get('delta', 0):+,.0f}"
-            sig = g.get("significant", False)
-            bar_w = (delta / max_delta) * bar_area_w if max_delta > 0 else 0
-            bar_w = max(bar_w, 4) if delta > 0 else 0
-            bar_c = RED if sig else GRAY
-
-            d = Drawing(PW - 2*M, 28)
-            d.add(String(0, 14, var, fontSize=8, fontName="Helvetica-Bold", fillColor=DARK))
-            if bar_w > 0:
-                d.add(Rect(120, 7, bar_w, 14, 3, 3, fillColor=bar_c, strokeColor=None))
-            d.add(String(120 + bar_w + 6, 13, delta_str, fontSize=8, fontName="Helvetica-Bold", fillColor=bar_c))
-            if sig:
-                d.add(String(120 + bar_w + 58, 13, "(sig)", fontSize=7, fontName="Helvetica", fillColor=RED))
-            d.add(Line(0, 0, PW - 2*M, 0, strokeColor=BORDER, strokeWidth=0.5))
-            story.append(d)
-
-    # ═══════════ PRICE RANGE BAR ═══════════
-    price_range = report.get("price_range") or data.get("price_range")
-    if price_range and len(price_range) == 2 and price_range[1] > 0:
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("PRICE DISTRIBUTION", sH2))
-        rmin, rmax = price_range[0], price_range[1]
-        span = rmax - rmin if rmax > rmin else 1
-        bw = PW - 2*M
-
-        # Bar with baseline marker
-        d = Drawing(bw, 40)
-        bar_y = 18; bar_h = 8
-        d.add(Rect(0, bar_y, bw, bar_h, 2, 2, fillColor=colors.HexColor("#e2e8f0"), strokeColor=None))
-        bp_frac = (bp - rmin) / span if span else 0.5
-        bp_x = bw * bp_frac
-        d.add(Line(bp_x, bar_y - 4, bp_x, bar_y + bar_h + 4, strokeColor=GREEN, strokeWidth=2))
-        d.add(String(0, 0, f"${rmin:,.0f}", fontSize=7, fontName="Helvetica", fillColor=GRAY))
-        d.add(String(bp_x - 30, 0, f"${bp:,.0f}", fontSize=7, fontName="Helvetica-Bold", fillColor=GREEN))
-        d.add(String(bw - 55, 0, f"${rmax:,.0f}", fontSize=7, fontName="Helvetica", fillColor=GRAY))
-        story.append(d)
-        story.append(Spacer(1, 4))
-
-    # ═══════════ AGENT HEATMAP ═══════════
-    agents = data.get("agents", [])
-    prices = [a.get("price") for a in agents if a.get("price") is not None]
-    if prices:
-        story.append(Paragraph("24 AGENTS", sH2))
-        pmin, pmax = min(prices), max(prices)
-        pspan = pmax - pmin if pmax > pmin else 1
-        dot_s = 7; gap = 2
-        dots_per_row = int(bw / (dot_s + gap))
-        sorted_prices = sorted(prices)
-
-        rows = []
-        for ri in range(4):
-            row_dots = []
-            for ci in range(min(dots_per_row, len(sorted_prices) - ri * dots_per_row)):
-                idx = ri * dots_per_row + ci
-                if idx < len(sorted_prices):
-                    p = sorted_prices[idx]
-                    frac = (p - pmin) / pspan if pspan > 0 else 0.5
-                    r = int(min(255, frac * 2 * 255))
-                    g = int(min(255, (1 - frac) * 2 * 255))
-                    dot_c = colors.HexColor(f"#{r:02x}{g:02x}40")
-                    row_dots.append(Paragraph(
-                        '<font size="3"> </font>',
-                        ParagraphStyle(f"d{idx}", fontSize=3, backColor=dot_c, borderPadding=0, leading=1)
-                    ))
-            if row_dots:
-                dt = Table([row_dots], colWidths=[dot_s]*len(row_dots), rowHeights=[dot_s])
-                dt.setStyle(TableStyle([("LEFTPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0)]))
-                rows.append(dt)
-
-        for r in rows:
-            story.append(r)
-            story.append(Spacer(1, 2))
-
-        # Legend
-        legend_d = Drawing(bw, 14)
-        legend_d.add(String(0, 0, f"${pmin:,.0f}", fontSize=7, fontName="Helvetica", fillColor=GRAY))
-        legend_d.add(String(bw - 55, 0, f"${pmax:,.0f}", fontSize=7, fontName="Helvetica", fillColor=GRAY))
-        story.append(legend_d)
-
-    # ═══════════ TOPOLOGY VERDICT ═══════════
-    verdicts = {
-        "uniform": "No price discrimination detected. All agent identities observed the same price.",
-        "selective": "Mild discrimination. 1-2 factors show small price differences (< 12%).",
-        "progressive": "Significant discrimination. Multiple factors create meaningful price gaps.",
-        "aggressive": "Systematic discrimination. Large, consistent gaps across multiple variables.",
-    }
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(f"<font size='9' color='{topo_c}'><b>{topo.upper()}</b></font>  "
-                           f"<font size='9' color='#64748b'>{verdicts.get(topo, '')}</font>", sBody))
-
-    # ═══════════ EXECUTIVE SUMMARY ═══════════
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("EXECUTIVE SUMMARY", sH2))
-
-    agents = data.get("agents", [])
-    real_probes = sum(1 for a in agents if a.get("response_time_ms", 0) > 0)
-    total_agents = len(agents)
-    filled = total_agents - real_probes
-
-    # Compute confidence
-    succ = report.get("successful_agents", 0) or 0
-    tot = report.get("total_agents", 24) or 24
-    confidence = min(100, round((succ / tot) * 100)) if tot > 0 else 0
-
-    # Suspected driver
-    sig_gradients = [g for g in gradients if g.get("significant")]
-    top_driver = sorted(sig_gradients, key=lambda g: abs(g.get("delta", 0)), reverse=True)[0] if sig_gradients else None
-    sev_score = report.get("discrimination_score", 0) or 0
-    sev_label = "Critical" if sev_score > 80 else ("High" if sev_score > 50 else ("Moderate" if sev_score > 20 else "Low"))
-
-    summary_data = [
-        ("Target URL", (data.get("target_url") or "")[:100]),
-        ("Scan Timestamp", data.get("timestamp") or datetime.now().isoformat()),
-        ("Real Probes Run", str(real_probes)),
-    ]
-    if filled > 0:
-        summary_data.append(("Agents Skipped", f"{filled} (exact-uniform gate passed)"))
-    summary_data.extend([
-        ("Highest Price", f"${max([a.get('price', 0) or 0 for a in agents] or [0]):,.2f}"),
-        ("Lowest Price", f"${min([a.get('price', 0) or 0 for a in agents if a.get('price') is not None] or [0]):,.2f}"),
-        ("Max Spread", f"${spread:,.2f} ({spread_pct:.1f}%)"),
-        ("Topology Verdict", topo.upper()),
-        ("Confidence Score", f"{confidence}%"),
-        ("Suspected Driver", top_driver["variable_name"].replace("_", " ").title() if top_driver else "None detected"),
-        ("Severity", sev_label),
-    ])
-
-    sum_table = Table(
-        [[Paragraph(f"<font size='8' color='#64748b'>{k}</font>", sSmall),
-          Paragraph(f"<font size='8'><b>{v}</b></font>", S("SV", fontSize=8, fontName="Helvetica-Bold", textColor=DARK))]
-         for k, v in summary_data],
-        colWidths=[160, PW - 2*M - 160]
+    # ---- Abstract -----------------------------------------------------------
+    abstract_bits = []
+    abstract_bits.append(
+        f"This report presents the results of a controlled buyer-context probe of "
+        f"<i>{_esc(target_name)}</i>, classified as a "
+        f"<b>{_esc(topo)}</b> pricing topology"
     )
-    sum_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.5, BORDER),
+    if bp is not None:
+        abstract_bits.append(f" against a baseline price of {_money(bp)}")
+    abstract_bits.append(". ")
+    if spread is not None and spread > 0:
+        sp_tail = f" ({_pct(spread_pct)} of baseline)" if spread_pct is not None else ""
+        abstract_bits.append(
+            f"The maximum observed price spread across synthetic identities was "
+            f"{_money(spread)}{sp_tail}. "
+        )
+    elif spread is not None:
+        abstract_bits.append(
+            "No price spread was observed across synthetic identities. "
+        )
+    if top_driver is not None:
+        abstract_bits.append(
+            f"The dominant driver was the <b>{_esc(_titleize(top_driver.get('variable_name')))}</b> "
+            f"attribute. "
+        )
+    abstract_bits.append(
+        f"In summary, {topo_findings.get(topo, topo_findings['unknown'])}."
+    )
+
+    story.append(Paragraph("Abstract", sAbstractHead))
+    story.append(Paragraph("".join(abstract_bits), sAbstract))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=HAIR,
+                            spaceBefore=2, spaceAfter=4))
+
+    # ---- 1. Introduction ----------------------------------------------------
+    story.append(Paragraph("1.&nbsp;&nbsp;Introduction", sSection))
+    intro = (
+        f"Online retailers and travel platforms increasingly tailor the prices a "
+        f"visitor sees to inferred attributes such as location, device, browsing "
+        f"history, and referral source. JACOBI audits this behaviour empirically by "
+        f"dispatching a panel of synthetic buyer identities at a single target URL "
+        f"and comparing the prices each identity is served. This report documents an "
+        f"audit of <b>{_esc(target_name)}</b>"
+    )
+    if target_url:
+        intro += f" (<font color='#555555'>{_esc(target_url[:96])}</font>)"
+    intro += (
+        ". The objective is to determine whether, and along which attributes, the "
+        "target applies price discrimination, and to preserve verifiable evidence "
+        "for each observation."
+    )
+    story.append(Paragraph(intro, sBody))
+
+    # ---- 2. Methodology -----------------------------------------------------
+    story.append(Paragraph("2.&nbsp;&nbsp;Methodology", sSection))
+    method = (
+        "Each audit deploys up to 24 synthetic buyer identities against the target "
+        "URL. The identities vary along five attributes &mdash; geographic location, "
+        "device class, cookie-history profile, referral source, and browser language "
+        "&mdash; while holding the requested product constant. Requests are routed "
+        "through a global residential and datacentre proxy network so that each "
+        "identity originates from a distinct IP address and region. The listed price "
+        "is extracted from the rendered page using site-specific selectors and "
+        "recorded alongside its raw on-page text and detected currency."
+    )
+    story.append(Paragraph(method, sBody))
+    method2 = (
+        "Observed prices are grouped by attribute and compared using Welch's "
+        "two-sample <i>t</i>-test; an attribute is flagged statistically significant "
+        "when |<i>t</i>|&nbsp;&gt;&nbsp;2.0. The discrimination index is the total "
+        "price spread attributable to significant attributes, and the topology class "
+        "summarises the overall pattern (uniform, selective, progressive, or "
+        "aggressive). When the first real probes return an identical price to the "
+        "cent, the remaining identities are skipped under an exact-uniform gate; any "
+        "divergence triggers the full panel."
+    )
+    story.append(Paragraph(method2, sBody))
+
+    # ---- 3. Results ---------------------------------------------------------
+    story.append(Paragraph("3.&nbsp;&nbsp;Results", sSection))
+
+    res_lead = (
+        f"The target was classified as a <b>{_esc(topo)}</b> topology &mdash; "
+        f"{topo_titles.get(topo, topo_titles['unknown']).lower()}. "
+    )
+    if score is not None:
+        res_lead += (f"The discrimination score was "
+                     f"<b>{score:.0f}/100</b> ({_esc(sev_label.lower())} severity). ")
+    if confidence is not None:
+        res_lead += (f"Of {tot} planned identities, {succ} returned a usable "
+                     f"price, giving a confidence of {confidence}%.")
+    story.append(Paragraph(res_lead, sBody))
+
+    # Table 1 — summary of key metrics (booktabs style).
+    def _kv_rows():
+        rows = [
+            ("Target", _esc(target_name)),
+            ("Topology class", _esc(topo.capitalize())),
+            ("Baseline price", _money(bp)),
+            ("Mean price", _money(mean_price)),
+            ("Price range",
+             (f"{_money(rmin)} &ndash; {_money(rmax)}"
+              if (rmin is not None and rmax is not None) else "n/a")),
+            ("Maximum spread",
+             (f"{_money(spread)} ({_pct(spread_pct)})"
+              if (spread is not None and spread > 0)
+              else ("$0.00 (0.0%)" if spread is not None else "n/a"))),
+            ("Discrimination index",
+             (_money(disc_index) if disc_index is not None else "n/a")),
+            ("Discrimination score",
+             (f"{score:.0f} / 100" if score is not None else "n/a")),
+            ("Severity", _esc(sev_label)),
+            ("Real probes run", f"{real_probes} of {total_agents or tot}"),
+        ]
+        if filled > 0:
+            rows.append(("Identities skipped",
+                         f"{filled} (exact-uniform gate)"))
+        if confidence is not None:
+            rows.append(("Confidence", f"{confidence}%"))
+        rows.append(("Suspected driver",
+                     _esc(_titleize(top_driver.get("variable_name")))
+                     if top_driver else "None detected"))
+        return rows
+
+    t1_data = [[Paragraph("Metric", sTblHead), Paragraph("Value", sTblHeadR)]]
+    for k, v in _kv_rows():
+        t1_data.append([
+            Paragraph(_esc(k), sCellMuted),
+            Paragraph(str(v), sCellR),
+        ])
+    col1 = CONTENT_W * 0.42
+    t1 = Table(t1_data, colWidths=[col1, CONTENT_W - col1], hAlign="CENTER")
+    t1.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        # booktabs: top rule, mid rule under header, bottom rule. No verticals.
+        ("LINEABOVE", (0, 0), (-1, 0), 1.1, RULE),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
+        ("LINEBELOW", (0, -1), (-1, -1), 1.1, RULE),
     ]))
-    story.append(sum_table)
+    story.append(Spacer(1, 4))
+    story.append(KeepTogether([
+        t1,
+        Paragraph("Table 1. Summary of audit metrics for the target session.",
+                  sCaption),
+    ]))
 
-    # ═══════════ EVIDENCE APPENDIX ═══════════
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("EVIDENCE APPENDIX", sH2))
-    ev_agents = [a for a in agents if a.get("evidence") and a["evidence"].get("extraction_method") != "none"]
-    if ev_agents:
-        # Table header
-        ev_header = ["Agent", "Region", "Device", "Price", "Raw Text", "Currency", "Method"]
-        ev_widths = [50, 60, 70, 55, 130, 50, 80]
-        ev_rows = [[
-            Paragraph(f"<font size='7' color='#64748b'>{h}</font>",
-                      S(f"EH{i}", fontSize=7, fontName="Helvetica-Bold", textColor=GRAY))
-            for h in ev_header
-        ]]
-        for a in ev_agents:
-            ev = a.get("evidence", {})
-            vars_ = {"location": a.get("location", ""), "device": a.get("device", "")}
-            ev_rows.append([
-                Paragraph(f"<font size='7'>{a.get('agent_id', '')}</font>", sSmall),
-                Paragraph(f"<font size='7'>{vars_.get('location', '—')}</font>", sSmall),
-                Paragraph(f"<font size='7'>{vars_.get('device', '—')}</font>", sSmall),
-                Paragraph(f"<font size='7'><b>${(a.get('price') or 0):,.2f}</b></font>",
-                          S("EP", fontSize=7, fontName="Helvetica-Bold", textColor=DARK)),
-                Paragraph(f"<font size='7'>{ev.get('price_raw_text') or 'N/A'}</font>", sSmall),
-                Paragraph(f"<font size='7'>{ev.get('currency_detected') or 'N/A'}</font>", sSmall),
-                Paragraph(f"<font size='7'>{ev.get('extraction_method') or 'N/A'}</font>", sSmall),
+    # Figure 1 — price distribution (clean greyscale axis).
+    if (rmin is not None and rmax is not None and rmax >= rmin):
+        fig = _price_axis_figure(
+            CONTENT_W, rmin, rmax, bp, mean_price,
+            HAIR, RULE, INK, GREY, SLATE,
+        )
+        story.append(Spacer(1, 6))
+        story.append(KeepTogether([
+            fig,
+            Paragraph(
+                "Figure 1. Distribution of observed prices across synthetic "
+                "identities. Ticks mark the minimum, maximum, baseline, and mean.",
+                sCaption),
+        ]))
+
+    # ---- 4. Evidence --------------------------------------------------------
+    story.append(Paragraph("4.&nbsp;&nbsp;Evidence", sSection))
+
+    # 4a. Variable-impact table + simple bar figure.
+    if gradients:
+        story.append(Paragraph(
+            "Table 2 reports the per-attribute price differential. Statistically "
+            "significant attributes (|<i>t</i>|&nbsp;&gt;&nbsp;2.0) are emphasised "
+            "in <font color='#a11111'><b>dark red</b></font>.",
+            sBody))
+
+        t2_head = [
+            Paragraph("Attribute", sTblHead),
+            Paragraph("High state", sTblHead),
+            Paragraph("Low state", sTblHead),
+            Paragraph("&Delta; price", sTblHeadR),
+            Paragraph("&Delta; %", sTblHeadR),
+            Paragraph("<i>t</i>", sTblHeadR),
+            Paragraph("Sig.", sTblHeadR),
+        ]
+        t2_data = [t2_head]
+        sig_rows = []
+        for gi, g in enumerate(gradients):
+            sig = bool(g.get("significant"))
+            delta = _num(g.get("delta"))
+            delta_pct = _num(g.get("delta_pct"))
+            tstat = _num(g.get("t_statistic"))
+            delta_cell_style = sCellSig if sig else sCellR
+            t2_data.append([
+                Paragraph(_esc(_titleize(g.get("variable_name"))), sCell),
+                Paragraph(_esc(g.get("state_high") or "n/a"), sCellMuted),
+                Paragraph(_esc(g.get("state_low") or "n/a"), sCellMuted),
+                Paragraph((f"{'+' if (delta or 0) >= 0 else ''}{_money(delta)}"
+                           if delta is not None else "n/a"), delta_cell_style),
+                Paragraph((f"{delta_pct:+.1f}%" if delta_pct is not None else "n/a"),
+                          sCellR),
+                Paragraph((f"{tstat:.1f}" if tstat is not None else "n/a"), sCellR),
+                Paragraph(("yes" if sig else "&mdash;"),
+                          sCellSig if sig else sCellR),
             ])
+            if sig:
+                sig_rows.append(len(t2_data) - 1)
 
-        ev_table = Table(ev_rows, colWidths=ev_widths)
-        ev_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        # Proportional column widths.
+        w = CONTENT_W
+        cw = [w * 0.18, w * 0.21, w * 0.21, w * 0.12, w * 0.10, w * 0.08, w * 0.10]
+        t2 = Table(t2_data, colWidths=cw, hAlign="CENTER", repeatRows=1)
+        t2_style = [
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("LINEABOVE", (0, 0), (-1, 0), 1.1, RULE),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
+            ("LINEBELOW", (0, -1), (-1, -1), 1.1, RULE),
+        ]
+        t2.setStyle(TableStyle(t2_style))
+        story.append(Spacer(1, 4))
+        story.append(KeepTogether([
+            t2,
+            Paragraph(
+                "Table 2. Per-attribute price differentials from Welch's "
+                "<i>t</i>-test.", sCaption),
+        ]))
+
+        # Figure 2 — greyscale impact bars.
+        fig2 = _impact_bars_figure(
+            CONTENT_W, gradients, _num, _titleize, _esc,
+            BARFILL, BARLITE, SIGRED, INK, GREY, HAIR,
+        )
+        if fig2 is not None:
+            story.append(Spacer(1, 4))
+            story.append(KeepTogether([
+                fig2,
+                Paragraph(
+                    "Figure 2. Magnitude of price impact per attribute. "
+                    "Significant attributes are drawn darker.",
+                    sCaption),
+            ]))
+    else:
+        story.append(Paragraph(
+            "No per-attribute price differentials were available for this session, "
+            "so no variable-impact analysis is reported.", sBody))
+
+    # 4b. Per-agent evidence appendix (raw captured prices).
+    ev_agents = [
+        a for a in agents
+        if isinstance(a.get("evidence"), dict)
+        and a["evidence"].get("extraction_method") not in (None, "none", "")
+    ]
+    if ev_agents:
+        story.append(Paragraph(
+            f"Table 3 lists raw price evidence captured directly from the rendered "
+            f"page for {len(ev_agents)} of {total_agents} identities.", sBody))
+        e_head = [
+            Paragraph("Agent", sTblHead),
+            Paragraph("Location", sTblHead),
+            Paragraph("Device", sTblHead),
+            Paragraph("Price", sTblHeadR),
+            Paragraph("Raw text", sTblHead),
+            Paragraph("Cur.", sTblHead),
+            Paragraph("Method", sTblHead),
+        ]
+        e_data = [e_head]
+        for a in ev_agents[:24]:
+            ev = a.get("evidence") or {}
+            e_data.append([
+                Paragraph(_esc(a.get("agent_id") or "n/a"), sCell),
+                Paragraph(_esc(_titleize(a.get("location")) or "n/a"), sCellMuted),
+                Paragraph(_esc(_titleize(a.get("device")) or "n/a"), sCellMuted),
+                Paragraph(_money(a.get("price")), sCellR),
+                Paragraph(_esc(ev.get("price_raw_text") or "n/a"), sCellMuted),
+                Paragraph(_esc(ev.get("currency_detected") or "n/a"), sCell),
+                Paragraph(_esc(ev.get("extraction_method") or "n/a"), sCellMuted),
+            ])
+        w = CONTENT_W
+        ecw = [w * 0.12, w * 0.16, w * 0.16, w * 0.12, w * 0.20, w * 0.08, w * 0.16]
+        e_table = Table(e_data, colWidths=ecw, hAlign="CENTER", repeatRows=1)
+        e_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("TOPPADDING", (0, 0), (-1, -1), 3),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.5, BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("LINEABOVE", (0, 0), (-1, 0), 1.1, RULE),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
+            ("LINEBELOW", (0, 1), (-1, -2), 0.25, HAIR),
+            ("LINEBELOW", (0, -1), (-1, -1), 1.1, RULE),
         ]))
-        story.append(ev_table)
-
-        # Evidence stats
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 4))
+        story.append(e_table)
         story.append(Paragraph(
-            f"<font size='7' color='#94a3b8'>{len(ev_agents)} of {total_agents} agents captured evidence "
-            f"· {real_probes} real probes · {filled} skipped (uniform gate)</font>",
-            sSmall
-        ))
+            f"Table 3. Raw on-page price evidence ({real_probes} real probes"
+            + (f", {filled} identities skipped under the uniform gate" if filled > 0 else "")
+            + ").", sCaption))
     else:
         story.append(Paragraph(
-            "<font size='8' color='#64748b'>No evidence data available for this probe. "
-            "Evidence capture requires a live BrightData probe (not a demo or cached result).</font>",
-            sBody
-        ))
+            "No raw price evidence was captured for this session. Evidence capture "
+            "requires a live probe; demo and cached results do not retain on-page "
+            "excerpts.", sBody))
 
-    # ═══════════ METHODOLOGY ═══════════
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("METHODOLOGY", sH2))
-    methodology_text = (
-        "Jacobi is an evidence-grade pricing intelligence platform that runs controlled "
-        "buyer-context probes against target URLs. Each probe deploys synthetic shopper "
-        "identities — varying location, device type, cookie profile, referrer source, and "
-        "browser language — to detect price discrimination.</p><p>"
-        "<b>How it works:</b> Jacobi sends real HTTP requests through BrightData's global "
-        "proxy network. Each agent identity is routed through a different IP address and "
-        "geographic region. The target page's HTML is parsed, and the listed price is "
-        "extracted using site-specific selectors (e.g., Amazon's corePriceDisplay container, "
-        "Booking.com's data-testid elements). Prices are normalized to USD for comparison.</p><p>"
-        "<b>Uniform-gate optimization:</b> If the first 10 real probes return the exact same "
-        "price (to the cent), the remaining agents are skipped. This saves time and BrightData "
-        "credits without sacrificing accuracy — identical pricing means no discrimination "
-        "exists. If any agent sees a different price, the full 24-agent audit runs.</p><p>"
-        "<b>Statistical analysis:</b> Prices are grouped by discrimination variable (location, "
-        "device, etc.) and compared using Welch's t-test. Variables with |t| > 2.0 are "
-        "flagged as statistically significant. The discrimination index measures the total "
-        "USD spread attributable to significant variables.</p><p>"
-        "<b>Evidence integrity:</b> Every real probe captures the raw HTML excerpt, the "
-        "exact price text as rendered on the page, the detected currency, and the extraction "
-        "method used. This evidence is stored and can be independently verified."
+    # ---- 5. Conclusion ------------------------------------------------------
+    story.append(Paragraph("5.&nbsp;&nbsp;Conclusion", sSection))
+    concl = (
+        f"The audited target, <b>{_esc(target_name)}</b>, exhibits a "
+        f"<b>{_esc(topo)}</b> pricing topology"
     )
-    story.append(Paragraph(methodology_text, S("Method", fontSize=8, textColor=DARK, leading=12)))
+    if score is not None:
+        concl += f" with a discrimination score of {score:.0f}/100 ({_esc(sev_label.lower())} severity)"
+    concl += ". "
+    if topo == "uniform":
+        concl += ("No actionable price discrimination was detected along the tested "
+                  "attributes; the listing appears to present a single price to all "
+                  "buyer contexts.")
+    elif top_driver is not None and spread is not None and spread > 0:
+        concl += (f"The {_esc(_titleize(top_driver.get('variable_name')))} attribute "
+                  f"is the primary driver, contributing the largest price gap. The "
+                  f"captured evidence in Section&nbsp;4 supports independent "
+                  f"verification of every observation.")
+    else:
+        concl += ("Where price differences appeared, the per-attribute evidence in "
+                  "Section&nbsp;4 documents the magnitude and statistical support for "
+                  "each observation.")
+    story.append(Paragraph(concl, sBody))
 
-    # ═══════════ FOOTER ═══════════
-    story.append(Spacer(1, 20))
-    ts = datetime.now().strftime("%B %d, %Y")
-    story.append(Paragraph(f"<font size='7' color='#94a3b8'>Jacobi · {ts} · Session {report_id[:12]}</font>", sFooter))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=HAIR,
+                            spaceBefore=2, spaceAfter=4))
+    story.append(Paragraph(
+        "<i>Prepared by JACOBI Pricing Intelligence. Prices are normalised for "
+        "comparison; raw on-page values are preserved in the evidence appendix. "
+        "This report is generated automatically from probe data and contains no "
+        "fabricated values &mdash; absent fields are reported as &lsquo;n/a&rsquo;.</i>",
+        S("Disc", fontName="Times-Italic", fontSize=8, leading=11, textColor=GREY)))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     buf.seek(0)
 
     return StreamingResponse(
@@ -494,3 +743,120 @@ async def export_pdf(report_id: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="jacobi-probe-{report_id}.pdf"'},
     )
+
+
+def _price_axis_figure(width, rmin, rmax, baseline, mean,
+                       hair, rule, ink, grey, accent):
+    """A clean horizontal price axis with min/max/baseline/mean ticks (greyscale).
+
+    All inputs are pre-coerced floats except baseline/mean which may be None.
+    Guarded against a zero-width span.
+    """
+    h = 58.0
+    d = Drawing(width, h)
+    pad = 6.0
+    axis_y = 30.0
+    x0 = pad
+    x1 = width - pad
+    track_w = x1 - x0
+
+    span = (rmax - rmin)
+    if span <= 0:
+        span = 1.0  # single-price case: collapse ticks to centre
+
+    def _x(val):
+        if val is None:
+            return None
+        frac = (val - rmin) / span
+        frac = max(0.0, min(1.0, frac))
+        return x0 + frac * track_w
+
+    # Light track + baseline axis line.
+    d.add(Rect(x0, axis_y - 1.5, track_w, 3.0, fillColor=hair, strokeColor=None))
+    d.add(Line(x0, axis_y, x1, axis_y, strokeColor=rule, strokeWidth=0.8))
+
+    # End ticks (min / max).
+    for val, lbl, anchor in ((rmin, f"${rmin:,.0f}", "start"),
+                             (rmax, f"${rmax:,.0f}", "end")):
+        xv = _x(val)
+        d.add(Line(xv, axis_y - 5, xv, axis_y + 5, strokeColor=rule, strokeWidth=0.8))
+        s = String(xv, axis_y - 16, lbl, fontName="Times-Roman", fontSize=7.5,
+                   fillColor=grey)
+        s.textAnchor = anchor
+        d.add(s)
+
+    # Mean marker (grey, below).
+    if mean is not None and rmax > rmin:
+        xm = _x(mean)
+        d.add(Line(xm, axis_y - 7, xm, axis_y + 7, strokeColor=grey, strokeWidth=0.8))
+        sm = String(xm, axis_y - 16, f"mean ${mean:,.0f}", fontName="Times-Italic",
+                    fontSize=7, fillColor=grey)
+        sm.textAnchor = "middle"
+        d.add(sm)
+
+    # Baseline marker (dark accent, above).
+    if baseline is not None:
+        xb = _x(baseline)
+        d.add(Line(xb, axis_y - 9, xb, axis_y + 9, strokeColor=accent, strokeWidth=1.4))
+        sb = String(xb, axis_y + 13, f"baseline ${baseline:,.0f}",
+                    fontName="Times-Bold", fontSize=7.5, fillColor=accent)
+        sb.textAnchor = "middle"
+        d.add(sb)
+
+    return d
+
+
+def _impact_bars_figure(width, gradients, num, titleize, esc,
+                        barfill, barlite, sigred, ink, grey, hair):
+    """Horizontal greyscale bars of |delta| per attribute. Returns None if no data.
+
+    Significant attributes are drawn darker; significant labels are dark red.
+    Guarded against empty/zero deltas.
+    """
+    rows = []
+    for g in gradients:
+        delta = abs(num(g.get("delta")) or 0.0)
+        rows.append((titleize(g.get("variable_name")) or "n/a",
+                     delta, bool(g.get("significant"))))
+    if not rows:
+        return None
+    max_delta = max((r[1] for r in rows), default=0.0)
+
+    label_w = min(120.0, width * 0.30)
+    val_w = 60.0
+    bar_area = width - label_w - val_w - 8.0
+    if bar_area < 20:
+        bar_area = max(20.0, width * 0.4)
+
+    row_h = 17.0
+    top_pad = 4.0
+    h = top_pad + row_h * len(rows) + 4.0
+    d = Drawing(width, h)
+
+    y = h - top_pad - row_h
+    for name, delta, sig in rows:
+        cy = y + row_h / 2.0
+        # Attribute label (left, right-aligned to the bar start).
+        lbl = String(label_w - 6, cy - 3, name[:22],
+                     fontName="Times-Roman", fontSize=8, fillColor=ink)
+        lbl.textAnchor = "end"
+        d.add(lbl)
+        # Bar.
+        if max_delta > 0 and delta > 0:
+            bw = (delta / max_delta) * bar_area
+        else:
+            bw = 0.0
+        bw = max(bw, 1.0) if delta > 0 else 0.0
+        if bw > 0:
+            d.add(Rect(label_w, cy - 5, bw, 10,
+                       fillColor=(barfill if sig else barlite), strokeColor=None))
+        # Value label.
+        vstr = f"${delta:,.0f}"
+        vs = String(label_w + max(bw, 0) + 5, cy - 3, vstr,
+                    fontName=("Times-Bold" if sig else "Times-Roman"),
+                    fontSize=7.5, fillColor=(sigred if sig else grey))
+        vs.textAnchor = "start"
+        d.add(vs)
+        y -= row_h
+
+    return d

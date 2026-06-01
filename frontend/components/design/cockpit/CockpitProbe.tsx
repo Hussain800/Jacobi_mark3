@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "../../../lib/supabase/client";
+import { fetchPlan, type Plan } from "../../../lib/billing";
 
 /* ─── Types & data ──────────────────────────────────────────────────── */
 
@@ -282,6 +283,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   // Audit depth (Phase 5A): "smart24" (Free) or "pro50" (Pro). Backend enforces
   // the tier — a Free user selecting pro50 is safely downgraded server-side.
   const [auditDepth, setAuditDepth] = useState<"smart24" | "pro50">("smart24");
+  // User's plan, used to gate the Pro 50 option in the UI (the backend is the
+  // real enforcement; this is just so Free users aren't misled into thinking a
+  // 50-agent scan will run). Defaults to "anon"/"free" until the fetch resolves.
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const isPro = plan?.tier === "pro";
+  useEffect(() => {
+    fetchPlan().then(setPlan).catch(() => {});
+  }, []);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Backend rejects /api/probe with 401 (sign-in required) or 402 (quota
   // exhausted). We surface that state as a structured block instead of a
@@ -780,23 +789,45 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               letterSpacing: "0.14em", textTransform: "uppercase",
             }}>
               <span>Depth</span>
-              {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setAuditDepth(val)}
+              {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => {
+                // Pro 50 is locked for non-Pro users: the button is disabled and
+                // labelled "Upgrade", so a Free user is never misled into thinking
+                // a 50-agent scan will run. (The backend also enforces this.)
+                const locked = val === "pro50" && !isPro;
+                const active = auditDepth === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    disabled={locked}
+                    title={locked ? "Pro 50 is available on the Pro plan" : undefined}
+                    onClick={() => { if (!locked) setAuditDepth(val); }}
+                    style={{
+                      fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
+                      textTransform: "uppercase", padding: "5px 11px",
+                      cursor: locked ? "not-allowed" : "pointer",
+                      borderRadius: "var(--r-sm)",
+                      border: active ? "1px solid var(--cobalt-deep)" : "1px solid var(--line-2)",
+                      background: active ? "var(--cobalt)" : "transparent",
+                      color: active ? "#fff" : locked ? "var(--text-4)" : "var(--text-2)",
+                      opacity: locked ? 0.7 : 1,
+                    }}
+                  >
+                    {lbl}{locked && " 🔒"}
+                  </button>
+                );
+              })}
+              {!isPro && (
+                <a
+                  href="/pricing"
                   style={{
-                    fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
-                    textTransform: "uppercase", padding: "5px 11px", cursor: "pointer",
-                    borderRadius: "var(--r-sm)",
-                    border: auditDepth === val ? "1px solid var(--cobalt-deep)" : "1px solid var(--line-2)",
-                    background: auditDepth === val ? "var(--cobalt)" : "transparent",
-                    color: auditDepth === val ? "#fff" : "var(--text-2)",
+                    fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.1em",
+                    textTransform: "uppercase", color: "var(--cobalt)", marginLeft: 2,
                   }}
                 >
-                  {lbl}
-                </button>
-              ))}
+                  Upgrade
+                </a>
+              )}
             </div>
           </div>
 

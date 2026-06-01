@@ -70,6 +70,7 @@ def _sanitize_report(report: dict) -> dict:
         "native_baseline_price": report.get("native_baseline_price"),
         "normalized_currency": report.get("normalized_currency", "USD"),
         "fx_rate_used": report.get("fx_rate_used"),
+        "language_observations": report.get("language_observations", []),
         "gradients": report.get("gradients", []),
         "agents": [
             {
@@ -86,6 +87,8 @@ def _sanitize_report(report: dict) -> dict:
                 "native_price": a.get("native_price"),
                 "native_currency": a.get("native_currency"),
                 "normalized_price_usd": a.get("normalized_price_usd"),
+                "browser_language": a.get("browser_language"),
+                "language_label": a.get("language_label"),
                 "evidence": a.get("evidence"),
             }
             for a in report.get("agents", [])
@@ -717,6 +720,36 @@ async def export_pdf(report_id: str):
             "No per-attribute price differentials were available for this session, "
             "so no variable-impact analysis is reported.", sBody))
 
+    # ── Controlled browser-language observation (metadata, not a t-tested driver) ──
+    lang_obs = data.get("language_observations") or []
+    if isinstance(lang_obs, list) and lang_obs:
+        for ob in lang_obs:
+            if not isinstance(ob, dict):
+                continue
+            cl = _esc(ob.get("control_language_label") or ob.get("control_language") or "EN")
+            vl = _esc(ob.get("variant_language_label") or ob.get("variant_language") or "variant")
+            d_usd = _num(ob.get("delta_usd"))
+            d_pct = _num(ob.get("delta_pct"))
+            if ob.get("difference_detected") and d_usd is not None:
+                body = (
+                    f"Browser-language comparison is based on a controlled "
+                    f"Accept-Language pair (every other vector held identical; only "
+                    f"the browser language differs). For the {cl} vs {vl} pair, the "
+                    f"price differed by {_money(d_usd)}"
+                    + (f" ({d_pct:+.1f}%)" if d_pct is not None else "")
+                    + ". This is reported as a controlled observation, not a "
+                    "statistically-tested driver."
+                )
+            else:
+                body = (
+                    f"Browser-language comparison is based on a controlled "
+                    f"Accept-Language pair ({cl} vs {vl}, every other vector held "
+                    "identical). No price difference was observed between the two "
+                    "languages. Reported as a controlled observation, not a driver."
+                )
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(body, sBody))
+
     # 4b. Per-agent evidence appendix (raw captured prices).
     ev_agents = [
         a for a in agents
@@ -731,6 +764,7 @@ async def export_pdf(report_id: str):
             Paragraph("Agent", sTblHead),
             Paragraph("Location", sTblHead),
             Paragraph("Device", sTblHead),
+            Paragraph("Language", sTblHead),
             Paragraph("Native price", sTblHeadR),
             Paragraph("USD (norm.)", sTblHeadR),
             Paragraph("Raw text", sTblHead),
@@ -750,17 +784,21 @@ async def export_pdf(report_id: str):
             usd_val = a.get("normalized_price_usd")
             if usd_val is None:
                 usd_val = a.get("price")
+            # Browser language: prefer agent-level, fall back to evidence dict.
+            lang_cell = (a.get("browser_language")
+                         or ev.get("browser_language") or "n/a")
             e_data.append([
                 Paragraph(_esc(a.get("agent_id") or "n/a"), sCell),
                 Paragraph(_esc(_titleize(a.get("location")) or "n/a"), sCellMuted),
                 Paragraph(_esc(_titleize(a.get("device")) or "n/a"), sCellMuted),
+                Paragraph(_esc(lang_cell), sCellMuted),
                 Paragraph(native_cell, sCellR),
                 Paragraph(_money(usd_val), sCellR),
                 Paragraph(_esc(ev.get("price_raw_text") or "n/a"), sCellMuted),
                 Paragraph(_esc(ev.get("extraction_method") or "n/a"), sCellMuted),
             ])
         w = CONTENT_W
-        ecw = [w * 0.11, w * 0.15, w * 0.15, w * 0.15, w * 0.13, w * 0.16, w * 0.15]
+        ecw = [w * 0.10, w * 0.13, w * 0.12, w * 0.11, w * 0.13, w * 0.12, w * 0.15, w * 0.14]
         e_table = Table(e_data, colWidths=ecw, hAlign="CENTER", repeatRows=1)
         e_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

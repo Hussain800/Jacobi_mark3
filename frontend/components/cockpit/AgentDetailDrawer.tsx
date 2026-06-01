@@ -106,6 +106,7 @@ export default function AgentDetailDrawer({ agent, onClose }: Props) {
               {[
                 { l: "Network", v: tierLabel },
                 { l: "Proxy", v: agent.proxy_type || "—" },
+                { l: "Language", v: agent.language_label || agent.browser_language || "—" },
                 {
                   l: "Response",
                   v: agent.response_time_ms ? `${agent.response_time_ms}ms` : "—",

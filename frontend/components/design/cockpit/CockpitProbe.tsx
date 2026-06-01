@@ -64,6 +64,12 @@ interface BackendAgent {
   native_currency?: string | null;
   normalized_price_usd?: number | null;
   inferred?: boolean;
+  // Browser-language vector (Phase 4). Optional → render N/A when absent.
+  browser_language?: string | null;
+  accept_language_header?: string | null;
+  language_label?: string | null;
+  language_pair_id?: string | null;
+  language_pair_role?: string | null;
 }
 
 interface TopologyReport {
@@ -94,6 +100,20 @@ interface TopologyReport {
   native_baseline_price?: number | null;
   normalized_currency?: string | null;
   fx_rate_used?: number | null;
+  // Controlled browser-language observations (metadata, not a driver).
+  language_observations?: LanguageObservation[];
+}
+
+interface LanguageObservation {
+  pair_id: string;
+  controlled: boolean;
+  control_language_label?: string | null;
+  variant_language_label?: string | null;
+  control_price_usd?: number | null;
+  variant_price_usd?: number | null;
+  delta_usd?: number | null;
+  delta_pct?: number | null;
+  difference_detected?: boolean;
 }
 
 // Preset case studies — always use the curated demo result so the
@@ -1138,7 +1158,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 }}>
                   <div style={{
                     display: "grid",
-                    gridTemplateColumns: "44px 1fr 110px 100px 70px",
+                    gridTemplateColumns: "44px 1fr 100px 96px 90px 90px",
                     gap: 12,
                     padding: "12px 18px",
                     background: "var(--surface-2)",
@@ -1151,6 +1171,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     <span>#</span>
                     <span>Profile</span>
                     <span>Network</span>
+                    <span>Language</span>
                     <span>Status</span>
                     <span style={{ textAlign: "right" }}>Price</span>
                   </div>
@@ -1168,7 +1189,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                         key={a.agent_id}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "44px 1fr 110px 100px 70px",
+                          gridTemplateColumns: "44px 1fr 100px 96px 90px 90px",
                           gap: 12,
                           padding: "13px 18px",
                           borderTop: idx === 0 ? "none" : "1px solid var(--line)",
@@ -1180,6 +1201,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                         <span style={{ color: "var(--text-2)", fontWeight: 500 }}>{a.agent_id.replace("AGENT_", "#")}</span>
                         <span style={{ color: "var(--text)", fontWeight: 500 }}>{agentLabelCity(a)}</span>
                         <span style={{ color: "var(--text-2)" }}>{net}</span>
+                        <span style={{ color: "var(--text-2)" }}>{a.browser_language || "—"}</span>
                         <span style={{
                           color: a.status === "success" ? "var(--good)" : "var(--over)",
                           fontWeight: 600,

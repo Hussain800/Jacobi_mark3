@@ -148,6 +148,84 @@ AGENT_CONFIGS: List[dict] = [
     {"id":"AGENT_23","label":"AGENT_23  CONTROL  BASELINE_REPEAT_2","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15","geo":"US-NY","referrer":"https://www.united.com/","cookie":"session_id=control_23; visit_count=1; last_visit=none","sec_ch_ua":'"Not/A)Brand";v="99", "Safari";v="17.4"',"variables":{"location":"manhattan_high","device":"macbook_pro","cookie":"fresh","referrer":"direct","network_tier":2,"proxy_type":"mobile"},"wave":2,"is_control":True},
 ]
 
+# ── Browser-language vector (Phase 4) ───────────────────────────────────────
+# Catalogue of Accept-Language headers used by language agents. The default for
+# every agent is en-US so the existing 24-agent science is unchanged; only the
+# controlled language-pair agents override it. We deliberately do NOT scatter
+# languages across the matrix, because that would confound language with
+# geography/device/etc. Language is only compared within CONTROLLED PAIRS where
+# every other vector is held identical and ONLY Accept-Language differs.
+LANGUAGE_PRESETS: Dict[str, dict] = {
+    "en-US": {"browser_language": "en-US",
+              "accept_language_header": "en-US,en;q=0.9",
+              "language_label": "English (US)"},
+    "ar-AE": {"browser_language": "ar-AE",
+              "accept_language_header": "ar-AE,ar;q=0.9,en;q=0.5",
+              "language_label": "Arabic (UAE)"},
+    "hi-IN": {"browser_language": "hi-IN",
+              "accept_language_header": "hi-IN,hi;q=0.9,en;q=0.5",
+              "language_label": "Hindi (India)"},
+    "fr-FR": {"browser_language": "fr-FR",
+              "accept_language_header": "fr-FR,fr;q=0.9,en;q=0.5",
+              "language_label": "French (France)"},
+    "es-ES": {"browser_language": "es-ES",
+              "accept_language_header": "es-ES,es;q=0.9,en;q=0.5",
+              "language_label": "Spanish (Spain)"},
+}
+
+
+def _apply_language(cfg: dict, lang_key: str) -> None:
+    """Stamp a language preset onto an agent config (mutates in place)."""
+    preset = LANGUAGE_PRESETS.get(lang_key, LANGUAGE_PRESETS["en-US"])
+    cfg["browser_language"] = preset["browser_language"]
+    cfg["accept_language_header"] = preset["accept_language_header"]
+    cfg["language_label"] = preset["language_label"]
+    cfg.setdefault("variables", {})["language"] = preset["browser_language"]
+
+
+# Every agent defaults to en-US (unchanged behaviour: en-US,en;q=0.9 was already
+# the hardcoded Accept-Language in _identity_headers).
+for _cfg in AGENT_CONFIGS:
+    _apply_language(_cfg, "en-US")
+
+# ── Controlled language pair ─────────────────────────────────────────────────
+# AGENT_22 and AGENT_23 were redundant BASELINE_REPEAT controls (identical to
+# each other and to the baseline). We repurpose them into the project's first
+# CONTROLLED language pair: both UAE / desktop-macbook / fresh / direct / same
+# network tier — the ONLY difference between them is Accept-Language (EN vs AR).
+# This is the one place a language pair can be added without (a) destroying an
+# existing vector or (b) adding agents (which would be 50-agent Pro mode).
+#
+# language_pair_id groups the two; language_pair_role marks which side. They are
+# intentionally NOT given delta_variable/delta_direction, so the Welch t-test
+# driver logic never treats language as a "suspected driver" (rules 5 & 6) — the
+# EN-vs-AR comparison is surfaced separately as a controlled observation.
+_UAE_PAIR_BASE = {
+    "geo": "AE", "network_tier": 0, "proxy_type": "datacenter",
+    "language_pair_id": "uae_desktop",
+    # Identical on every non-language vector — only Accept-Language differs.
+    "variables": {"location": "uae_desktop", "device": "macbook_pro",
+                  "cookie": "fresh", "referrer": "direct"},
+}
+for _cfg in AGENT_CONFIGS:
+    if _cfg["id"] == "AGENT_22":
+        _cfg.update({**_UAE_PAIR_BASE,
+                     "label": "AGENT_22  LANGUAGE_PAIR  UAE_DESKTOP_EN",
+                     "language_pair_role": "control_en",
+                     # No longer a baseline-repeat control: clear is_control so
+                     # it is not averaged into control_stability.
+                     "is_control": False})
+        _cfg["variables"] = dict(_UAE_PAIR_BASE["variables"])
+        _apply_language(_cfg, "en-US")
+    elif _cfg["id"] == "AGENT_23":
+        _cfg.update({**_UAE_PAIR_BASE,
+                     "label": "AGENT_23  LANGUAGE_PAIR  UAE_DESKTOP_AR",
+                     "language_pair_role": "variant_ar",
+                     "is_control": False})
+        _cfg["variables"] = dict(_UAE_PAIR_BASE["variables"])
+        _apply_language(_cfg, "ar-AE")
+
+
 WAVE_CONFIGS: Dict[int, List[dict]] = {}
 for cfg in AGENT_CONFIGS:
     WAVE_CONFIGS.setdefault(cfg["wave"], []).append(cfg)
@@ -787,7 +865,11 @@ class BrightDataMCPClient:
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             ),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
+            # Browser-language vector: use the agent's Accept-Language when set
+            # (language-pair agents carry e.g. 'ar-AE,ar;q=0.9,en;q=0.5'); every
+            # other agent keeps the original en-US default, so behaviour for the
+            # existing 22 agents is unchanged.
+            "Accept-Language": identity.get("accept_language_header") or "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
@@ -928,6 +1010,61 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
     return session_id, session
 
 
+def compute_language_observations(session: dict) -> List[dict]:
+    """Compute price deltas for CONTROLLED browser-language pairs ONLY.
+
+    A controlled pair is two agents sharing the same `language_pair_id` where
+    every vector (location/device/cookie/referrer/network) is identical and the
+    ONLY difference is Accept-Language. Both sides must have returned a price.
+
+    This is deliberately SEPARATE from compute_gradients / the Welch t-test:
+    a single pair has n=1 per side, so it can never be a "statistically
+    significant driver" — and the rules forbid claiming language discrimination
+    without controlled pairs. We therefore surface this as a CONTROLLED
+    OBSERVATION (metadata), not a suspected driver. The UI/PDF label it as such.
+    """
+    by_pair: Dict[str, Dict[str, dict]] = defaultdict(dict)
+    for a in session.get("agents", []):
+        pid = a.get("language_pair_id")
+        role = a.get("language_pair_role")
+        if pid and role and a.get("price") is not None:
+            by_pair[pid][role] = a
+
+    observations: List[dict] = []
+    for pid, sides in by_pair.items():
+        ctrl = sides.get("control_en")
+        variant = next((v for k, v in sides.items() if k != "control_en"), None)
+        if not ctrl or not variant:
+            continue
+        cp = ctrl.get("price")
+        vp = variant.get("price")
+        if cp is None or vp is None:
+            continue
+        delta = round(vp - cp, 2)
+        delta_pct = round((delta / cp * 100), 2) if cp else 0.0
+        observations.append({
+            "pair_id": pid,
+            "controlled": True,
+            "control_language": ctrl.get("browser_language"),
+            "control_language_label": ctrl.get("language_label"),
+            "variant_language": variant.get("browser_language"),
+            "variant_language_label": variant.get("language_label"),
+            "control_price_usd": cp,
+            "variant_price_usd": vp,
+            "control_native": _fmt_native(ctrl.get("native_price"), ctrl.get("native_currency")),
+            "variant_native": _fmt_native(variant.get("native_price"), variant.get("native_currency")),
+            "delta_usd": delta,
+            "delta_pct": delta_pct,
+            "difference_detected": abs(delta) >= 0.01,
+            # Held-constant vectors, for transparency in the UI/PDF.
+            "held_constant": {
+                k: ctrl.get("variables", {}).get(k)
+                for k in ("location", "device", "cookie", "referrer")
+            },
+        })
+    return observations
+
+
 def compute_gradients(session: dict) -> List[dict]:
     agents = session.get("agents", [])
     baseline = session.get("baseline_price", 0.0)
@@ -1047,6 +1184,9 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     session["topology_class"] = classify_topology(gradients, di, bp, session.get("max_price_spread_pct", 0))
     session["discrimination_score"] = compute_severity_score(session)
 
+    # Controlled browser-language observations (metadata, NOT a t-tested driver).
+    session["language_observations"] = compute_language_observations(session)
+
     sig_vars = [g for g in gradients if g["significant"]]
     sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
     if session["topology_class"] == "uniform":
@@ -1081,7 +1221,14 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
         response_time_ms=None, bot_detected=False, detection_signal=None, error_message=None,
         variables=cfg.get("variables", {}), delta_variable=cfg.get("delta_variable"),
         delta_direction=cfg.get("delta_direction"), is_control=cfg.get("is_control", False),
-        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"))
+        network_tier=cfg.get("network_tier"), proxy_type=cfg.get("proxy_type"),
+        # Browser-language vector metadata (present on every agent, even on
+        # failure/blocked, so the UI/PDF can always show the language probed).
+        browser_language=cfg.get("browser_language"),
+        accept_language_header=cfg.get("accept_language_header"),
+        language_label=cfg.get("language_label"),
+        language_pair_id=cfg.get("language_pair_id"),
+        language_pair_role=cfg.get("language_pair_role"))
     retry_cfg = dict(cfg)
     try:
         last_failure = "Unknown"
@@ -1120,6 +1267,12 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 ev.get("price_raw_text"), ev.get("currency_detected")
             )
             ev.update(native)
+            # Fold the browser-language metadata into evidence too, so a single
+            # agent record carries the full provenance (language + raw text +
+            # native price + extraction method).
+            ev["browser_language"] = cfg.get("browser_language")
+            ev["accept_language_header"] = cfg.get("accept_language_header")
+            ev["language_label"] = cfg.get("language_label")
             s["evidence"] = ev
             s["native_price"] = native["native_price"]
             s["native_currency"] = native["native_currency"]
@@ -1247,10 +1400,28 @@ async def _run_probe_engine(session: dict, url: str) -> dict:
                     native_currency=_fill_native_currency,
                     normalized_price_usd=bp,
                     fx_rate_used=_fill_fx,
+                    browser_language=cfg.get("browser_language"),
+                    accept_language_header=cfg.get("accept_language_header"),
+                    language_label=cfg.get("language_label"),
+                    language_pair_id=cfg.get("language_pair_id"),
+                    language_pair_role=cfg.get("language_pair_role"),
                     inferred=True,  # marks an exact-uniform-gate skipped agent
                 )
                 return agent
-            fill_tasks = [_fill_agent(c) for c in AGENT_CONFIGS[phase1_count:]]
+            # Controlled language-pair agents must be REALLY probed (with their
+            # Accept-Language header) even when the uniform gate fires — otherwise
+            # the AR side would just be filled with the baseline and the
+            # EN-vs-AR comparison would be fabricated. So: real-probe any
+            # language_pair agent; fill the rest.
+            remaining = AGENT_CONFIGS[phase1_count:]
+            lang_pair_cfgs = [c for c in remaining if c.get("language_pair_id")]
+            fill_cfgs = [c for c in remaining if not c.get("language_pair_id")]
+            for c in lang_pair_cfgs:
+                try:
+                    _ingest_agent(await _limited_agent(c, asyncio.Semaphore(2)))
+                except Exception:
+                    session["failed_agents"] += 1
+            fill_tasks = [_fill_agent(c) for c in fill_cfgs]
             for coro in asyncio.as_completed(fill_tasks):
                 r = await coro
                 _ingest_agent(r)
@@ -1558,6 +1729,11 @@ def build_agent_list(session: dict) -> list:
             normalized_price_usd=a.get("normalized_price_usd"),
             fx_rate_used=a.get("fx_rate_used"),
             inferred=a.get("inferred", False),
+            browser_language=a.get("browser_language"),
+            accept_language_header=a.get("accept_language_header"),
+            language_label=a.get("language_label"),
+            language_pair_id=a.get("language_pair_id"),
+            language_pair_role=a.get("language_pair_role"),
             evidence=a.get("evidence"),
         ))
     return agents
@@ -1597,6 +1773,8 @@ async def get_result(session_id: str):
         native_baseline_price=session.get("native_baseline_price"),
         normalized_currency=session.get("normalized_currency", "USD"),
         fx_rate_used=session.get("fx_rate_used"),
+        # Controlled browser-language observations (metadata, not a driver).
+        language_observations=session.get("language_observations", []),
         error=session.get("error"),
     )
 
@@ -1791,6 +1969,8 @@ async def get_share(session_id: str):
         native_baseline_price=session.get("native_baseline_price"),
         normalized_currency=session.get("normalized_currency", "USD"),
         fx_rate_used=session.get("fx_rate_used"),
+        # Controlled browser-language observations (metadata, not a driver).
+        language_observations=session.get("language_observations", []),
         error=session.get("error"),
     )
 

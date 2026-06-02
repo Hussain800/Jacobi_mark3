@@ -44,8 +44,34 @@ def test_partial_coverage_flags_moderate_confidence():
     assert M.finalize_pricing_session(s, 0.0)
     assert s["coverage"] == "partial"
     assert "partial coverage" in s["summary"].lower() or "moderate confidence" in s["summary"].lower()
-    # topology still computed for partial
-    assert s["topology_class"] in ("uniform", "selective", "progressive", "aggressive")
+    # Topology still computed for partial. Without a SIGNIFICANT gradient the
+    # spread is not attributable to discrimination, so "indeterminate" is a
+    # valid (honest) outcome alongside the discrimination classes.
+    assert s["topology_class"] in (
+        "uniform", "selective", "progressive", "aggressive", "indeterminate")
+
+
+def test_spread_without_significant_gradient_is_not_discrimination():
+    """A price spread with ZERO significant gradients must NOT be classified as
+    discrimination (selective/progressive/aggressive). This guards the travel
+    case where agents catch different rooms: a $387 spread on a $1548 baseline
+    with 0 significant gradients was wrongly called "aggressive". The honest
+    label is "indeterminate", with severity 0."""
+    # 25% spread, but no gradient marked significant.
+    grads = [
+        {"variable_name": "location", "delta": 200.0, "significant": False},
+        {"variable_name": "device", "delta": 90.0, "significant": False},
+    ]
+    assert M.classify_topology(grads, di=0.0, baseline=1548.0, spread_pct=25.0) == "indeterminate"
+    # No spread at all → uniform.
+    assert M.classify_topology([], di=0.0, baseline=1548.0, spread_pct=0.0) == "uniform"
+    # One significant gradient → a real (selective) discrimination claim is allowed.
+    grads_sig = [{"variable_name": "location", "delta": 80.0, "significant": True}]
+    assert M.classify_topology(grads_sig, di=80.0, baseline=1548.0, spread_pct=5.0) == "selective"
+    # Severity is 0 when nothing is significant, regardless of spread.
+    sess = {"max_price_spread_pct": 25.0, "gradients": grads,
+            "discrimination_index": 0.0, "baseline_price": 1548.0}
+    assert M.compute_severity_score(sess) == 0.0
 
 
 def test_limited_coverage_makes_no_discrimination_claim():

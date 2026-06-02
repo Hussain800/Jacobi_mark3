@@ -229,6 +229,7 @@ const TOPO: Record<string, [string, string, string]> = {
   progressive: ["#ff9d52", "Progressive", "Several variables stack together. The more 'premium' your fingerprint looks, the more you pay."],
   aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
   insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert price discrimination. We've shown the prices we captured; try a product page or a specific listing for a full audit."],
+  indeterminate: ["#94a3b8", "Indeterminate", "Prices varied across profiles, but no buyer-context signal (location, device, cookies, referrer) significantly moved the price — so the spread isn't attributable to discrimination. On travel sites it usually reflects different rooms or availability across profiles, not the same product priced differently."],
 };
 
 /* ─── Demo data (unchanged) ──────────────────────────────────────────── */
@@ -510,7 +511,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           const succ = data.successful_agents;
           setActiveWave(succ < 8 ? 0 : succ < 16 ? 1 : 2);
 
-          if (data.status === "completed" || data.status === "failed") {
+          if (data.status === "completed" || data.status === "failed" || data.status === "needs_context") {
             stopTimers();
             if (data.status === "completed") {
               saveConv(data);
@@ -518,6 +519,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               await handleAnalyze(data);
               setDeckPhaseLabel("complete");
               setPhase("complete");
+            } else if (data.status === "needs_context") {
+              // Travel URL without dates/occupancy — an actionable INPUT issue,
+              // not a bot block or a parser failure. Show the message verbatim.
+              if (isCaseStudy) { caseStudyFallback(url, name); return; }
+              setErrorMsg(data.error ||
+                "Travel pricing requires dates and occupancy. Add check-in/check-out parameters or use a specific booking URL.");
+              setReport(data);
+              setPhase("error");
             } else {
               // A case study that failed → degrade to the curated sample so a
               // live demo never shows an error screen.

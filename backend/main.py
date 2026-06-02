@@ -1323,20 +1323,50 @@ def compute_gradients(session: dict) -> List[dict]:
 
 
 def classify_topology(gradients: List[dict], di: float, baseline: float, spread_pct: float = 0) -> str:
+    """Classify the pricing topology.
+
+    Discrimination is ONLY claimed when a controlled buyer-context variable
+    (location/device/cookie/referrer) significantly moved the price — i.e. at
+    least one significant gradient. A raw price spread with ZERO significant
+    gradients is NOT discrimination: on travel sites it is usually different
+    rooms/availability across agents, not the same product priced differently.
+    So:
+      - no spread at all            → uniform
+      - spread but no sig gradient  → indeterminate (variance not attributable)
+      - >=1 sig gradient            → selective / progressive / aggressive by strength
+    This keeps us from asserting "aggressive discrimination" off an unattributed
+    spread (the rule: never claim discrimination from a weak/uncontrolled signal).
+    """
     sig = sum(1 for g in gradients if g["significant"])
     di_pct = max((di / baseline * 100) if baseline else 0, spread_pct)
-    if sig == 0 and di_pct < 5: return "uniform"
+    if sig == 0:
+        # No controlled variable significantly moved the price.
+        if di_pct < 2:
+            return "uniform"
+        # Prices varied, but we can't attribute it to a tested attribute.
+        return "indeterminate"
     if sig <= 1 and di_pct < 12: return "selective"
     if sig <= 3 and di_pct < 25: return "progressive"
     return "aggressive"
 
 
 def compute_severity_score(session: dict) -> float:
-    """Compute a 0-100 pricing discrimination severity score."""
+    """Compute a 0-100 pricing *discrimination* severity score.
+
+    This scores VERIFIED discrimination, so it requires at least one significant
+    gradient (a controlled buyer-context variable that actually moved the price).
+    A raw price spread with zero significant gradients is not attributable to
+    discrimination (e.g. different rooms across travel agents) → severity 0. The
+    spread is still reported as a raw number; it just isn't scored as a verdict.
+    """
     spread_pct = session.get("max_price_spread_pct", 0) or 0
     sig_count = sum(1 for g in session.get("gradients", []) if g.get("significant"))
     di = session.get("discrimination_index", 0) or 0
     baseline = session.get("baseline_price", 0) or 1
+    if sig_count == 0:
+        # No controlled variable significantly moved the price → no verified
+        # discrimination to score, regardless of raw spread.
+        return 0.0
     # Score: 0-40 from spread, 0-30 from sig factors, 0-30 from DI/baseline ratio
     spread_score = min(spread_pct * 2, 40)
     sig_score = min(sig_count * 10, 30)
@@ -1459,6 +1489,22 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
             f"UNIFORM PRICING DETECTED. Product price verified at ${bp:.2f}. "
             "Hidden premium: $0.00. No measurable price discrimination across returned identities."
         )
+    elif session["topology_class"] == "indeterminate":
+        # Prices varied across identities, but NO controlled buyer-context
+        # variable significantly moved the price — so we can't attribute the
+        # spread to discrimination. On travel/hotel pages this is typically
+        # different rooms/availability across agents, not the same product
+        # priced differently. Report the spread; do not assert discrimination.
+        coverage_note = "" if coverage == "strong" else " Partial coverage — moderate confidence."
+        session["summary"] = (
+            f"INDETERMINATE. Baseline ${bp:.2f}, observed spread "
+            f"${session['max_price_spread']:.2f}, but no buyer-context variable "
+            f"(location/device/cookie/referrer) significantly moved the price. "
+            f"The spread is not attributable to price discrimination — on travel "
+            f"sites it usually reflects different rooms/availability across "
+            f"identities rather than the same product priced differently."
+            f"{coverage_note}"
+        )
     else:
         confidence_note = "" if coverage == "strong" else " (partial coverage — moderate confidence)"
         session["summary"] = (
@@ -1527,7 +1573,64 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 s["detection_signal"] = signal
                 last_failure = signal or "Bot detected"
                 continue
-            prices = parse_page_prices(r.get("text", ""), url)
+            html_text = r.get("text", "")
+
+            # Stage 2: try a site-specific extractor first (e.g. Booking reads
+            # its rate JSON, which the generic parser can't). Fall back to the
+            # generic parser when there's no site extractor or it finds nothing.
+            site_hit = None
+            site_msg = None
+            try:
+                from extractors import get_extractor
+                _ex = get_extractor(url)
+                if _ex is not None:
+                    _result = _ex(html_text, url)
+                    if not _result.context_ok:
+                        # e.g. a Booking URL with no dates → not a price, not a
+                        # bot failure. Surface the actionable message.
+                        s["status"] = "no_context"
+                        s["error_message"] = _result.message
+                        last_failure = _result.message or "Missing travel context"
+                        return s
+                    if _result.hits:
+                        site_hit = _result.hits[0]
+            except Exception as _ex_err:
+                # An extractor bug must never break the probe — fall through to
+                # the generic parser.
+                print(f"[EXTRACTOR] {url[:60]} error: {_ex_err!r}", flush=True)
+
+            if site_hit is not None and site_hit.native_price is not None:
+                # Use the site extractor's result. Its USD figure is the
+                # comparison value; native fields drive the headline.
+                usd = site_hit.normalized_price_usd
+                s["price"] = usd if usd is not None else site_hit.native_price
+                s["status"] = "success"
+                s["bot_detected"] = False
+                s["detection_signal"] = None
+                s["error_message"] = None
+                ev = {
+                    "extraction_method": site_hit.extraction_method,
+                    "price_raw_text": site_hit.raw_text,
+                    "currency_detected": site_hit.native_currency,
+                    "native_price": site_hit.native_price,
+                    "native_currency": site_hit.native_currency,
+                    "normalized_price_usd": usd,
+                    "source": site_hit.source,
+                    "confidence": site_hit.confidence,
+                    "price_kind": site_hit.price_kind,
+                    "includes_taxes_unknown": site_hit.includes_taxes_unknown,
+                    "browser_language": cfg.get("browser_language"),
+                    "accept_language_header": cfg.get("accept_language_header"),
+                    "language_label": cfg.get("language_label"),
+                }
+                s["evidence"] = ev
+                s["native_price"] = site_hit.native_price
+                s["native_currency"] = site_hit.native_currency
+                s["normalized_price_usd"] = usd
+                s["fx_rate_used"] = None
+                return s
+
+            prices = parse_page_prices(html_text, url)
             if not prices:
                 s["status"] = "failed"
                 s["bot_detected"] = False
@@ -1539,7 +1642,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
-            ev = _extraction_evidence(r.get("text", ""), url, prices)
+            ev = _extraction_evidence(html_text, url, prices)
             # Derive the verifiable native price from the raw on-page text and
             # fold it into both the evidence dict and the agent top-level so the
             # UI/PDF can show "AED 11,600.00" instead of only the USD figure.
@@ -1608,6 +1711,12 @@ async def _run_probe_engine(session: dict, url: str,
         if r.get("price") is not None:
             session["all_prices"][r["agent_id"]] = r["price"]
             session["successful_agents"] += 1
+        elif r.get("status") == "no_context":
+            # The target needs travel context (dates/occupancy) we don't have.
+            session["needs_travel_context"] = True
+            if r.get("error_message"):
+                session["context_message"] = r["error_message"]
+            session["failed_agents"] += 1
         elif r.get("bot_detected"):
             session["detected_agents"] += 1
         else:
@@ -1778,7 +1887,16 @@ async def _run_probe_engine(session: dict, url: str,
         if not valid:
             session["status"] = "failed"
             _set_accounting()
-            if session["detected_agents"] > 0:
+            if session.get("needs_travel_context"):
+                # Booking/travel URL without dates+occupancy. This is an
+                # actionable input problem, NOT a bot block or a parser failure.
+                session["status"] = "needs_context"
+                session["error"] = session.get("context_message") or (
+                    "Travel pricing requires dates and occupancy for reliable "
+                    "comparison. Add check-in/check-out parameters or use a "
+                    "specific booking URL."
+                )
+            elif session["detected_agents"] > 0:
                 session["error"] = (
                     f"This site blocked our agents at the perimeter — "
                     f"{session['detected_agents']}/{n_agents} hit a honeypot / captcha. "

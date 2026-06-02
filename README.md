@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo.svg" alt="JACOBI" width="440" />
+
 # JACOBI
 
 ### Evidence-grade pricing-discrimination intelligence

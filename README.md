@@ -170,4 +170,26 @@ This is the rule the whole system is organised around: **JACOBI never asserts pr
 discrimination from a sample too thin to support it.** It reports the prices it
 captured and tells you to try a more specific URL instead.
 
+### Topology classification
+
+For each controlled variable, JACOBI computes a **gradient** — the price delta
+between its high and low states — and tests it for significance (Welch's t-test
+with an effect-size check). The verdict is driven by **how many variables
+significantly moved the price**, never by raw spread alone:
+
+| Topology | Meaning |
+| :--- | :--- |
+| `uniform` | No measurable difference across identities. |
+| `selective` | One variable drives a small, significant delta. |
+| `progressive` | Several variables stack into a graded structure. |
+| `aggressive` | Multiple strong signals — systematic discrimination. |
+| `indeterminate` | Prices varied, but **no** variable significantly explains it (e.g. different hotel rooms across identities) — reported, never claimed as discrimination. |
+| `insufficient_data` | Too few comparable prices to classify (coverage gate). |
+
+The `indeterminate` class exists for a specific honesty reason: on travel sites a
+large spread is often just different rooms or availability caught by different
+identities. Without a significant gradient, that spread is **not** attributable to
+who the shopper is — so JACOBI labels it indeterminate instead of crying
+"aggressive."
+
 <!-- more -->

@@ -435,4 +435,30 @@ origin is configured in exactly one place.
 | Frontend (Vercel) | `https://jacobi-mark3.vercel.app` |
 | Backend (Render) | `https://jacobi-mark3.onrender.com` |
 
+## Project structure
+
+```
+Jacobi_mark3/
+├── Dockerfile                 # Render backend image
+├── backend/
+│   ├── main.py                # FastAPI app, probe engine, API endpoints
+│   ├── extractors/            # Site-specific price extractors
+│   │   ├── __init__.py        #   registry + travel-context + PriceHit
+│   │   └── booking.py         #   Booking.com / travel parser
+│   ├── report_export.py       # ReportLab PDF / CSV / JSON export router
+│   ├── pricing_engine.py      # Gradients, significance, topology helpers
+│   ├── auth_user.py           # Supabase JWT verification
+│   ├── billing.py             # Stripe plans, checkout, quotas
+│   ├── supabase_client.py     # Persistence (probes, profiles)
+│   ├── requirements.txt
+│   └── tests/                 # pytest suite + Booking fixtures
+└── frontend/
+    ├── app/                   # Next.js 14 App Router
+    │   ├── chat/              #   probe cockpit
+    │   ├── history/  leaderboard/  pricing/  share/
+    │   └── api/[...path]/     #   proxy to the backend origin
+    ├── components/            # Cockpit, charts, design system
+    └── package.json
+```
+
 <!-- more -->

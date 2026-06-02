@@ -379,4 +379,28 @@ curl https://jacobi-mark3.onrender.com/api/result/<session_id>
 
 </details>
 
+## 🧪 Testing
+
+The backend ships a comprehensive `pytest` suite (**1,260+ tests**) covering the
+probe engine, coverage gate, topology classification, the Booking extractor and its
+regional fixtures, the dateless pre-flight gate, currency normalisation, PDF export,
+and the API surface.
+
+```bash
+cd backend
+pytest tests/ -q
+```
+
+The frontend is type-checked and built as part of CI:
+
+```bash
+cd frontend
+npx tsc --noEmit     # type safety
+npm run build        # production build
+```
+
+> [!NOTE]
+> Run the suite against `backend/tests/` specifically — a couple of legacy
+> ad-hoc scripts live at the backend root and are not part of the maintained suite.
+
 <!-- more -->

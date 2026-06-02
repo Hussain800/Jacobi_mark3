@@ -474,4 +474,32 @@ Jacobi_mark3/
 - [ ] Scheduled re-scans with change alerting
 - [ ] Public, documented REST API with API keys
 
-<!-- more -->
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repo and create a branch: `git checkout -b feat/your-change`
+2. Make focused commits with clear messages (the engine has invariants — see below)
+3. Run the checks: `pytest tests/` (backend) and `tsc --noEmit` + `npm run build` (frontend)
+4. Open a pull request describing the change and how you verified it
+
+**Please preserve the core invariants** when touching the engine: never claim
+discrimination without a significant gradient, never bypass the coverage gate, never
+fabricate prices or invent travel dates, and keep the bounded-latency guarantees.
+
+## Acknowledgements
+
+- **[Bright Data](https://brightdata.com/)** — the Web Unlocker infrastructure that
+  makes multi-geo, multi-network probing possible.
+- **[FastAPI](https://fastapi.tiangolo.com/)**, **[Next.js](https://nextjs.org/)**,
+  **[Supabase](https://supabase.com/)**, **[Stripe](https://stripe.com/)**, and
+  **[ReportLab](https://www.reportlab.com/)** — the foundations this is built on.
+
+## License
+
+Released under the **MIT License** — see [`LICENSE`](LICENSE) for details.
+
+<div align="center">
+<sub>JACOBI · evidence-grade pricing-discrimination intelligence · one URL is all it takes to see the price you were never meant to compare.</sub>
+</div>
+

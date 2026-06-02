@@ -510,7 +510,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           const succ = data.successful_agents;
           setActiveWave(succ < 8 ? 0 : succ < 16 ? 1 : 2);
 
-          if (data.status === "completed" || data.status === "failed") {
+          if (data.status === "completed" || data.status === "failed" || data.status === "needs_context") {
             stopTimers();
             if (data.status === "completed") {
               saveConv(data);
@@ -518,6 +518,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               await handleAnalyze(data);
               setDeckPhaseLabel("complete");
               setPhase("complete");
+            } else if (data.status === "needs_context") {
+              // Travel URL without dates/occupancy — an actionable INPUT issue,
+              // not a bot block or a parser failure. Show the message verbatim.
+              if (isCaseStudy) { caseStudyFallback(url, name); return; }
+              setErrorMsg(data.error ||
+                "Travel pricing requires dates and occupancy. Add check-in/check-out parameters or use a specific booking URL.");
+              setReport(data);
+              setPhase("error");
             } else {
               // A case study that failed → degrade to the curated sample so a
               // live demo never shows an error screen.

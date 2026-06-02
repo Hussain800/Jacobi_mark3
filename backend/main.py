@@ -1527,7 +1527,64 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 s["detection_signal"] = signal
                 last_failure = signal or "Bot detected"
                 continue
-            prices = parse_page_prices(r.get("text", ""), url)
+            html_text = r.get("text", "")
+
+            # Stage 2: try a site-specific extractor first (e.g. Booking reads
+            # its rate JSON, which the generic parser can't). Fall back to the
+            # generic parser when there's no site extractor or it finds nothing.
+            site_hit = None
+            site_msg = None
+            try:
+                from extractors import get_extractor
+                _ex = get_extractor(url)
+                if _ex is not None:
+                    _result = _ex(html_text, url)
+                    if not _result.context_ok:
+                        # e.g. a Booking URL with no dates → not a price, not a
+                        # bot failure. Surface the actionable message.
+                        s["status"] = "no_context"
+                        s["error_message"] = _result.message
+                        last_failure = _result.message or "Missing travel context"
+                        return s
+                    if _result.hits:
+                        site_hit = _result.hits[0]
+            except Exception as _ex_err:
+                # An extractor bug must never break the probe — fall through to
+                # the generic parser.
+                print(f"[EXTRACTOR] {url[:60]} error: {_ex_err!r}", flush=True)
+
+            if site_hit is not None and site_hit.native_price is not None:
+                # Use the site extractor's result. Its USD figure is the
+                # comparison value; native fields drive the headline.
+                usd = site_hit.normalized_price_usd
+                s["price"] = usd if usd is not None else site_hit.native_price
+                s["status"] = "success"
+                s["bot_detected"] = False
+                s["detection_signal"] = None
+                s["error_message"] = None
+                ev = {
+                    "extraction_method": site_hit.extraction_method,
+                    "price_raw_text": site_hit.raw_text,
+                    "currency_detected": site_hit.native_currency,
+                    "native_price": site_hit.native_price,
+                    "native_currency": site_hit.native_currency,
+                    "normalized_price_usd": usd,
+                    "source": site_hit.source,
+                    "confidence": site_hit.confidence,
+                    "price_kind": site_hit.price_kind,
+                    "includes_taxes_unknown": site_hit.includes_taxes_unknown,
+                    "browser_language": cfg.get("browser_language"),
+                    "accept_language_header": cfg.get("accept_language_header"),
+                    "language_label": cfg.get("language_label"),
+                }
+                s["evidence"] = ev
+                s["native_price"] = site_hit.native_price
+                s["native_currency"] = site_hit.native_currency
+                s["normalized_price_usd"] = usd
+                s["fx_rate_used"] = None
+                return s
+
+            prices = parse_page_prices(html_text, url)
             if not prices:
                 s["status"] = "failed"
                 s["bot_detected"] = False
@@ -1539,7 +1596,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
-            ev = _extraction_evidence(r.get("text", ""), url, prices)
+            ev = _extraction_evidence(html_text, url, prices)
             # Derive the verifiable native price from the raw on-page text and
             # fold it into both the evidence dict and the agent top-level so the
             # UI/PDF can show "AED 11,600.00" instead of only the USD figure.
@@ -1608,6 +1665,12 @@ async def _run_probe_engine(session: dict, url: str,
         if r.get("price") is not None:
             session["all_prices"][r["agent_id"]] = r["price"]
             session["successful_agents"] += 1
+        elif r.get("status") == "no_context":
+            # The target needs travel context (dates/occupancy) we don't have.
+            session["needs_travel_context"] = True
+            if r.get("error_message"):
+                session["context_message"] = r["error_message"]
+            session["failed_agents"] += 1
         elif r.get("bot_detected"):
             session["detected_agents"] += 1
         else:
@@ -1778,7 +1841,16 @@ async def _run_probe_engine(session: dict, url: str,
         if not valid:
             session["status"] = "failed"
             _set_accounting()
-            if session["detected_agents"] > 0:
+            if session.get("needs_travel_context"):
+                # Booking/travel URL without dates+occupancy. This is an
+                # actionable input problem, NOT a bot block or a parser failure.
+                session["status"] = "needs_context"
+                session["error"] = session.get("context_message") or (
+                    "Travel pricing requires dates and occupancy for reliable "
+                    "comparison. Add check-in/check-out parameters or use a "
+                    "specific booking URL."
+                )
+            elif session["detected_agents"] > 0:
                 session["error"] = (
                     f"This site blocked our agents at the perimeter — "
                     f"{session['detected_agents']}/{n_agents} hit a honeypot / captcha. "

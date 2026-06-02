@@ -151,4 +151,23 @@ The engine is tuned for **speed without sacrificing honesty**:
   probed* from any that were *inferred* by the uniform short-circuit — the two are
   never conflated.
 
+### Evidence & the coverage gate
+
+A price with no proof is a rumour. Every extracted price carries an **evidence
+record**: the extraction method and selector, the raw on-page text, the detected
+native currency, the native value, and the normalised USD figure.
+
+Before any verdict is computed, the run passes through a **coverage gate** based on
+how many identities returned a comparable price:
+
+| Coverage | Priced identities | Behaviour |
+| :--- | :--- | :--- |
+| **Strong** | many | full topology verdict, normal confidence |
+| **Partial** | some | verdict computed, flagged "moderate confidence" |
+| **Limited** | few | **no discrimination claim** — data shown as `insufficient_data` |
+
+This is the rule the whole system is organised around: **JACOBI never asserts price
+discrimination from a sample too thin to support it.** It reports the prices it
+captured and tells you to try a more specific URL instead.
+
 <!-- more -->

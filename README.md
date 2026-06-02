@@ -214,4 +214,40 @@ silently invents them: a dateless travel URL is caught by a **pre-flight gate**
 > *Travel pricing requires dates and occupancy for reliable comparison. Add
 > check-in/check-out parameters or use a specific booking URL.*
 
+## Architecture
+
+```mermaid
+flowchart TB
+    User([Shopper / Analyst]) --> FE["Next.js 14 frontend<br/>Vercel"]
+    FE -->|"Bearer JWT"| API["FastAPI backend<br/>Render"]
+
+    subgraph Engine["Probe engine"]
+        direction TB
+        Gate{"Travel URL<br/>without dates?"}
+        Gate -->|yes| Ctx["needs_context<br/>(0 identities launched)"]
+        Gate -->|no| Matrix["Identity matrix<br/>24 Smart / 50 Pro"]
+        Matrix --> Phase1["Phase 1 — scout wave"]
+        Phase1 -->|uniform| Final["Finalise"]
+        Phase1 -->|divergent| Phase2["Phase 2 — full matrix"]
+        Phase2 --> Extract["Site extractor → generic fallback"]
+        Extract --> Stats["Gradients · coverage gate · topology"]
+        Stats --> Final
+    end
+
+    API --> Engine
+    Matrix -->|residential / datacenter / mobile| BD["Bright Data Web Unlocker"]
+    Extract -. evidence .-> PDF["ReportLab PDF export"]
+    Final --> DB[("Supabase<br/>auth · probes · quotas")]
+    API --> Stripe["Stripe billing<br/>Pro tier"]
+    Final --> FE
+
+    classDef ext fill:#1f2937,stroke:#60a5fa,color:#e5e7eb;
+    class BD,DB,Stripe,PDF ext;
+```
+
+The system splits cleanly into a **Next.js 14** frontend (deployed on Vercel),
+a **FastAPI** backend probe engine (containerised on Render), **Bright Data** for
+egress, and **Supabase** + **Stripe** for accounts and billing. The frontend proxies
+all API traffic through a Next.js route so the backend origin stays single-sourced.
+
 <!-- more -->

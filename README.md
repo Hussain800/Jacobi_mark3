@@ -250,4 +250,19 @@ a **FastAPI** backend probe engine (containerised on Render), **Bright Data** fo
 egress, and **Supabase** + **Stripe** for accounts and billing. The frontend proxies
 all API traffic through a Next.js route so the backend origin stays single-sourced.
 
+## Tech stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Zustand, Framer Motion, Recharts, Three.js, Lucide |
+| **Backend** | Python 3.11, FastAPI, Uvicorn, httpx (async), Pydantic v2 |
+| **Extraction** | BeautifulSoup4, lxml, site-specific extractor registry |
+| **Reporting** | ReportLab (server-side PDF), jsPDF (client) |
+| **Data egress** | Bright Data Web Unlocker (residential / datacenter / mobile) |
+| **Auth & data** | Supabase (Postgres + Google OAuth) |
+| **Billing** | Stripe (subscriptions, customer portal) |
+| **AI (optional)** | Google Gemini (`google-genai`), Groq — natural-language summaries |
+| **Observability** | Sentry |
+| **Deployment** | Vercel (frontend), Render (Docker backend) |
+
 <!-- more -->

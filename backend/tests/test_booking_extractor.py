@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from extractors import get_extractor, travel_context
+import asyncio
+
+from extractors import get_extractor, requires_travel_context, travel_context
 import main as M
 
 FIX = Path(__file__).parent / "fixtures"
@@ -114,3 +116,42 @@ def test_amazon_generic_parser_unchanged():
     )
     prices = M.parse_page_prices(html, "https://www.amazon.ae/dp/B0FL4HLJ56/")
     assert prices and abs(prices[0] - 3158.68) < 0.5  # AED→USD
+
+
+# ── Pre-flight travel-context gate ──────────────────────────────────────────
+def test_requires_travel_context_predicate():
+    assert requires_travel_context("https://www.booking.com/hotel/in/x.html") is True
+    assert requires_travel_context("https://www.amazon.ae/dp/B0FL4HLJ56/") is False
+    assert requires_travel_context("") is False
+
+
+def test_no_date_booking_short_circuits_before_launching_agents():
+    """A Booking URL without dates must resolve to needs_context UP FRONT — the
+    engine returns before launching any agent, so no probe is ever fired (no
+    BrightData fetch, no ~90s wall-clock wait). Guards the Stage-2 follow-up."""
+    async def go():
+        sid, session = M.create_session(HOTEL, "no-date preflight")
+        return await M._run_probe_engine(
+            session, HOTEL, agent_configs=M.get_agent_configs_for_tier("free"))
+
+    session = asyncio.run(go())
+    assert session["status"] == "needs_context"
+    assert "dates" in (session.get("error") or "").lower()
+    # The decisive assertion: NOTHING was probed.
+    assert session.get("agents") == []
+    assert not any((a.get("response_time_ms") or 0) > 0
+                   for a in session.get("agents", []))
+    assert session.get("real_probes_executed") == 0
+    assert session.get("evidence_count") == 0
+
+
+def test_dated_booking_does_not_short_circuit():
+    """With dates present, the pre-flight gate must NOT fire — the engine runs
+    normally (it may still finalize/fail on BrightData availability, but it does
+    NOT bail out as needs_context up front)."""
+    dated = HOTEL + CTX + "&selected_currency=INR"
+    # The gate's condition is false when dates are present.
+    assert requires_travel_context(dated) is True
+    assert travel_context(dated)["ok"] is True
+    # An unsupported site never triggers the gate regardless of dates.
+    assert requires_travel_context("https://www.amazon.ae/dp/B0FL4HLJ56/") is False

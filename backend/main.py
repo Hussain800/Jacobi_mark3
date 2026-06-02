@@ -1700,6 +1700,41 @@ async def _run_probe_engine(session: dict, url: str,
     n_agents = len(agent_configs)
     session["total_agents"] = n_agents
     session["configured_agents"] = n_agents
+
+    # Pre-flight travel-context gate. Booking/travel prices are only comparable
+    # WITH dates + occupancy. If the URL lacks them we can determine the outcome
+    # up front, so short-circuit here instead of launching all N agents and
+    # waiting out the ~90s wall-clock deadline only to reject every fetch with
+    # "no_context". Same status/message the per-agent path would produce; we just
+    # skip the wasted probes. Never invents dates — it asks the user for them.
+    try:
+        from extractors import (get_extractor as _get_extractor,
+                                 requires_travel_context as _requires_ctx,
+                                 travel_context as _travel_ctx)
+        if (_get_extractor(url) is not None and _requires_ctx(url)
+                and not _travel_ctx(url).get("ok")):
+            # Reuse the extractor's own message (single source of truth).
+            _pre = _get_extractor(url)("", url)
+            _msg = _pre.message or (
+                "Travel pricing requires dates and occupancy for reliable "
+                "comparison. Add check-in/check-out parameters or use a "
+                "specific booking URL."
+            )
+            session["needs_travel_context"] = True
+            session["context_message"] = _msg
+            session["status"] = "needs_context"
+            session["error"] = _msg
+            # Honest accounting: no probes were launched.
+            session["real_probes_executed"] = 0
+            session["skipped_inferred_agents"] = 0
+            session["evidence_count"] = 0
+            session["elapsed_seconds"] = round(time.time() - overall_start, 2)
+            return session
+    except Exception as _e:
+        # Never let the pre-flight optimisation break a real probe — fall through
+        # to the full engine, which still handles no_context per-agent.
+        print(f"[PREFLIGHT] travel-context check skipped: {_e}")
+
     bd = BrightDataMCPClient()
     await bd.start()
 

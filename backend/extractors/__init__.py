@@ -89,6 +89,12 @@ def travel_context(url: str) -> dict:
     }
 
 
+# Sites whose prices are only comparable WITH travel context (dates +
+# occupancy). For these, a dateless URL can never yield a meaningful price, so
+# the engine can short-circuit before launching any agents.
+_TRAVEL_CONTEXT_SITES = ("booking.com",)
+
+
 # ── Registry ────────────────────────────────────────────────────────────────
 def get_extractor(url: str) -> Optional[Callable[[str, str], "ExtractResult"]]:
     """Return the site-specific extractor for this URL, or None to use the
@@ -98,6 +104,14 @@ def get_extractor(url: str) -> Optional[Callable[[str, str], "ExtractResult"]]:
         from .booking import extract_booking
         return extract_booking
     return None
+
+
+def requires_travel_context(url: str) -> bool:
+    """True when this site's prices are only comparable with dates + occupancy
+    (e.g. Booking.com). Lets the engine decide up front that a dateless URL
+    can't be priced, instead of probing every agent only to reject each fetch."""
+    u = (url or "").lower()
+    return any(site in u for site in _TRAVEL_CONTEXT_SITES)
 
 
 def is_supported(url: str) -> bool:

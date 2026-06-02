@@ -265,4 +265,29 @@ all API traffic through a Next.js route so the backend origin stays single-sourc
 | **Observability** | Sentry |
 | **Deployment** | Vercel (frontend), Render (Docker backend) |
 
+## Getting started
+
+### Prerequisites
+
+- **Python 3.11+**
+- **Node.js 18+**
+- A **Bright Data** Web Unlocker zone (API key + zone name) for live probing
+- *(optional)* **Supabase** project for auth/history and **Stripe** keys for billing
+
+### Clone & install
+
+```bash
+git clone https://github.com/Hussain800/Jacobi_mark3.git
+cd Jacobi_mark3
+
+# Backend
+cd backend
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Frontend
+cd ../frontend
+npm install
+```
+
 <!-- more -->

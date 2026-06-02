@@ -130,4 +130,25 @@ Identities are organised into **control** and **variant** pairs. A control holds
 every vector at a baseline; each variant flips one vector. Comparing a variant to
 its control isolates the causal effect of that single change.
 
+### The probe engine
+
+The engine is tuned for **speed without sacrificing honesty**:
+
+- **Two-phase progressive probing.** A scout wave runs a representative subset
+  first. If those prices are uniform within a tight tolerance, the run
+  short-circuits and finalises immediately — most non-discriminating product pages
+  resolve in seconds. Only when the scout detects divergence does the full matrix
+  deploy for statistical analysis.
+- **Adaptive concurrency.** Concurrency is set from measured sweeps per site class
+  (`asyncio.Semaphore`), because JS-heavy travel pages and lightweight product
+  pages have very different throughput profiles.
+- **Adaptive timeouts + global deadline.** Each identity gets a per-site timeout;
+  the whole scan is bounded by a wall-clock deadline so a slow tail can never run
+  away. Whatever has completed is finalised cleanly.
+- **Per-identity fallback.** If a proxy fetch times out, that identity silently
+  falls back to a direct request rather than failing the whole scan.
+- **Honest accounting.** The report distinguishes identities that were *really
+  probed* from any that were *inferred* by the uniform short-circuit — the two are
+  never conflated.
+
 <!-- more -->

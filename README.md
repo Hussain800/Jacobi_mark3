@@ -192,4 +192,26 @@ identities. Without a significant gradient, that spread is **not** attributable 
 who the shopper is — so JACOBI labels it indeterminate instead of crying
 "aggressive."
 
+### Site extractors & travel pre-flight
+
+Most product pages expose a price the generic parser can read. Travel sites do not
+— Booking.com, for example, renders rates from an embedded JSON blob, not a simple
+price tag. JACOBI solves this with an **isolated, site-specific extractor registry**
+(`backend/extractors/`):
+
+- `get_extractor(url)` routes a URL to a dedicated parser (e.g. Booking.com) or
+  returns `None` to use the generic parser — routing is explicit and auditable.
+- The Booking extractor reads structured `b_stay_prices` rate data, keeps the raw
+  visible text as evidence, flags `price_kind` (`total_stay` / `room_rate`) and
+  whether tax inclusion is verifiable, and normalises localised separators.
+- The generic parser and the rest of the engine are **never** touched by a
+  site extractor — they only run first and fall back cleanly.
+
+Travel prices are only comparable **with dates and occupancy**. JACOBI never
+silently invents them: a dateless travel URL is caught by a **pre-flight gate**
+*before any identity is launched* and returns, instantly and with zero proxy spend:
+
+> *Travel pricing requires dates and occupancy for reliable comparison. Add
+> check-in/check-out parameters or use a specific booking URL.*
+
 <!-- more -->

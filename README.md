@@ -327,4 +327,22 @@ cp backend/.env.example backend/.env
 > `BRIGHTDATA_CUSTOM_HEADERS_ENABLED=true`. Without it, per-identity user-agent,
 > referrer, and cookie overrides are ignored and every identity looks the same.
 
+## Running locally
+
+Open two terminals from the repo root.
+
+```bash
+# Terminal 1 — backend API on :8000
+cd backend
+uvicorn main:app --reload --port 8000
+
+# Terminal 2 — frontend on :3000
+cd frontend
+npm run dev
+```
+
+Then open **http://localhost:3000**, sign in, paste a product or hotel URL, and run
+a scan. A `GET http://localhost:8000/health` is the quickest way to confirm the
+backend is live and whether Bright Data is configured.
+
 <!-- more -->

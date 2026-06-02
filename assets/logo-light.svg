@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 30" role="img" aria-label="JACOBI">
+  <title>JACOBI</title>
+  <!-- Transparent wordmark for light backgrounds. Letters #16213f, cobalt [ ] #3f57c9. -->
+  <g fill="none" stroke-width="3" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M 6 3 L 24 3 M 18 3 L 18 21 Q 18 27 12 27 Q 6 27 6 22" stroke="#16213f"/>
+    <path d="M 36 27 L 50 3 L 64 27" stroke="#16213f"/>
+    <path d="M 94 7 A 10 10 0 1 0 94 23" stroke="#16213f"/>
+    <path d="M 120 3 L 110 3 L 110 27 L 120 27" stroke="#3f57c9"/>
+    <path d="M 130 3 L 140 3 L 140 27 L 130 27" stroke="#3f57c9"/>
+    <path d="M 152 3 L 152 27 M 152 3 L 164 3 Q 171 3 171 9 Q 171 15 164 15 L 152 15 M 164 15 Q 173 15 173 21 Q 173 27 164 27 L 152 27" stroke="#16213f"/>
+    <path d="M 186 3 L 208 3 M 197 3 L 197 27 M 186 27 L 208 27" stroke="#16213f"/>
+  </g>
+</svg>

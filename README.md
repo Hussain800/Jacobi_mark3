@@ -290,4 +290,41 @@ cd ../frontend
 npm install
 ```
 
+## Configuration
+
+Copy the example and fill in your keys. The app runs in a **demo / direct-HTTP
+fallback** mode when Bright Data isn't configured, so you can explore the UI
+without any credentials.
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+**Backend (`backend/.env`)**
+
+| Variable | Required | Purpose |
+| :--- | :---: | :--- |
+| `BRIGHTDATA_API_KEY` | ✅ | Bright Data Web Unlocker API key |
+| `BRIGHTDATA_UNLOCKER_ZONE` | ✅ | Unlocker zone name |
+| `BRIGHTDATA_CUSTOM_HEADERS_ENABLED` | – | `true` once the zone allows custom headers/cookies |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` / `SUPABASE_ANON_KEY` | – | Auth, history & quotas |
+| `STRIPE_SECRET_KEY` / `STRIPE_PRO_PRICE_ID` / `STRIPE_WEBHOOK_SECRET` | – | Pro-tier billing |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` | – | Optional natural-language summaries |
+| `FREE_MONTHLY_PROBES` / `PRO_MONTHLY_PROBES` | – | Monthly quota per tier (defaults 24 / 50) |
+| `FRONTEND_URL` | – | Origin used to build Stripe redirect URLs |
+| `SENTRY_DSN` | – | Error tracking (blank disables) |
+
+**Frontend (`frontend/.env.local`)**
+
+| Variable | Required | Purpose |
+| :--- | :---: | :--- |
+| `NEXT_PUBLIC_API_URL` | ✅ | Backend base URL (e.g. `http://localhost:8000`) |
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | – | Client auth |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | – | Stripe checkout |
+
+> [!IMPORTANT]
+> Enable **Custom Headers & Cookies** on the Bright Data zone and set
+> `BRIGHTDATA_CUSTOM_HEADERS_ENABLED=true`. Without it, per-identity user-agent,
+> referrer, and cookie overrides are ignored and every identity looks the same.
+
 <!-- more -->

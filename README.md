@@ -19,4 +19,28 @@ and receipts**, whether you are being charged for *who you are*.
 
 </div>
 
+## Table of contents
+
+- [What is JACOBI?](#what-is-jacobi)
+- [Why it matters](#why-it-matters)
+- [Features](#features)
+- [How it works](#how-it-works)
+  - [The synthetic-identity matrix](#the-synthetic-identity-matrix)
+  - [The probe engine](#the-probe-engine)
+  - [Evidence & the coverage gate](#evidence--the-coverage-gate)
+  - [Topology classification](#topology-classification)
+  - [Site extractors & travel pre-flight](#site-extractors--travel-pre-flight)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Running locally](#running-locally)
+- [API reference](#api-reference)
+- [Testing](#-testing)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+
 <!-- more -->

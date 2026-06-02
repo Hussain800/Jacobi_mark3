@@ -345,4 +345,38 @@ Then open **http://localhost:3000**, sign in, paste a product or hotel URL, and 
 a scan. A `GET http://localhost:8000/health` is the quickest way to confirm the
 backend is live and whether Bright Data is configured.
 
+## API reference
+
+All endpoints are served by the FastAPI backend. Live probes require a Supabase
+`Authorization: Bearer <jwt>`; read-only and demo endpoints are open.
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/health` | – | Liveness + Bright Data / Supabase config status |
+| `POST` | `/api/probe` | ✅ | Launch a scan; returns a `session_id` (engine runs in the background) |
+| `GET` | `/api/result/{session_id}` | – | Poll a scan's status and full result |
+| `GET` | `/api/export/{session_id}/pdf` | – | Research-grade PDF report |
+| `GET` | `/api/export/{session_id}/csv` | Pro | Per-identity prices as CSV |
+| `GET` | `/api/export/{session_id}/json` | Pro | Structured result as JSON |
+| `GET` | `/api/leaderboard` | – | Top public scans by observed spread |
+| `GET` | `/api/demo` | – | Static demo report (no engine run) |
+| `POST` | `/api/debug-probe` | – | Single-fetch diagnostic (raw HTML + parsed prices) |
+| `*` | `/api/billing/*` | ✅ | Stripe plan, checkout, portal, and webhook |
+
+<details>
+<summary><b>Example — launch a scan and poll the result</b></summary>
+
+```bash
+# 1. Launch (returns {"session_id": "...", "status": "running"})
+curl -X POST https://jacobi-mark3.onrender.com/api/probe \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"target_url": "https://www.amazon.ae/dp/B0FL4HLJ56", "target_name": "Lenovo Legion", "audit_depth": "smart24"}'
+
+# 2. Poll until status is "completed" | "needs_context" | "failed"
+curl https://jacobi-mark3.onrender.com/api/result/<session_id>
+```
+
+</details>
+
 <!-- more -->

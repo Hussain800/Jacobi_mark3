@@ -461,4 +461,17 @@ Jacobi_mark3/
     └── package.json
 ```
 
+## Roadmap
+
+- [x] Two-phase progressive probing with adaptive concurrency
+- [x] Coverage gate — no discrimination claims from thin samples
+- [x] `indeterminate` topology for unattributable spread
+- [x] Booking.com / travel extractor + dateless pre-flight gate
+- [x] Native-currency evidence + research-grade PDF export
+- [x] Supabase auth, Stripe Pro tier, history, leaderboard
+- [ ] Additional site extractors (more OTAs, marketplaces)
+- [ ] Currency detection hardening on multi-listing search pages
+- [ ] Scheduled re-scans with change alerting
+- [ ] Public, documented REST API with API keys
+
 <!-- more -->

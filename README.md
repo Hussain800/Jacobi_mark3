@@ -80,4 +80,30 @@ JACOBI turns that controlled experiment into a one-click product:
 - **Defensible** — claims are gated on statistical significance and sample coverage.
 - **Auditable** — every data point keeps its native currency and raw on-page text.
 
+## Features
+
+- **Synthetic-identity matrix** — 24 (Smart) or 50 (Pro) controlled fingerprints
+  varying location, device, cookie age, referrer, and `Accept-Language`.
+- **Multi-network proxying** — datacenter, residential, and mobile egress via the
+  Bright Data Web Unlocker, with automatic direct-HTTP fallback per identity.
+- **Two-phase progressive probing** — a fast scout wave short-circuits uniform
+  sites in seconds; the full matrix only runs when prices actually diverge.
+- **Bounded latency** — adaptive per-site timeouts and a global wall-clock deadline
+  keep scans inside a predictable window and finalise partial results gracefully.
+- **Site-aware extraction** — a dedicated Booking.com/travel parser reads prices
+  from embedded rate JSON, with a generic parser fallback for everything else.
+- **Native currency + USD normalisation** — the headline shows the on-page value
+  the shopper actually sees; a normalised USD basis powers comparison.
+- **Statistical topology verdict** — `uniform`, `selective`, `progressive`,
+  `aggressive`, `indeterminate`, or `insufficient_data` — derived from significance
+  testing, not raw spread.
+- **Coverage gate** — refuses to assert discrimination from thin samples and never
+  invents check-in/check-out dates for a travel scan.
+- **Research-grade PDF export** — a typeset report with the per-identity evidence
+  table, native + normalised prices, and the methodology.
+- **Accounts & billing** — Supabase (Google OAuth) auth, monthly quotas, and Stripe
+  upgrade to the 50-identity Pro tier.
+- **History, sharing & leaderboard** — every scan is persisted, shareable, and
+  optionally published to a public savings board.
+
 <!-- more -->

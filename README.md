@@ -64,4 +64,20 @@ price each identity saw, the on-page currency and raw text used as proof, and a
 downloadable research-style PDF. Crucially, JACOBI is built to **never cry wolf** —
 it refuses to claim discrimination from thin samples or unattributable spread.
 
+## Why it matters
+
+Dynamic and personalised pricing is now routine across travel, retail, and
+subscriptions. The same seat, room, or SKU can cost materially more depending on
+your IP geography, the device you browse on, whether you arrived from an
+aggregator, or how "loyal" your cookies look. For shoppers this is invisible; for
+analysts, regulators, and journalists it is **hard to prove** because you need to
+hold every other variable constant and vary exactly one at a time, at scale.
+
+JACOBI turns that controlled experiment into a one-click product:
+
+- **Reproducible** — every identity is a declared, version-controlled fingerprint.
+- **Attributable** — price deltas are tied to a single changed variable, not vibes.
+- **Defensible** — claims are gated on statistical significance and sample coverage.
+- **Auditable** — every data point keeps its native currency and raw on-page text.
+
 <!-- more -->

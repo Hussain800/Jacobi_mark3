@@ -229,6 +229,7 @@ const TOPO: Record<string, [string, string, string]> = {
   progressive: ["#ff9d52", "Progressive", "Several variables stack together. The more 'premium' your fingerprint looks, the more you pay."],
   aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
   insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert price discrimination. We've shown the prices we captured; try a product page or a specific listing for a full audit."],
+  indeterminate: ["#94a3b8", "Indeterminate", "Prices varied across profiles, but no buyer-context signal (location, device, cookies, referrer) significantly moved the price — so the spread isn't attributable to discrimination. On travel sites it usually reflects different rooms or availability across profiles, not the same product priced differently."],
 };
 
 /* ─── Demo data (unchanged) ──────────────────────────────────────────── */

@@ -392,6 +392,8 @@ async def export_pdf(report_id: str):
         "selective": "Selective Price Discrimination",
         "progressive": "Progressive Price Discrimination",
         "aggressive": "Aggressive Price Discrimination",
+        "indeterminate": "Indeterminate — Spread Not Attributable",
+        "insufficient_data": "Limited Coverage — Inconclusive",
         "unknown": "Inconclusive Pricing Topology",
     }
     topo_findings = {
@@ -405,6 +407,14 @@ async def export_pdf(report_id: str):
         "aggressive": ("large and consistent price gaps appeared across multiple "
                        "buyer attributes, consistent with systematic price "
                        "discrimination"),
+        "indeterminate": ("prices varied across identities, but no controlled buyer "
+                          "attribute significantly moved the price, so the spread is "
+                          "not attributable to price discrimination — on travel sites "
+                          "this typically reflects different rooms or availability "
+                          "across identities rather than the same product priced "
+                          "differently"),
+        "insufficient_data": ("too few identities returned a comparable price to "
+                              "classify the pricing topology or assert discrimination"),
         "unknown": ("the probe did not return enough comparable observations to "
                     "classify the pricing topology"),
     }

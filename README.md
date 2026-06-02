@@ -43,4 +43,25 @@ and receipts**, whether you are being charged for *who you are*.
 - [Contributing](#contributing)
 - [License](#license)
 
+## What is JACOBI?
+
+**JACOBI** is a pricing-intelligence platform that detects **personalised price
+discrimination** — when an online price changes based on *who the shopper appears
+to be* rather than *what they are buying*.
+
+Give it a product, hotel, or flight URL. JACOBI dispatches a matrix of **synthetic
+shopper identities** — 24 on the free *Smart* tier, 50 on *Pro* — each carrying a
+distinct, controlled fingerprint (location, device, cookie age, referrer, and
+browser language). Every identity fetches the page through residential, datacenter,
+and mobile proxies, the price is extracted with site-aware parsers, and the results
+are run through a statistical pipeline that asks one disciplined question:
+
+> *Did a controlled buyer-context variable significantly move the price — or is the
+> variation just noise?*
+
+The output is an **evidence-grade report**: a pricing-topology verdict, the exact
+price each identity saw, the on-page currency and raw text used as proof, and a
+downloadable research-style PDF. Crucially, JACOBI is built to **never cry wolf** —
+it refuses to claim discrimination from thin samples or unattributable spread.
+
 <!-- more -->

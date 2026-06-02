@@ -106,4 +106,28 @@ JACOBI turns that controlled experiment into a one-click product:
 - **History, sharing & leaderboard** — every scan is persisted, shareable, and
   optionally published to a public savings board.
 
+## How it works
+
+JACOBI is a controlled experiment wrapped in a web app. Each scan moves through
+four stages — **fan out** a fingerprint matrix, **fetch** every variant through
+proxies, **extract** a comparable price with proof, then **reason** about whether
+any single variable moved it enough to matter.
+
+### The synthetic-identity matrix
+
+Every identity is a declared fingerprint that changes exactly one axis at a time,
+so any price delta is attributable to that axis:
+
+| Vector | Example states | What it probes |
+| :--- | :--- | :--- |
+| **Location** | high-income metro vs. lower-income region | geo-based price steering |
+| **Device** | premium (MacBook / flagship phone) vs. budget | device-tier markups |
+| **Cookies** | fresh first-visit vs. aged / returning | loyalty & intent signals |
+| **Referrer** | direct vs. aggregator (Kayak, Skyscanner) | channel-based pricing |
+| **Language** | `Accept-Language` pairs, all else held constant | locale-based variation |
+
+Identities are organised into **control** and **variant** pairs. A control holds
+every vector at a baseline; each variant flips one vector. Comparing a variant to
+its control isolates the causal effect of that single change.
+
 <!-- more -->

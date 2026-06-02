@@ -403,4 +403,36 @@ npm run build        # production build
 > Run the suite against `backend/tests/` specifically — a couple of legacy
 > ad-hoc scripts live at the backend root and are not part of the maintained suite.
 
+## Deployment
+
+JACOBI runs as two independently deployed services, both auto-deploying from `main`.
+
+**Backend → Render (Docker)**
+
+The repo root `Dockerfile` builds the FastAPI app and runs it under Uvicorn:
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/ .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+Set the backend environment variables in the Render dashboard and point the
+service at this repo's `main` branch.
+
+**Frontend → Vercel**
+
+Import the repo, set the project root to `frontend/`, and configure the
+`NEXT_PUBLIC_*` variables — most importantly `NEXT_PUBLIC_API_URL` pointing at the
+Render backend. Vercel proxies API calls through a Next.js route, so the backend
+origin is configured in exactly one place.
+
+| Environment | URL |
+| :--- | :--- |
+| Frontend (Vercel) | `https://jacobi-mark3.vercel.app` |
+| Backend (Render) | `https://jacobi-mark3.onrender.com` |
+
 <!-- more -->

@@ -31,6 +31,7 @@ from auth_user import get_optional_user
 from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
+from url_guard import validate_public_url, UnsafeUrlError
 
 from brightdata_config import (
     BRIGHTDATA_API_KEY,
@@ -1113,6 +1114,15 @@ class BrightDataMCPClient:
         logged internally; the customer-facing UI is unchanged.
         """
         start_ts = time.time()
+        # SSRF defense-in-depth: this path fetches the URL directly from the
+        # backend's own network, so re-validate even though /api/probe already
+        # checked it (covers any internal caller and guards against drift).
+        try:
+            validate_public_url(url)
+        except UnsafeUrlError as url_err:
+            return {"success": False, "elapsed_ms": 0,
+                    "error": f"blocked non-public URL: {url_err}",
+                    "_fallback": "direct_http"}
         headers = self._identity_headers(identity)
         # Direct HTTP is a best-effort fallback after BrightData already failed.
         # JS-heavy / bot-protected sites (the ones that make BD time out) will
@@ -1124,7 +1134,11 @@ class BrightDataMCPClient:
                 self._client.get(
                     url,
                     headers=headers,
-                    follow_redirects=True,
+                    # SSRF: do not auto-follow redirects on the direct path — a
+                    # public URL could 302 into an internal address we already
+                    # validated past. BrightData (the primary path) handles
+                    # redirects on its own infrastructure.
+                    follow_redirects=False,
                     timeout=dh_timeout,
                 ),
                 timeout=dh_timeout,
@@ -2016,11 +2030,22 @@ DEMO_RESULT: dict = {
 
 
 app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.0.0")
-# CORS: allow Vercel frontend + local dev
-VERCEL_FRONTEND = os.environ.get("VERCEL_FRONTEND_URL", "https://jacobi.vercel.app")
+# CORS: restrict to the JACOBI frontend (production + Vercel previews) and local
+# dev instead of "*". Auth is a Bearer JWT in the Authorization header (not
+# cookies), so allow_credentials stays off — but scoping origins still stops a
+# random third-party site from driving the API from a victim's browser session.
+# Override the explicit list with ALLOWED_ORIGINS (comma-separated) if needed.
+_default_allowed_origins = [
+    "https://jacobi-mark3.vercel.app",
+    "http://localhost:3000",
+]
+_env_allowed = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = _env_allowed or _default_allowed_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    # Vercel preview deploys (jacobi-mark3-<hash>.vercel.app) + any localhost port.
+    allow_origin_regex=r"^https://[a-z0-9-]+\.vercel\.app$|^http://localhost:\d+$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -2122,6 +2147,19 @@ async def launch_probe(
             detail={
                 "code": "auth_required",
                 "message": "Sign in to run a live probe.",
+            },
+        )
+
+    # SSRF gate: reject internal / non-public / non-http(s) targets before the
+    # engine (or its direct-HTTP fallback) ever fetches them. See url_guard.
+    try:
+        validate_public_url(input.target_url)
+    except UnsafeUrlError as url_err:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_url",
+                "message": f"That URL can't be probed: {url_err}",
             },
         )
 
@@ -2307,32 +2345,11 @@ async def get_demo_data():
     return DEMO_RESULT
 
 
-@app.post("/api/debug-probe")
-async def debug_probe(input: TargetProbeInput):
-    """Debug endpoint: fetch a URL via BrightData and show raw price extraction results."""
-    bd = BrightDataMCPClient()
-    await bd.start()
-    try:
-        result = await bd.probe_url(input.target_url, {"geo": "US", "proxy_type": "residential"}, timeout_s=30.0)
-        if not result["success"]:
-            return {"error": f"BrightData API error: {result.get('error')}", "success": False}
-        text = result["text"]
-        detected, signal = check_bot_detection(text)
-        prices = parse_page_prices(text, input.target_url)
-        return {
-            "success": True,
-            "html_length": len(text),
-            "html_preview": text[:2000],
-            "bot_detected": detected,
-            "detection_signal": signal,
-            "prices_found": prices,
-            "count": len(prices),
-            "elapsed_ms": result.get("elapsed_ms"),
-        }
-    except Exception as e:
-        return {"error": str(e), "success": False}
-    finally:
-        await bd.close()
+# NOTE: /api/debug-probe was removed during the production security audit.
+# It was unauthenticated, fetched an arbitrary caller-supplied URL through the
+# direct-HTTP fallback (an SSRF vector), reflected the first 2000 bytes of the
+# response body back to the caller, and burned BrightData credits with no quota
+# or auth. Use the authenticated /api/probe flow instead.
 
 
 @app.get("/api/leaderboard")

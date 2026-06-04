@@ -8,6 +8,11 @@ groq>=0.12.0
 google-genai>=1.0.0
 beautifulsoup4>=4.12.0
 lxml>=5.2.0
+# numpy: runtime dependency of pricing_engine.py / math_engine.py (Math Engine
+# v2). It was previously orphaned (never imported at runtime), so its absence
+# here went unnoticed until Math Engine v2 wired it in — which then crashed the
+# Render deploy at `import numpy`.
+numpy>=1.26,<3
 reportlab==4.2.*
 stripe>=10.0
 supabase>=2.7

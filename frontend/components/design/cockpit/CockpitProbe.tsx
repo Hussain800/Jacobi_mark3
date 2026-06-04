@@ -127,10 +127,10 @@ interface LanguageObservation {
   difference_detected?: boolean;
 }
 
-// Preset case studies — always use the curated demo result so the
-// experience is deterministic for demos / investors. Users who want to
-// run a live probe can paste their own URL into the input above.
-const CASE_URLS = new Set<string>();
+// Preset case studies shown as quick-start examples. They run the REAL
+// probe engine exactly like a user-pasted URL — there is no curated/canned
+// result. If a live probe can't complete (needs dates, site block, timeout)
+// the honest error/needs-context state is shown, never a fabricated verdict.
 const CASES = [
   { name: "Leela Palace Bangalore", host: "www.booking.com", url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html", base: 245 },
   { name: "Tokyo Hotels Search",    host: "www.booking.com", url: "https://www.booking.com/searchresults.html?ss=Tokyo", base: 120 },
@@ -138,7 +138,6 @@ const CASES = [
   { name: "DXB → KTM Flights",      host: "www.google.com",  url: "https://www.google.com/travel/flights?q=Flights+to+KTM+from+DXB", base: 420 },
   { name: "Wireless Headphones",    host: "www.amazon.com",  url: "https://www.amazon.com/s?k=wireless+headphones", base: 65 },
 ];
-CASES.forEach(c => CASE_URLS.add(c.url));
 
 const WAVES = [
   { label: "Wave 1 · datacenter",  r: 150 },
@@ -230,61 +229,6 @@ const TOPO: Record<string, [string, string, string]> = {
   aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
   insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert price discrimination. We've shown the prices we captured; try a product page or a specific listing for a full audit."],
   indeterminate: ["#94a3b8", "Indeterminate", "Prices varied across profiles, but no buyer-context signal (location, device, cookies, referrer) significantly moved the price — so the spread isn't attributable to discrimination. On travel sites it usually reflects different rooms or availability across profiles, not the same product priced differently."],
-};
-
-/* ─── Demo data (unchanged) ──────────────────────────────────────────── */
-
-const DEMO_AGENTS: BackendAgent[] = Array.from({ length: 24 }, (_, i) => {
-  const tier = i < 8 ? 0 : i < 16 ? 1 : 2;
-  const ptype = tier === 0 ? "datacenter" : tier === 1 ? "residential" : "mobile";
-  const labels = [
-    "BASELINE MACBOOK MANHATTAN DIRECT","LOCATION HIGH MANHATTAN","LOCATION LOW RURAL IOWA",
-    "LOCATION HIGH SAN FRANCISCO","LOCATION HIGH LONDON","LOCATION LOW MUMBAI",
-    "DEVICE HIGH IPHONE 15 PRO","DEVICE LOW ANDROID BUDGET","DEVICE HIGH MACBOOK PRO M3",
-    "DEVICE LOW CHROMEBOOK","DEVICE HIGH GALAXY S24","COOKIE HIGH 30D INTENT",
-    "COOKIE LOW FRESH","COOKIE HIGH 90D PLATINUM","REFERRER HIGH VIA KAYAK",
-    "REFERRER LOW DIRECT","REFERRER HIGH SKYSCANNER","REFERRER LOW DIRECT",
-    "LOCATION HIGH DUBAI","LOCATION LOW RURAL MISSISSIPPI","DEVICE HIGH IPAD PRO",
-    "DEVICE LOW IPHONE SE","CONTROL REPEAT 1","CONTROL REPEAT 2",
-  ];
-  const basePrices = [245,268,228,265,262,231,272,234,269,236,266,254,245,241,258,245,256,245,278,221,271,238,246,244];
-  return {
-    agent_id: `AGENT_${String(i).padStart(2,"0")}`,
-    label: `AGENT_${String(i).padStart(2,"0")}  ${labels[i]}`,
-    status: i === 21 ? "detected" : "success",
-    price: i === 21 ? null : basePrices[i],
-    response_time_ms: 800 + Math.floor(Math.random() * 800),
-    bot_detected: i === 21,
-    detection_signal: i === 21 ? "captcha" : null,
-    error_message: null,
-    variables: {},
-    network_tier: tier,
-    proxy_type: ptype,
-  };
-});
-
-const DEMO_REPORT: TopologyReport = {
-  session_id: "demo",
-  target_url: "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html",
-  target_name: "Leela Palace Bangalore",
-  timestamp: "2026-05-25T20:00:00Z",
-  status: "completed",
-  total_agents: 24, successful_agents: 22, failed_agents: 1, detected_agents: 1,
-  elapsed_seconds: 8.7,
-  baseline_price: 245, mean_price: 252,
-  all_prices: Object.fromEntries(DEMO_AGENTS.filter(a => a.price !== null).map(a => [a.agent_id, a.price])),
-  price_range: [221, 278],
-  max_price_spread: 57, max_price_spread_pct: 23.3,
-  gradients: [
-    { variable_name: "location",       state_high: "High Income",    state_low: "Low Income",     mean_price_high: 268.3, mean_price_low: 226.7, delta: 41.6, delta_pct: 17,   pooled_std: 2.5, t_statistic: 16.6, significant: true,  n_high: 3, n_low: 3 },
-    { variable_name: "device",         state_high: "Premium Device", state_low: "Budget Device",  mean_price_high: 269.5, mean_price_low: 236,   delta: 33.5, delta_pct: 13.7, pooled_std: 3.1, t_statistic: 10.8, significant: true,  n_high: 4, n_low: 4 },
-    { variable_name: "cookie_profile", state_high: "Aged Profile",   state_low: "Fresh Profile",  mean_price_high: 247.5, mean_price_low: 245,   delta: 2.5,  delta_pct: 1,    pooled_std: 4.2, t_statistic: 0.6,  significant: false, n_high: 2, n_low: 2 },
-    { variable_name: "referrer",       state_high: "Aggregator",     state_low: "Direct",         mean_price_high: 257,   mean_price_low: 245,   delta: 12,   delta_pct: 4.9,  pooled_std: 3.8, t_statistic: 3.16, significant: true,  n_high: 2, n_low: 2 },
-  ],
-  discrimination_index: 87.1,
-  topology_class: "progressive",
-  agents: DEMO_AGENTS,
-  error: null,
 };
 
 /* ─── Component ──────────────────────────────────────────────────────── */
@@ -418,31 +362,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     }, 100);
 
     setRejection(null);
-    // Case studies now run the REAL engine just like a pasted URL — so a demo
-    // shows genuine probe behaviour, not canned data. The only difference: if a
-    // case study fails (e.g. a JS-heavy search page times out mid-pitch), it
-    // falls back to a clearly-labelled curated report so the demo never breaks.
-    // A user-pasted URL has no fallback (an honest error is correct there).
-    runLive(url, name, CASE_URLS.has(url));
+    // Case studies run the REAL engine just like a pasted URL — genuine probe
+    // behaviour, never canned data. If a probe can't complete, the honest
+    // error / needs-context state is shown (no fabricated verdict).
+    runLive(url, name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, publishToBoard, auditDepth]);
 
-
-  // Curated fallback for case studies: if a real probe can't complete, show the
-  // deterministic sample report (clearly marked) so an investor demo never dies
-  // on a flaky target. Only ever called for case-study URLs.
-  const caseStudyFallback = useCallback((url: string, name: string) => {
-    stopTimers();
-    setReturnedAgents(DEMO_AGENTS.slice());
-    setReport({
-      ...DEMO_REPORT, target_url: url, target_name: name,
-      _demo: true, _curated_fallback: true,
-    } as TopologyReport & { _demo: boolean; _curated_fallback: boolean });
-    setDeckPhaseLabel("complete");
-    setPhase("complete");
-  }, [stopTimers]);
-
-  const runLive = useCallback(async (url: string, name: string, isCaseStudy = false) => {
+  const runLive = useCallback(async (url: string, name: string) => {
     try {
       // SaaS auth: attach Supabase access token so the backend can identify
       // the user, run the quota check, and stamp user_id on the saved probe.
@@ -490,6 +417,16 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         setPhase("idle");
         return;
       }
+      if (r1.status === 400) {
+        // Backend rejected the URL (e.g. SSRF guard / invalid URL). Show its
+        // friendly message instead of a raw "Server error: 400".
+        let payload: { detail?: { message?: string } } = {};
+        try { payload = await r1.json(); } catch { /* ignore */ }
+        stopTimers();
+        setErrorMsg(payload.detail?.message || "That URL can't be probed.");
+        setPhase("error");
+        return;
+      }
       if (!r1.ok) throw new Error(`Server error: ${r1.status}`);
       const b1 = await r1.json();
       const sessionId: string = b1.session_id;
@@ -500,7 +437,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           const r2 = await fetch(`${apiBase}/api/result/${sessionId}`);
           if (r2.status === 404) {
             stopTimers();
-            if (isCaseStudy) { caseStudyFallback(url, name); return; }
             setErrorMsg("Probe session expired");
             setPhase("error");
             return;
@@ -522,15 +458,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             } else if (data.status === "needs_context") {
               // Travel URL without dates/occupancy — an actionable INPUT issue,
               // not a bot block or a parser failure. Show the message verbatim.
-              if (isCaseStudy) { caseStudyFallback(url, name); return; }
               setErrorMsg(data.error ||
                 "Travel pricing requires dates and occupancy. Add check-in/check-out parameters or use a specific booking URL.");
               setReport(data);
               setPhase("error");
             } else {
-              // A case study that failed → degrade to the curated sample so a
-              // live demo never shows an error screen.
-              if (isCaseStudy) { caseStudyFallback(url, name); return; }
               // Friendly fallback message — "No valid prices extracted"
               // is the engine telling us agents got blocked by the target
               // site's bot-detection. Surface that as a clear next-step.
@@ -551,7 +483,6 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           }
         } catch (e) {
           stopTimers();
-          if (isCaseStudy) { caseStudyFallback(url, name); return; }
           setErrorMsg(e instanceof Error ? e.message : "Poll error");
           setPhase("error");
         }
@@ -559,17 +490,15 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
       timeoutRef.current = setTimeout(() => {
         stopTimers();
-        if (isCaseStudy) { caseStudyFallback(url, name); return; }
         setErrorMsg("Probe timed out after 3 minutes");
         setPhase("error");
       }, 180_000);
     } catch (e) {
-      if (isCaseStudy) { caseStudyFallback(url, name); return; }
       setErrorMsg(e instanceof Error ? e.message : "Request failed");
       setPhase("error");
       stopTimers();
     }
-  }, [apiBase, stopTimers, saveConv, handleAnalyze, publishToBoard, auditDepth, caseStudyFallback]);
+  }, [apiBase, stopTimers, saveConv, handleAnalyze, publishToBoard, auditDepth]);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;

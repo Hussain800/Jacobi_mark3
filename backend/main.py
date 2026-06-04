@@ -32,7 +32,16 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
-from math_engine import apply_math_engine_v2
+try:
+    from math_engine import apply_math_engine_v2
+except Exception as _math_import_err:  # numpy / math dep unavailable at runtime
+    # The math layer is purely additive — if it can't import (e.g. a missing
+    # optional dependency), the core probe service must STILL start. Degrade to
+    # a no-op rather than take the whole backend down.
+    print(f"[MATH-V2] layer disabled (import failed): {_math_import_err!r}", flush=True)
+
+    def apply_math_engine_v2(session):  # type: ignore[misc]
+        return None
 
 from brightdata_config import (
     BRIGHTDATA_API_KEY,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEMO_REPORT, SAMPLES, type TopologyReport } from "@/components/cockpit/types";
+import { DEMO_REPORT, type TopologyReport } from "@/components/cockpit/types";
 
 export const dynamic = "force-dynamic";
 
@@ -34,19 +34,6 @@ function json(data: unknown, init?: ResponseInit) {
   });
 }
 
-function inferName(targetUrl: string, targetName?: string) {
-  if (targetName && !targetName.startsWith("UA123 JFK")) return targetName;
-  const sample = SAMPLES.find((s) => s.url === targetUrl);
-  if (sample) return sample.label;
-
-  try {
-    const url = new URL(targetUrl);
-    return url.hostname.replace(/^www\./, "");
-  } catch {
-    return targetUrl || "Probe";
-  }
-}
-
 function demoReport(sessionId: string, session?: FallbackSession): TopologyReport {
   return {
     ...DEMO_REPORT,
@@ -68,31 +55,37 @@ function parseBody<T>(bodyText?: string): T | Record<string, never> {
 
 async function fallbackResponse(path: string, request: NextRequest, bodyText?: string) {
   if (request.method === "POST" && path === "probe") {
-    const body = parseBody<{ target_url?: string; target_name?: string }>(bodyText);
-
-    const targetUrl = body.target_url || DEMO_REPORT.target_url;
-    const sessionId = `fallback_${Date.now().toString(36)}`;
-    fallbackSessions.set(sessionId, {
-      target_url: targetUrl,
-      target_name: inferName(targetUrl, body.target_name),
-    });
-
-    return json({
-      session_id: sessionId,
-      status: "completed",
-      warning:
-        "Backend probe service is unavailable. Showing simulated Jacobi results so the cockpit can continue.",
-    });
+    // Backend unreachable. Return an honest 503 — NEVER fabricate a "completed"
+    // probe with simulated discrimination data for a real user scan.
+    return json(
+      {
+        error: "probe_unavailable",
+        detail:
+          "The probe service is temporarily unavailable. Please try again in a moment.",
+      },
+      { status: 503 },
+    );
   }
 
-  if (request.method === "GET" && path.startsWith("result/")) {
-    const sessionId = decodeURIComponent(path.slice("result/".length));
-    return json(demoReport(sessionId, fallbackSessions.get(sessionId)));
-  }
-
-  if (request.method === "GET" && path.startsWith("share/")) {
-    const sessionId = decodeURIComponent(path.slice("share/".length));
-    return json(demoReport(sessionId, fallbackSessions.get(sessionId)));
+  if (
+    request.method === "GET" &&
+    (path.startsWith("result/") || path.startsWith("share/"))
+  ) {
+    const prefix = path.startsWith("result/") ? "result/" : "share/";
+    const sessionId = decodeURIComponent(path.slice(prefix.length));
+    // Only the curated demo / case-study ids may serve static sample data when
+    // the backend is down. A real session id gets an honest error — never a
+    // fabricated discrimination report.
+    if (sessionId.startsWith("demo")) {
+      return json(demoReport(sessionId, fallbackSessions.get(sessionId)));
+    }
+    return json(
+      {
+        error: "result_unavailable",
+        detail: "The probe service is temporarily unavailable.",
+      },
+      { status: 503 },
+    );
   }
 
   if (request.method === "GET" && path === "analyze-demo") {

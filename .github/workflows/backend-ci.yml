@@ -1,0 +1,41 @@
+name: backend-ci
+
+# Catches the class of failure that took the Render backend down: a runtime
+# dependency missing from requirements.txt (the app installs fine but crashes
+# at `import` on startup). Mirrors Render's clean install + boot.
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  smoke-and-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies (clean — mirrors Render)
+        run: pip install -r requirements.txt
+
+      - name: Boot smoke — import the app
+        # If this fails, `uvicorn main:app` would crash on deploy. This is the
+        # exact check that would have caught the missing-numpy production outage.
+        run: python -c "import main; print('app loads OK:', main.app.title)"
+
+      - name: Run test suite
+        run: |
+          pip install pytest
+          python -m pytest tests/ -q

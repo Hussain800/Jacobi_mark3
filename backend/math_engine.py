@@ -310,7 +310,7 @@ def compute_pei(session: dict) -> dict:
         "gated": True,
         "basis": (
             f"{sig_count} controlled variable(s) significantly moved the price; "
-            f"‖J_sig‖={j_norm:.3f}. Exploitation scored from the attributed "
+            f"||J_sig||={j_norm:.3f}. Exploitation scored from the attributed "
             f"gradient, sharpened by dispersion (Gini={gini:.2f}, MAD={mad_norm:.2f}) "
             f"under {coverage} coverage."
         ),

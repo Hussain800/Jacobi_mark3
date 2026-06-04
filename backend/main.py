@@ -32,16 +32,25 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
-try:
-    from math_engine import apply_math_engine_v2
-except Exception as _math_import_err:  # numpy / math dep unavailable at runtime
-    # The math layer is purely additive — if it can't import (e.g. a missing
-    # optional dependency), the core probe service must STILL start. Degrade to
-    # a no-op rather than take the whole backend down.
-    print(f"[MATH-V2] layer disabled (import failed): {_math_import_err!r}", flush=True)
+if os.getenv("MATH_ENGINE_V2", "1") == "0":
+    # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
+    # resource-constrained instance can be isolated WITHOUT a code deploy — set
+    # MATH_ENGINE_V2=0 in the Render environment and restart.
+    print("[MATH-V2] disabled via MATH_ENGINE_V2=0", flush=True)
 
     def apply_math_engine_v2(session):  # type: ignore[misc]
         return None
+else:
+    try:
+        from math_engine import apply_math_engine_v2
+    except Exception as _math_import_err:  # numpy / math dep unavailable at runtime
+        # The math layer is purely additive — if it can't import (e.g. a missing
+        # optional dependency), the core probe service must STILL start. Degrade
+        # to a no-op rather than take the whole backend down.
+        print(f"[MATH-V2] layer disabled (import failed): {_math_import_err!r}", flush=True)
+
+        def apply_math_engine_v2(session):  # type: ignore[misc]
+            return None
 
 from brightdata_config import (
     BRIGHTDATA_API_KEY,
@@ -1604,10 +1613,13 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             if not r["success"]:
                 last_failure = r.get("error", "Unknown")
                 continue
-            # Offload CPU-bound HTML parsing to a thread so the single async
-            # worker's event loop stays responsive — otherwise concurrent scans
-            # (and their /api/result polls) starve while one scan parses.
-            detected, signal = await asyncio.to_thread(check_bot_detection, r.get("text", ""))
+            # NOTE: parsing runs synchronously on purpose. Offloading these
+            # CPU-bound parses to asyncio.to_thread starved the single-CPU Render
+            # free instance (thread-pool overhead, no real parallelism under the
+            # GIL) and broke live scans, even though it passed tests + worked on
+            # multi-core dev. Re-introduce concurrency via a process pool / more
+            # workers / a bigger instance before threading the parser again.
+            detected, signal = check_bot_detection(r.get("text", ""))
             if detected:
                 s["status"] = "detected"
                 s["bot_detected"] = True
@@ -1625,7 +1637,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 from extractors import get_extractor
                 _ex = get_extractor(url)
                 if _ex is not None:
-                    _result = await asyncio.to_thread(_ex, html_text, url)
+                    _result = _ex(html_text, url)
                     if not _result.context_ok:
                         # e.g. a Booking URL with no dates → not a price, not a
                         # bot failure. Surface the actionable message.
@@ -1671,7 +1683,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 s["fx_rate_used"] = None
                 return s
 
-            prices = await asyncio.to_thread(parse_page_prices, html_text, url)
+            prices = parse_page_prices(html_text, url)
             if not prices:
                 s["status"] = "failed"
                 s["bot_detected"] = False
@@ -1683,7 +1695,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
-            ev = await asyncio.to_thread(_extraction_evidence, html_text, url, prices)
+            ev = _extraction_evidence(html_text, url, prices)
             # Derive the verifiable native price from the raw on-page text and
             # fold it into both the evidence dict and the agent top-level so the
             # UI/PDF can show "AED 11,600.00" instead of only the USD figure.

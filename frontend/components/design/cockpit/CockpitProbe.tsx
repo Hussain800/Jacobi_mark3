@@ -30,6 +30,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "../../../lib/supabase/client";
 import { fetchPlan, type Plan } from "../../../lib/billing";
+import { JacobianMatrix } from "../../cockpit/JacobianMatrix";
+import type { SensitivityMatrix, PEI } from "../../cockpit/types";
 
 /* ─── Types & data ──────────────────────────────────────────────────── */
 
@@ -101,6 +103,12 @@ interface TopologyReport {
   native_baseline_price?: number | null;
   normalized_currency?: string | null;
   fx_rate_used?: number | null;
+  // Math Engine v2 — robust baseline, Jacobian sensitivity matrix, gated PEI.
+  robust_baseline?: number | null;
+  mad_normalized_spread?: number | null;
+  gini_all?: number | null;
+  sensitivity_matrix?: SensitivityMatrix | null;
+  pei?: PEI | null;
   // Controlled browser-language observations (metadata, not a driver).
   language_observations?: LanguageObservation[];
   // Phase 5A honest probe accounting + audit depth.
@@ -607,6 +615,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       // Coverage: how much of the matrix returned a usable price.
       coverage: report.coverage ?? null,
       pricedAgents: report.priced_agents ?? null,
+      // Math Engine v2 — Jacobian sensitivity matrix + attribution-gated PEI.
+      pei: report.pei ?? null,
+      sensitivityMatrix: report.sensitivity_matrix ?? null,
+      robustBaseline: report.robust_baseline ?? null,
     };
   }, [report]);
 
@@ -1197,6 +1209,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   <Stat label="Spread" value={`$${verdict.spread}`} accent="over" />
                   <Stat label="% over baseline" value={`${verdict.pct}%`} accent="over" />
                   <Stat label="Discrimination index" value={`${verdict.index}/100`} />
+                  {verdict.pei && (
+                    <Stat label="Exploitation index (PEI)" value={`${Math.round(verdict.pei.score)}/100`} />
+                  )}
                 </div>
                 <div className="ev-index" style={{ marginTop: 26 }}>
                   <div className="evi-track">
@@ -1214,9 +1229,12 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 </p>
               </ResultSection>
 
-              {/* 3. Drivers — neutral, observational only */}
-              <ResultSection eyebrow="03 · drivers">
-                <p className="verdict-text" style={{ marginBottom: 24, color: "var(--text)" }}>
+              {/* 3. Jacobian sensitivity matrix + PEI, then the driver bars. */}
+              <ResultSection eyebrow="03 · jacobian sensitivity matrix">
+                {verdict.sensitivityMatrix && verdict.sensitivityMatrix.rows.length > 0 && (
+                  <JacobianMatrix matrix={verdict.sensitivityMatrix} pei={verdict.pei} />
+                )}
+                <p className="verdict-text" style={{ marginBottom: 24, marginTop: 28, color: "var(--text)" }}>
                   Four signals were tested. Each bar shows how much that one variable
                   moved the price on its own, holding the others as steady as the sample allowed.
                 </p>

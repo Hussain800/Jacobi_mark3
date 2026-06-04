@@ -46,6 +46,35 @@ export interface Agent {
   language_pair_role?: string | null;
 }
 
+export interface SensitivityRow {
+  variable: string;
+  kind: string;
+  delta_usd: number | null;
+  delta_pct: number | null;
+  t_statistic: number | null;
+  effect_size: number | null;
+  n: number;
+  significant: boolean;
+  confidence: string;
+}
+
+export interface SensitivityMatrix {
+  outputs: string[];
+  note: string;
+  rows: SensitivityRow[];
+  jacobian_norm: number;
+  significant_count: number;
+}
+
+export interface PEI {
+  score: number;
+  gated: boolean;
+  basis: string;
+  dispersion_index: number;
+  interpretation: string;
+  components?: Record<string, number>;
+}
+
 export interface TopologyReport {
   session_id: string;
   target_url: string;
@@ -79,6 +108,12 @@ export interface TopologyReport {
   native_baseline_price?: number | null;
   normalized_currency?: string | null;
   fx_rate_used?: number | null;
+  // Math Engine v2 — robust baseline, Jacobian sensitivity matrix, gated PEI.
+  robust_baseline?: number | null;
+  mad_normalized_spread?: number | null;
+  gini_all?: number | null;
+  sensitivity_matrix?: SensitivityMatrix | null;
+  pei?: PEI | null;
 }
 
 export interface Message {

@@ -1235,6 +1235,12 @@ class BrightDataMCPClient:
 SESSION_STORE: Dict[str, dict] = {}
 ACTIVE_SESSION_ID: Optional[str] = None
 
+# Bound how many full probe scans run concurrently on this worker so a burst of
+# users can't pile up 50-agent matrices, starve each other, and overspend
+# BrightData. Excess scans queue — the session_id is still returned immediately
+# and the engine waits for a slot. Tune via MAX_CONCURRENT_SCANS.
+_SCAN_SEMAPHORE = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_SCANS", "3")))
+
 
 def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
     global ACTIVE_SESSION_ID
@@ -1580,7 +1586,10 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             if not r["success"]:
                 last_failure = r.get("error", "Unknown")
                 continue
-            detected, signal = check_bot_detection(r.get("text", ""))
+            # Offload CPU-bound HTML parsing to a thread so the single async
+            # worker's event loop stays responsive — otherwise concurrent scans
+            # (and their /api/result polls) starve while one scan parses.
+            detected, signal = await asyncio.to_thread(check_bot_detection, r.get("text", ""))
             if detected:
                 s["status"] = "detected"
                 s["bot_detected"] = True
@@ -1598,7 +1607,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 from extractors import get_extractor
                 _ex = get_extractor(url)
                 if _ex is not None:
-                    _result = _ex(html_text, url)
+                    _result = await asyncio.to_thread(_ex, html_text, url)
                     if not _result.context_ok:
                         # e.g. a Booking URL with no dates → not a price, not a
                         # bot failure. Surface the actionable message.
@@ -1644,7 +1653,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
                 s["fx_rate_used"] = None
                 return s
 
-            prices = parse_page_prices(html_text, url)
+            prices = await asyncio.to_thread(parse_page_prices, html_text, url)
             if not prices:
                 s["status"] = "failed"
                 s["bot_detected"] = False
@@ -1656,7 +1665,7 @@ async def launch_single_agent(bd: BrightDataMCPClient, url: str, cfg: dict, time
             s["bot_detected"] = False
             s["detection_signal"] = None
             s["error_message"] = None
-            ev = _extraction_evidence(html_text, url, prices)
+            ev = await asyncio.to_thread(_extraction_evidence, html_text, url, prices)
             # Derive the verifiable native price from the raw on-page text and
             # fold it into both the evidence dict and the agent top-level so the
             # UI/PDF can show "AED 11,600.00" instead of only the USD figure.
@@ -2232,8 +2241,11 @@ async def _complete_probe_in_background(
     /api/result and see whatever the engine produced.
     """
     try:
-        await _run_probe_engine(session, url,
-                                agent_configs=get_agent_configs_for_tier(engine_tier))
+        # Gate concurrent scans so simultaneous users queue instead of starving
+        # each other on the single worker (see _SCAN_SEMAPHORE).
+        async with _SCAN_SEMAPHORE:
+            await _run_probe_engine(session, url,
+                                    agent_configs=get_agent_configs_for_tier(engine_tier))
     except Exception as e:
         # Engine itself crashed. Mark the session as failed so the
         # frontend's polling loop can surface a clean error state instead

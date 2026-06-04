@@ -32,6 +32,7 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
+from math_engine import apply_math_engine_v2
 
 from brightdata_config import (
     BRIGHTDATA_API_KEY,
@@ -1494,6 +1495,14 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     # Controlled browser-language observations (metadata, NOT a t-tested driver).
     session["language_observations"] = compute_language_observations(session)
 
+    # ── Math Engine v2 ──────────────────────────────────────────────────────
+    # Robust baseline (trimmed median), the Jacobian sensitivity matrix, and the
+    # attribution-gated Price Exploitation Index (PEI). Reads only already-derived
+    # fields; never changes the verdict (topology_class / discrimination_score).
+    # At 'limited' coverage gradients are already emptied above, so the PEI gate
+    # falls through to 0 on its own — the honesty invariant holds for free.
+    apply_math_engine_v2(session)
+
     sig_vars = [g for g in session["gradients"] if g["significant"]]
     sig_details = "; ".join(f"{g['variable_name']}: ${g['delta']:+.2f}" for g in sig_vars)
     total_for_msg = session.get("total_agents") or len(session.get("agents", [])) or 24
@@ -2348,6 +2357,13 @@ async def get_result(session_id: str):
         # a thin sample.
         coverage=session.get("coverage"),
         priced_agents=session.get("priced_agents"),
+        # Math Engine v2: robust baseline (trimmed median), Jacobian sensitivity
+        # matrix, and the attribution-gated Price Exploitation Index.
+        robust_baseline=session.get("robust_baseline"),
+        mad_normalized_spread=session.get("mad_normalized_spread"),
+        gini_all=session.get("gini_all"),
+        sensitivity_matrix=session.get("sensitivity_matrix"),
+        pei=session.get("pei"),
         error=session.get("error"),
     )
 
@@ -2535,6 +2551,13 @@ async def get_share(session_id: str):
         # a thin sample.
         coverage=session.get("coverage"),
         priced_agents=session.get("priced_agents"),
+        # Math Engine v2: robust baseline (trimmed median), Jacobian sensitivity
+        # matrix, and the attribution-gated Price Exploitation Index.
+        robust_baseline=session.get("robust_baseline"),
+        mad_normalized_spread=session.get("mad_normalized_spread"),
+        gini_all=session.get("gini_all"),
+        sensitivity_matrix=session.get("sensitivity_matrix"),
+        pei=session.get("pei"),
         error=session.get("error"),
     )
 

@@ -77,6 +77,13 @@ def _sanitize_report(report: dict) -> dict:
         "skipped_inferred_agents": report.get("skipped_inferred_agents"),
         "evidence_count": report.get("evidence_count"),
         "audit_depth": report.get("audit_depth"),
+        # Math Engine v2: robust baseline, dispersion, Jacobian sensitivity
+        # matrix, and the attribution-gated Price Exploitation Index.
+        "robust_baseline": report.get("robust_baseline"),
+        "mad_normalized_spread": report.get("mad_normalized_spread"),
+        "gini_all": report.get("gini_all"),
+        "sensitivity_matrix": report.get("sensitivity_matrix"),
+        "pei": report.get("pei"),
         "gradients": report.get("gradients", []),
         "agents": [
             {
@@ -319,6 +326,13 @@ async def export_pdf(report_id: str):
     spread_pct = _num(data.get("max_price_spread_pct"))
     score = _num(data.get("discrimination_score"))
     disc_index = _num(data.get("discrimination_index"))
+    # Math Engine v2 — robust baseline + attribution-gated PEI.
+    robust_bp = _num(data.get("robust_baseline"))
+    gini_all = _num(data.get("gini_all"))
+    _pei = data.get("pei") or {}
+    pei_score = _num(_pei.get("score"))
+    pei_interp = _pei.get("interpretation") or ""
+    pei_basis = _pei.get("basis") or ""
 
     # Native (on-page) currency — the value the shopper actually sees. USD below
     # is the normalized comparison basis. All None-safe.
@@ -590,6 +604,15 @@ async def export_pdf(report_id: str):
              + (f" ({_esc(audit_depth)})" if audit_depth else "")),
             ("Real probes executed", f"{real_probes} of {configured_agents}"),
         ]
+        if robust_bp is not None:
+            rows.append(("Robust baseline (trimmed median)", _money(robust_bp)))
+        if pei_score is not None:
+            _pei_word = pei_interp.split("—")[0].strip() if pei_interp else ""
+            rows.append(("Price Exploitation Index",
+                         f"{pei_score:.0f} / 100"
+                         + (f" ({_esc(_pei_word)})" if _pei_word else "")))
+        if gini_all is not None:
+            rows.append(("Observed dispersion (Gini)", f"{gini_all:.3f}"))
         if filled > 0:
             rows.append(("Agents skipped (inferred)",
                          f"{filled} (exact-uniform gate)"))
@@ -628,6 +651,13 @@ async def export_pdf(report_id: str):
         Paragraph("Table 1. Summary of audit metrics for the target session.",
                   sCaption),
     ]))
+
+    # Price Exploitation Index basis — the "why this verdict was / was not
+    # claimed" line. This is the evidence-grade explanation of the gated score.
+    if pei_basis:
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(
+            f"<b>Price Exploitation Index basis.</b> {_esc(pei_basis)}", sBody))
 
     # Figure 1 — price distribution (clean greyscale axis).
     # Only meaningful when prices actually vary; a single uniform price collapses

@@ -180,3 +180,77 @@ def test_pdf_export_unknown_id_is_404_not_500(client):
     """A missing report is a clean 404, never an unhandled 500."""
     r = client.get("/api/export/does_not_exist_xyz/pdf")
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Display-name derivation + the URL-rendering regressions.
+#
+# Two real bugs this guards:
+#   * A pasted-URL name splashed the raw link across the title, abstract, params
+#     table and conclusion (ugly, and justified prose stretched around it).
+#   * A _softbreak() helper inserted U+200B word-break chars that the base-14
+#     Times font rendered as .notdef BOXES inside the URL.
+# --------------------------------------------------------------------------- #
+import io
+from report_export import _derive_display_name
+
+
+@pytest.mark.parametrize("name, url, expect_sub", [
+    ("amazon.ae", "https://www.amazon.ae/x/dp/B0FL4HLJ56/", "amazon.ae"),        # real name kept
+    ("Taj Lucknow", "https://www.booking.com/hotel/in/taj.html", "Taj Lucknow"),  # real name kept
+    ("https://www.amazon.ae/Lenovo-Legion-Gaming-GeForce-Windows/dp/B0FL4HLJ56/",
+     "https://www.amazon.ae/Lenovo-Legion-Gaming-GeForce-Windows/dp/B0FL4HLJ56/",
+     "Lenovo Legion Gaming"),                                                     # URL -> product slug
+    ("", "https://www.booking.com/hotel/in/taj-mahal-palace.html", "Taj Mahal"),  # empty -> slug
+])
+def test_display_name_derivation(name, url, expect_sub):
+    out = _derive_display_name(name, url)
+    assert expect_sub.lower() in out.lower()
+    # A human title must never be a raw URL.
+    assert not out.lower().startswith(("http://", "https://"))
+
+
+def test_display_name_url_keeps_host_drops_junk():
+    out = _derive_display_name(
+        "https://www.amazon.ae/Lenovo-Legion/dp/B0FL4HLJ56/",
+        "https://www.amazon.ae/Lenovo-Legion/dp/B0FL4HLJ56/")
+    assert "amazon.ae" in out          # domain shown for context
+    assert "B0FL4HLJ56" not in out     # ASIN / junk segment not shown
+
+
+def test_display_name_empty_is_safe():
+    assert _derive_display_name("", "") == "Unknown Target"
+    assert _derive_display_name(None, None) == "Unknown Target"
+
+
+def _extract_pdf_text(content):
+    """Extract text via whichever PDF reader is installed (pypdf or PyPDF2)."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            return None
+    return "\n".join((p.extract_text() or "")
+                     for p in PdfReader(io.BytesIO(content)).pages)
+
+
+def test_pdf_url_named_session_no_zero_width_boxes(client):
+    """A session whose NAME is a bare URL exports cleanly: no U+200B (the old
+    word-break char that rendered as .notdef boxes) and the raw URL appears
+    exactly once (the Target URL line), not splashed across the document."""
+    url = "https://www.amazon.ae/Lenovo-Legion-Gaming-GeForce-Windows/dp/B0FL4HLJ56/"
+    _, sess = case_real_uniform()
+    sess["session_id"] = "urlname"
+    sess["target_name"] = url          # the user's exact case: name == URL
+    sess["target_url"] = url
+    _seed("urlname", sess)
+    r = client.get("/api/export/urlname/pdf")
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+    text = _extract_pdf_text(r.content)
+    if text is None:
+        pytest.skip("no PDF text extractor (pypdf/PyPDF2) installed")
+    assert "​" not in text, "U+200B leaked back in — it renders as .notdef boxes"
+    assert "Lenovo Legion Gaming" in text, "clean derived name missing from the report"
+    assert text.count("B0FL4HLJ56") == 1, "raw URL must appear exactly once (Target URL line)"

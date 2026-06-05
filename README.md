@@ -325,14 +325,14 @@ priced set, discard the top and bottom $\alpha$ fraction (default $\alpha = 0.10
 take the median of the interior.
 
 $$
-B \;=\; \tilde p_{\,\alpha} \;=\; \operatorname{median}\Big(\{\, p_{(i)} : \lfloor \alpha n\rfloor < i \le n - \lfloor \alpha n\rfloor \,\}\Big)
+B \;=\; \tilde p_{\,\alpha} \;=\; \mathrm{median}\,\Big(\{\, p_{(i)} : \lfloor \alpha n\rfloor < i \le n - \lfloor \alpha n\rfloor \,\}\Big)
 $$
 
 Dispersion is measured with the **Median Absolute Deviation**, which has a 50%
 breakdown point — half the data can be corrupted before it misleads:
 
 $$
-\mathrm{MAD} \;=\; \operatorname{median}_i\big(\,\lvert p_i - \tilde p\rvert\,\big),
+\mathrm{MAD} \;=\; \mathrm{median}\,_i\big(\,\lvert p_i - \tilde p\rvert\,\big),
 \qquad
 \widehat{\mathrm{MAD}} \;=\; \frac{\mathrm{MAD}}{\tilde p}
 $$
@@ -363,7 +363,7 @@ rank variables (average ranks for ties):
 
 $$
 \rho_s \;=\; 1 - \frac{6\displaystyle\sum_{i} d_i^{2}}{n\,(n^{2}-1)},
-\qquad d_i = \operatorname{rg}(x_i) - \operatorname{rg}(p_i)
+\qquad d_i = \mathrm{rank}(x_i) - \mathrm{rank}(p_i)
 $$
 
 To avoid rank-correlation theatre, $\rho_s$ is only computed when there are **≥ 3
@@ -449,7 +449,7 @@ unless at least one gradient is statistically significant **and** coverage is no
 limited:
 
 $$
-\mathrm{PEI} = 0 \quad\text{if}\quad \big\lvert\{\,k : \lvert t_k\rvert > 2\,\}\big\rvert = 0 \;\;\lor\;\; \text{coverage} = \texttt{limited}
+\mathrm{PEI} = 0 \quad\text{if}\quad \big\lvert\{\,k : \lvert t_k\rvert > 2\,\}\big\rvert = 0 \;\;\lor\;\; \text{coverage} = \text{limited}
 $$
 
 So a page where prices vary wildly but *no single buyer-context variable explains

@@ -193,10 +193,17 @@ export default function LandingPage() {
               <span className="pi-rule" />
             </form>
 
+            <p className="sec" data-reveal style={{
+              marginTop: 14, fontFamily: "var(--mono)", fontSize: 12.5, lineHeight: 1.6,
+            }}>
+              Smart audits typically complete within 60–100 seconds, depending on
+              the target site.
+            </p>
+
             <div className="hero-proof label-mono" data-reveal>
               <a href="#case-studies" className="hero-secondary-cta">View a sample report</a>
               <span className="sep">·</span>{" "}
-              Smart 24 &amp; Pro 50 matrices <span className="sep">·</span>{" "}
+              Smart 24 — a 24-agent evidence matrix <span className="sep">·</span>{" "}
               native-currency evidence
             </div>
           </div>
@@ -289,7 +296,7 @@ export default function LandingPage() {
           <div className="feature-grid" data-reveal>
             {[
               ["Smart 24 audit", "A 24-agent matrix across location, device, cookie history, and referrer — the free evidence audit."],
-              ["Pro 50 matrix", "A 50-agent advanced matrix with deeper cookie, referrer, device, and geo coverage."],
+              ["Pro 50 matrix · private beta", "A 50-agent advanced matrix with deeper cookie, referrer, device, and geo coverage. In private beta — opens after the Smart 24 launch."],
               ["Native-currency evidence", "Prices shown in the real on-page currency first (e.g. AED 11,600.00), with a USD-normalized comparison."],
               ["Browser-language pairs", "Controlled Accept-Language pairs (EN vs AR/HI/FR) where only the language differs."],
               ["PDF audit report", "A research-grade PDF with summary, figures, and a raw-evidence appendix."],

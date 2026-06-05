@@ -52,6 +52,15 @@ else:
         def apply_math_engine_v2(session):  # type: ignore[misc]
             return None
 
+# ── Pro 50 launch gate ──────────────────────────────────────────────────────
+# JACOBI is opening a Smart 24 waitlist first; the 50-agent "Pro 50" matrix stays
+# in PRIVATE BETA until this is switched on. Default OFF: every pro50 request —
+# even from a Pro/Enterprise account — is resolved to the Smart 24 matrix below,
+# so the advanced matrix cannot be triggered via the API before launch. The UI
+# toggle is the first lock; this env gate is the authoritative one. Flip
+# PRO50_BETA=1 in the environment to open the beta for Pro/Enterprise tiers.
+PRO50_BETA_ENABLED = os.getenv("PRO50_BETA", "0") == "1"
+
 from brightdata_config import (
     BRIGHTDATA_API_KEY,
     BRIGHTDATA_CUSTOM_HEADERS_ENABLED,
@@ -2238,9 +2247,13 @@ async def launch_probe(
     # depth is given stays smart24 so cost/behaviour is unchanged unless asked.
     tier = (quota.get("tier") or "free").lower()
     requested = (input.audit_depth or "").strip().lower()
-    if requested == "pro50" and tier in ("pro", "enterprise"):
+    if requested == "pro50" and tier in ("pro", "enterprise") and PRO50_BETA_ENABLED:
         engine_tier = "pro"
     else:
+        # Pro 50 is in PRIVATE BETA (PRO50_BETA=0 by default): any pro50 request —
+        # even from a Pro/Enterprise account — is safely resolved to the Smart 24
+        # matrix here. This is the authoritative lock behind the UI toggle, so the
+        # 50-agent matrix can never be triggered via a direct API call pre-launch.
         engine_tier = "free"
 
     sid, session = create_session(input.target_url, input.target_name)

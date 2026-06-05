@@ -259,6 +259,12 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   // 50-agent scan will run). Defaults to "anon"/"free" until the fetch resolves.
   const [plan, setPlan] = useState<Plan | null>(null);
   const isPro = plan?.tier === "pro";
+  // Pro 50 (50-agent matrix) is in PRIVATE BETA. It is locked everywhere in
+  // production unless explicitly enabled with NEXT_PUBLIC_PRO50_BETA=1. This is a
+  // deliberate launch gate (Smart 24 waitlist only) — not a tier check — so even
+  // a Pro account cannot select the 50-agent matrix until beta is switched on.
+  // The backend enforces the same gate (PRO50_BETA) as the real lock.
+  const pro50BetaEnabled = process.env.NEXT_PUBLIC_PRO50_BETA === "1";
   useEffect(() => {
     fetchPlan().then(setPlan).catch(() => {});
   }, []);
@@ -754,8 +760,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               Include on public board
             </label>
 
-            {/* Audit depth selector (Phase 5A). Pro 50 only runs for Pro tiers;
-                Free users are safely downgraded to Smart 24 server-side. */}
+            {/* Audit depth selector (Phase 5A). Pro 50 is in PRIVATE BETA: it is
+                locked unless NEXT_PUBLIC_PRO50_BETA=1 AND the account is Pro, and
+                the backend enforces the same PRO50_BETA gate. Until then every
+                scan runs Smart 24 (the full live product). */}
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-2)",
@@ -763,17 +771,18 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             }}>
               <span>Depth</span>
               {([["smart24", "Smart 24"], ["pro50", "Pro 50"]] as const).map(([val, lbl]) => {
-                // Pro 50 is locked for non-Pro users: the button is disabled and
-                // labelled "Upgrade", so a Free user is never misled into thinking
-                // a 50-agent scan will run. (The backend also enforces this.)
-                const locked = val === "pro50" && !isPro;
+                // Pro 50 is in PRIVATE BETA: the button is disabled and badged
+                // "beta" unless NEXT_PUBLIC_PRO50_BETA=1, so no one (Free or Pro)
+                // is misled into thinking a 50-agent scan will run before launch.
+                // (The backend enforces the same PRO50_BETA gate.)
+                const locked = val === "pro50" && !(pro50BetaEnabled && isPro);
                 const active = auditDepth === val;
                 return (
                   <button
                     key={val}
                     type="button"
                     disabled={locked}
-                    title={locked ? "Pro 50 is available on the Pro plan" : undefined}
+                    title={locked ? "Pro 50 is in private beta — Smart 24 is live today" : undefined}
                     onClick={() => { if (!locked) setAuditDepth(val); }}
                     style={{
                       fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.1em",
@@ -786,20 +795,20 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                       opacity: locked ? 0.7 : 1,
                     }}
                   >
-                    {lbl}{locked && " 🔒"}
+                    {lbl}{locked && " · beta"}
                   </button>
                 );
               })}
-              {!isPro && (
-                <a
-                  href="/pricing"
+              {!(pro50BetaEnabled && isPro) && (
+                <span
+                  title="Pro 50 (50-agent matrix) is in private beta. Smart 24 is fully live."
                   style={{
                     fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.1em",
-                    textTransform: "uppercase", color: "var(--cobalt)", marginLeft: 2,
+                    textTransform: "uppercase", color: "var(--text-4)", marginLeft: 2,
                   }}
                 >
-                  Upgrade
-                </a>
+                  Private beta
+                </span>
               )}
             </div>
           </div>
@@ -846,7 +855,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 </button>
               ) : (
                 <a href="/pricing" className="btn btn-primary">
-                  Upgrade to Pro →
+                  See plans →
                 </a>
               )}
             </div>
@@ -1058,10 +1067,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   background: "var(--surface-2)", fontFamily: "var(--mono)",
                   fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
                 }}>
-                  Pro 50 is available on the Pro plan — this scan ran the{" "}
-                  <strong style={{ color: "var(--text)" }}>Smart 24</strong> audit instead.{" "}
-                  <a href="/pricing" style={{ color: "var(--cobalt)" }}>Upgrade to Pro</a> to
-                  run the 50-agent advanced matrix.
+                  Pro 50 is in private beta — this scan ran the{" "}
+                  <strong style={{ color: "var(--text)" }}>Smart 24</strong> audit instead,
+                  which is the full live product today. The 50-agent advanced matrix
+                  opens after the Smart 24 launch.
                 </div>
               )}
 

@@ -129,6 +129,11 @@ export default function PricingPage() {
   }
 
   const isPro = plan?.tier === "pro";
+  // Pro 50 is in PRIVATE BETA for the Smart 24 waitlist launch. Unless
+  // NEXT_PUBLIC_PRO50_BETA=1, the Pro plan is shown as "Private beta / coming
+  // soon" and the public checkout CTA is suppressed (we do not sell Pro 50 yet).
+  // Existing Pro accounts (test mode) still see "Manage billing".
+  const pro50BetaEnabled = process.env.NEXT_PUBLIC_PRO50_BETA === "1";
 
   return (
     <div className="jacobi-design">
@@ -152,8 +157,9 @@ export default function PricingPage() {
                 .
               </h1>
               <p className="sec-lede sec">
-                Start with the Smart 24 audit. Go Pro for the 50-agent advanced
-                matrix. Enterprise teams can contact us for a custom audit.
+                Smart 24 is live today — a 24-agent evidence audit, free to start.
+                The 50-agent Pro matrix is in private beta. Enterprise teams can
+                contact us for a custom audit.
               </p>
               {/* The Stripe test-mode banner that used to live here was
                   removed per product direction: customer-facing UI should
@@ -207,9 +213,19 @@ export default function PricingPage() {
                 <div className="plan-head">
                   <span className="plan-name mono" style={{ color: "var(--cobalt-bright)" }}>
                     Pro
+                    {!pro50BetaEnabled && (
+                      <span style={{
+                        marginLeft: 10, fontSize: 9, color: "var(--gold)",
+                        border: "1px solid rgba(214,178,94,0.45)",
+                        borderRadius: 999, padding: "2px 7px",
+                        letterSpacing: "0.12em",
+                      }}>
+                        PRIVATE BETA
+                      </span>
+                    )}
                     {isPro && (
                       <span style={{
-                        marginLeft: 10, fontSize: 9, color: "var(--good)",
+                        marginLeft: 8, fontSize: 9, color: "var(--good)",
                         border: "1px solid rgba(58,215,159,0.4)",
                         borderRadius: 999, padding: "2px 7px",
                         letterSpacing: "0.12em",
@@ -223,8 +239,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ month</span>
                   </div>
                   <p className="plan-tag sec">
-                    Best for founders, analysts, journalists, and teams
-                    checking pricing regularly.
+                    The 50-agent advanced matrix — in private beta while Smart 24
+                    is in early access. Not yet on public sale.
                   </p>
                 </div>
                 {isPro ? (
@@ -238,7 +254,7 @@ export default function PricingPage() {
                       ? busyLabel === "waking" ? "Waking server…" : "Opening…"
                       : "Manage billing"}
                   </button>
-                ) : (
+                ) : pro50BetaEnabled ? (
                   <button
                     className="btn btn-primary plan-cta"
                     onClick={onSubscribe}
@@ -248,6 +264,14 @@ export default function PricingPage() {
                     {busy
                       ? busyLabel === "waking" ? "Waking server…" : "Loading…"
                       : signedIn ? "Go Pro" : "Sign in to subscribe"}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-ghost plan-cta"
+                    disabled
+                    title="Pro 50 is in private beta. Smart 24 is live today."
+                  >
+                    Private beta — coming soon
                   </button>
                 )}
                 {error && (

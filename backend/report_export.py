@@ -188,6 +188,46 @@ async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
     )
 
 
+def _derive_display_name(name, url):
+    """A clean, human title for the report.
+
+    If the user pasted a bare URL as the name (or gave none), derive a readable
+    product/domain label (e.g. "Lenovo Legion Gaming GeForce Windows (amazon.ae)")
+    instead of splashing the raw link across the title, abstract, params table and
+    conclusion. The full URL is still shown once, on its own line in the
+    Introduction. A real human name is returned unchanged.
+    """
+    from urllib.parse import urlparse
+    nm = (name or "").strip()
+    if nm and not nm.lower().startswith(("http://", "https://")):
+        return nm  # already a human name — use as-is
+    src = url or nm
+    try:
+        parsed = urlparse(src if src.lower().startswith(("http://", "https://"))
+                          else "https://" + src)
+        host = (parsed.netloc or "").replace("www.", "")
+        skip = {"dp", "gp", "product", "ref", "d", "p", "item", "itm", "hotel", "s", "b"}
+        cand = ""
+        for seg in (parsed.path or "").split("/"):
+            base = seg.split("?")[0]
+            if not base or base.lower() in skip:
+                continue
+            alpha = sum(ch.isalpha() for ch in base)
+            if ("-" in base or "_" in base or alpha >= 5) and not base.isdigit():
+                if len(base) > len(cand):
+                    cand = base  # the longest descriptive path segment wins
+        slug = " ".join(cand.replace("-", " ").replace("_", " ").split())
+        if slug.islower() or slug.isupper():
+            slug = slug.title()  # only re-case all-lower/all-upper slugs
+        if len(slug) > 56:
+            slug = slug[:56].rsplit(" ", 1)[0] + "…"
+        if slug and host:
+            return f"{slug} ({host})"
+        return host or "Unknown Target"
+    except Exception:
+        return nm[:60] if nm else "Unknown Target"
+
+
 @router.get("/{report_id}/pdf")
 async def export_pdf(report_id: str):
     """Export the probe as a research-grade, LaTeX-article-style PDF report.
@@ -243,16 +283,12 @@ async def export_pdf(report_id: str):
             return ""
         return str(s).replace("_", " ").title()
 
-    def _softbreak(s):
-        """Insert zero-width break opportunities into long unbreakable tokens
-        (URLs) so justified text can wrap them instead of stretching the line
-        before with huge inter-word gaps. Must run AFTER _esc."""
-        if not s:
-            return ""
-        # U+200B after URL separators lets ReportLab break the URL across lines.
-        for sep in ("/", "-", "_", ".", "?", "&", "=", "%"):
-            s = s.replace(sep, sep + "​")
-        return s
+    # NOTE: a previous _softbreak() helper inserted U+200B between URL segments to
+    # coax justified prose into wrapping long URLs. The base-14 PDF fonts (Times)
+    # have no glyph for U+200B, so ReportLab drew each one as a .notdef box — the
+    # "little blocks" seen inside the link. Long URLs now live on their own
+    # left-aligned line and wrap via ReportLab's splitLongWords, so no zero-width
+    # break characters are needed (and none are inserted).
 
     # ------------------------------------------------------------------ palette
     # Restrained, print-safe academic palette. White paper, black ink.
@@ -299,6 +335,12 @@ async def export_pdf(report_id: str):
                  keepWithNext=True)
     sBody = S("Body", fontName="Times-Roman", fontSize=10, leading=14,
               textColor=INK, alignment=4, spaceAfter=6)
+    # Long URLs render here: LEFT-aligned (never justified, so no stretched
+    # spaces) and splitLongWords=1 so the link wraps cleanly at the right margin
+    # without any inserted break characters.
+    sTarget = S("Target", fontName="Times-Roman", fontSize=9, leading=12.5,
+                textColor=GREY, alignment=0, spaceBefore=1, spaceAfter=8,
+                splitLongWords=1)
     sCaption = S("Caption", fontName="Times-Italic", fontSize=8.5, leading=11,
                  textColor=GREY, alignment=1, spaceBefore=4, spaceAfter=10)
     sTblHead = S("TblHead", fontName="Times-Bold", fontSize=8.5, leading=11,
@@ -318,6 +360,7 @@ async def export_pdf(report_id: str):
     topo = (data.get("topology_class") or "unknown").lower()
     target_name = data.get("target_name") or "Unknown Target"
     target_url = data.get("target_url") or ""
+    display_name = _derive_display_name(target_name, target_url)
     session_id = data.get("session_id") or report_id
 
     bp = _num(data.get("baseline_price"))
@@ -438,7 +481,7 @@ async def export_pdf(report_id: str):
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
         leftMargin=M, rightMargin=M, topMargin=M, bottomMargin=M + 6,
-        title=f"JACOBI Pricing Topology Report — {target_name}",
+        title=f"JACOBI Pricing Topology Report — {display_name}",
         author="JACOBI Pricing Intelligence",
     )
 
@@ -464,7 +507,7 @@ async def export_pdf(report_id: str):
     # ---- Title block --------------------------------------------------------
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        f"Algorithmic Price Discrimination Audit:<br/>{_esc(target_name)}",
+        f"Algorithmic Price Discrimination Audit:<br/>{_esc(display_name)}",
         sTitle,
     ))
     story.append(Spacer(1, 4))
@@ -483,7 +526,7 @@ async def export_pdf(report_id: str):
     abstract_bits = []
     abstract_bits.append(
         f"This report presents the results of a controlled buyer-context probe of "
-        f"<i>{_esc(target_name)}</i>, classified as a "
+        f"<i>{_esc(display_name)}</i>, classified as a "
         f"<b>{_esc(topo)}</b> pricing topology"
     )
     if bp is not None:
@@ -517,21 +560,22 @@ async def export_pdf(report_id: str):
     # ---- 1. Introduction ----------------------------------------------------
     story.append(Paragraph("1.&nbsp;&nbsp;Introduction", sSection))
     intro = (
-        f"Online retailers and travel platforms increasingly tailor the prices a "
-        f"visitor sees to inferred attributes such as location, device, browsing "
-        f"history, and referral source. JACOBI audits this behaviour empirically by "
-        f"dispatching a panel of synthetic buyer identities at a single target URL "
-        f"and comparing the prices each identity is served. This report documents an "
-        f"audit of <b>{_esc(target_name)}</b>"
-    )
-    if target_url:
-        intro += f" (<font color='#555555'>{_softbreak(_esc(target_url[:96]))}</font>)"
-    intro += (
-        ". The objective is to determine whether, and along which attributes, the "
-        "target applies price discrimination, and to preserve verifiable evidence "
-        "for each observation."
+        "Online retailers and travel platforms increasingly tailor the prices a "
+        "visitor sees to inferred attributes such as location, device, browsing "
+        "history, and referral source. JACOBI audits this behaviour empirically by "
+        "dispatching a panel of synthetic buyer identities at a single target URL "
+        "and comparing the prices each identity is served. This report documents "
+        f"an audit of <b>{_esc(display_name)}</b>. The objective is to determine "
+        "whether, and along which attributes, the target applies price "
+        "discrimination, and to preserve verifiable evidence for each observation."
     )
     story.append(Paragraph(intro, sBody))
+    # The full URL is shown exactly once, here, on its own LEFT-aligned line so it
+    # wraps cleanly at the margin — never justified (no stretched spaces) and with
+    # no inserted break characters (no .notdef boxes).
+    if target_url:
+        story.append(Paragraph(
+            f"<b>Target&nbsp;URL:</b>&nbsp;&nbsp;{_esc(str(target_url)[:300])}", sTarget))
 
     # ---- 2. Methodology -----------------------------------------------------
     story.append(Paragraph("2.&nbsp;&nbsp;Methodology", sSection))
@@ -578,7 +622,7 @@ async def export_pdf(report_id: str):
     # explicitly labelled as the normalized comparison value.
     def _kv_rows():
         rows = [
-            ("Target", _esc(target_name)),
+            ("Target", _esc(display_name)),
             ("Topology class", _esc(topo.capitalize())),
         ]
         if native_bp is not None and native_ccy:
@@ -823,12 +867,15 @@ async def export_pdf(report_id: str):
     if ev_agents:
         story.append(Paragraph(
             f"Table 3 lists raw price evidence captured directly from the rendered "
-            f"page for {len(ev_agents)} of {total_agents} identities.", sBody))
+            f"page for {len(ev_agents)} of {total_agents} identities. Every identity "
+            f"requests the <i>same product</i>; the buyer columns describe the "
+            f"simulated shopper &mdash; their location, device, and browser language "
+            f"&mdash; not the item being priced.", sBody))
         e_head = [
             Paragraph("Agent", sTblHead),
-            Paragraph("Location", sTblHead),
-            Paragraph("Device", sTblHead),
-            Paragraph("Language", sTblHead),
+            Paragraph("Buyer location", sTblHead),
+            Paragraph("Buyer device", sTblHead),
+            Paragraph("Buyer language", sTblHead),
             Paragraph("Native price", sTblHeadR),
             Paragraph("USD (norm.)", sTblHeadR),
             Paragraph("Raw text", sTblHead),
@@ -890,7 +937,7 @@ async def export_pdf(report_id: str):
     # ---- 5. Conclusion ------------------------------------------------------
     story.append(Paragraph("5.&nbsp;&nbsp;Conclusion", sSection))
     concl = (
-        f"The audited target, <b>{_esc(target_name)}</b>, exhibits a "
+        f"The audited target, <b>{_esc(display_name)}</b>, exhibits a "
         f"<b>{_esc(topo)}</b> pricing topology"
     )
     if score is not None:

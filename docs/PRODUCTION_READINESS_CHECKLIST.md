@@ -52,6 +52,7 @@ Apply these migrations to production Supabase in order:
 - `supabase/migrations/202606240002_live_scan_worker.sql`
 - `supabase/migrations/202606240003_enterprise_reporting_sharing.sql`
 - `supabase/migrations/202606240004_enterprise_security_controls.sql`
+- `supabase/migrations/202606240005_enterprise_rls_member_management.sql`
 
 Then run:
 
@@ -64,6 +65,13 @@ For direct table/RLS verification, run with a production DB URL:
 ```bash
 SUPABASE_DB_URL="postgresql://..." python scripts/verify_production_readiness.py --strict
 ```
+
+> `--strict` needs a Postgres driver in the run env (`pip install "psycopg[binary]"`); without it the table/RLS check is skipped silently. Then prove cross-org isolation against the live DB (create two throwaway `auth.users` first):
+>
+> ```bash
+> SUPABASE_DB_URL="postgresql://..." RLS_TEST_USER_A="<uuid>" RLS_TEST_USER_B="<uuid>" \
+>   python -m pytest backend/tests/test_rls_integration.py -q
+> ```
 
 ## Smoke Test Protocol
 

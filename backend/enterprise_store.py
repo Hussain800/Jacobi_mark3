@@ -126,6 +126,98 @@ def _normalize_auth_status(value: Any) -> str:
     return status if status in {"authorized", "unauthorized", "unknown"} else "unknown"
 
 
+def _normalize_scan_mode(value: Any) -> str:
+    mode = _clean(value, "live").lower()
+    return "imported" if mode in {"imported", "csv", "csv_policy_preview"} else "live"
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _scan_metadata(job: dict[str, Any]) -> dict[str, Any]:
+    metadata = job.get("metadata") or {}
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _scan_item_ids(job: dict[str, Any]) -> list[str]:
+    metadata = _scan_metadata(job)
+    ids = metadata.get("item_ids") or []
+    if not isinstance(ids, list):
+        return []
+    return [str(item_id) for item_id in ids if item_id]
+
+
+def _coverage_from_session(session: dict[str, Any]) -> Optional[float]:
+    total = _num(session.get("configured_agents")) or _num(session.get("total_agents"))
+    successful = _num(session.get("successful_agents"))
+    if total and total > 0 and successful is not None:
+        return round(min(100.0, max(0.0, (successful / total) * 100)), 2)
+    agents = session.get("agents") or []
+    if not agents:
+        return None
+    priced = [agent for agent in agents if _num(agent.get("price")) is not None]
+    return round((len(priced) / len(agents)) * 100, 2) if agents else None
+
+
+def _buyer_context(agent: dict[str, Any]) -> str:
+    variables = agent.get("variables") or {}
+    parts = [
+        variables.get("location") or agent.get("geo"),
+        variables.get("device"),
+        variables.get("cookie"),
+        variables.get("referrer"),
+        agent.get("language_label") or agent.get("browser_language"),
+    ]
+    label = " / ".join(str(part) for part in parts if part)
+    return label or agent.get("label") or agent.get("agent_id") or "Synthetic buyer"
+
+
+def extract_probe_observations(session: dict[str, Any], default_currency: str = "USD") -> list[dict[str, Any]]:
+    """Convert a completed probe session into evidence-ready price observations."""
+    observations: list[dict[str, Any]] = []
+    for agent in session.get("agents") or []:
+        observed = _num(agent.get("price"))
+        if observed is None or observed <= 0:
+            continue
+        evidence = agent.get("evidence") or {}
+        native_currency = agent.get("native_currency") or evidence.get("native_currency") or evidence.get("currency_detected")
+        observations.append({
+            "buyer_context": _buyer_context(agent),
+            "observed_price": round(observed, 2),
+            "currency": (default_currency or "USD").upper(),
+            "metadata": _json_safe({
+                "agent_id": agent.get("agent_id"),
+                "agent_label": agent.get("label"),
+                "agent_status": agent.get("status"),
+                "response_time_ms": agent.get("response_time_ms"),
+                "bot_detected": agent.get("bot_detected"),
+                "detection_signal": agent.get("detection_signal"),
+                "variables": agent.get("variables") or {},
+                "network_tier": agent.get("network_tier"),
+                "proxy_type": agent.get("proxy_type"),
+                "native_price": agent.get("native_price") or evidence.get("native_price"),
+                "native_currency": native_currency,
+                "normalized_price_usd": agent.get("normalized_price_usd") or evidence.get("normalized_price_usd"),
+                "fx_rate_used": agent.get("fx_rate_used") or evidence.get("fx_rate_used"),
+                "browser_language": agent.get("browser_language") or evidence.get("browser_language"),
+                "accept_language_header": agent.get("accept_language_header") or evidence.get("accept_language_header"),
+                "language_label": agent.get("language_label") or evidence.get("language_label"),
+                "extraction_evidence": evidence,
+            }),
+            "extraction_method": evidence.get("extraction_method") or "probe_engine",
+        })
+    return observations
+
+
 def _parse_csv(csv_text: str) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     errors: list[dict[str, Any]] = []
     if not csv_text or not csv_text.strip():
@@ -407,6 +499,32 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
 
     limit = int(payload.get("limit") or 50)
     items = [item for item in workspace["watchlist_items"] if item.get("watchlist_id") == watchlist_id and item.get("status") == "active"][:limit]
+    run_mode = _normalize_scan_mode(payload.get("run_mode"))
+    if run_mode == "live":
+        job = {
+            "id": _id(),
+            "organization_id": workspace["organization"]["id"],
+            "watchlist_id": watchlist_id,
+            "requested_by": user_id,
+            "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+            "status": "queued" if items else "completed",
+            "target_count": len(items),
+            "completed_count": 0,
+            "failed_count": 0,
+            "queued_at": _now(),
+            "started_at": None,
+            "completed_at": _now() if not items else None,
+            "metadata": {
+                "source": "live_probe",
+                "run_mode": "live",
+                "item_ids": [item["id"] for item in items],
+                **({"reason": "No active watchlist items."} if not items else {}),
+            },
+        }
+        workspace["scan_jobs"].append(job)
+        _record_audit(workspace, user_id, "scan_job.queued", "scan_job", job["id"], {"targets": len(items), "run_mode": "live"})
+        return {"scan_job": job, "findings": [], "workspace": _serialize_workspace(workspace, "memory")}
+
     job = {
         "id": _id(),
         "organization_id": workspace["organization"]["id"],
@@ -420,7 +538,7 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
         "queued_at": _now(),
         "started_at": _now(),
         "completed_at": None,
-        "metadata": {"source": "csv_policy_preview"},
+        "metadata": {"source": "csv_policy_preview", "run_mode": "imported", "item_ids": [item["id"] for item in items]},
     }
     workspace["scan_jobs"].append(job)
 
@@ -483,10 +601,10 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
         })
         created_findings.append(finding)
 
-    job["status"] = "completed" if job["completed_count"] else "queued"
-    job["completed_at"] = _now() if job["completed_count"] else None
-    if job["status"] == "queued":
-        job["metadata"]["reason"] = "No imported observed prices. Ready for live probe worker handoff."
+    job["status"] = "completed"
+    job["completed_at"] = _now()
+    if not job["completed_count"]:
+        job["metadata"]["reason"] = "No imported observed prices. Run a live scan to collect observations."
     _record_audit(workspace, user_id, "scan_job.created", "scan_job", job["id"], {"findings": len(created_findings)})
     return {"scan_job": job, "findings": created_findings, "workspace": _serialize_workspace(workspace, "memory")}
 
@@ -529,10 +647,7 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
             items = client.table("watchlist_items").select("*").in_("watchlist_id", watchlist_ids).order("created_at", desc=True).execute().data or []
         scan_jobs = client.table("scan_jobs").select("*").eq("organization_id", org_id).order("queued_at", desc=True).limit(25).execute().data or []
         findings = client.table("findings").select("*").eq("organization_id", org_id).order("created_at", desc=True).limit(100).execute().data or []
-        finding_ids = [f["id"] for f in findings]
-        evidence_items = []
-        if finding_ids:
-            evidence_items = client.table("evidence_items").select("*").in_("finding_id", finding_ids).order("captured_at", desc=True).execute().data or []
+        evidence_items = client.table("evidence_items").select("*").eq("organization_id", org_id).order("captured_at", desc=True).limit(250).execute().data or []
         audit_log = client.table("audit_log").select("*").eq("organization_id", org_id).order("created_at", desc=True).limit(50).execute().data or []
         for item in items:
             wl = next((w for w in watchlists if w["id"] == item.get("watchlist_id")), None)
@@ -693,6 +808,35 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
             raise EnterpriseAccessError("Watchlist not found")
         limit = int(payload.get("limit") or 50)
         items = client.table("watchlist_items").select("*").eq("watchlist_id", watchlist_id).eq("status", "active").limit(limit).execute().data or []
+        run_mode = _normalize_scan_mode(payload.get("run_mode"))
+        if run_mode == "live":
+            metadata = {
+                "source": "live_probe",
+                "run_mode": "live",
+                "item_ids": [item["id"] for item in items],
+            }
+            if not items:
+                metadata["reason"] = "No active watchlist items."
+            job = client.table("scan_jobs").insert({
+                "organization_id": org_id,
+                "watchlist_id": watchlist_id,
+                "requested_by": user_id,
+                "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+                "status": "queued" if items else "completed",
+                "target_count": len(items),
+                "completed_at": _now() if not items else None,
+                "metadata": metadata,
+            }).execute().data[0]
+            client.table("audit_log").insert({
+                "organization_id": org_id,
+                "actor_user_id": user_id,
+                "action": "scan_job.queued",
+                "entity_type": "scan_job",
+                "entity_id": job["id"],
+                "metadata": {"targets": len(items), "run_mode": "live"},
+            }).execute()
+            return {"scan_job": job, "findings": []}
+
         job = client.table("scan_jobs").insert({
             "organization_id": org_id,
             "watchlist_id": watchlist_id,
@@ -701,7 +845,7 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
             "status": "running",
             "target_count": len(items),
             "started_at": _now(),
-            "metadata": {"source": "csv_policy_preview"},
+            "metadata": {"source": "csv_policy_preview", "run_mode": "imported", "item_ids": [item["id"] for item in items]},
         }).execute().data[0]
 
         product_ids = list({i["product_id"] for i in items if i.get("product_id")})
@@ -765,15 +909,15 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
             }).execute()
             created_findings.append(finding)
 
-        status = "completed" if completed else "queued"
-        metadata = {"source": "csv_policy_preview"}
-        if status == "queued":
-            metadata["reason"] = "No imported observed prices. Ready for live probe worker handoff."
+        status = "completed"
+        metadata = {"source": "csv_policy_preview", "run_mode": "imported", "item_ids": [item["id"] for item in items]}
+        if not completed:
+            metadata["reason"] = "No imported observed prices. Run a live scan to collect observations."
         client.table("scan_jobs").update({
             "status": status,
             "completed_count": completed,
             "failed_count": failed,
-            "completed_at": _now() if completed else None,
+            "completed_at": _now(),
             "metadata": metadata,
         }).eq("id", job["id"]).execute()
         job.update({"status": status, "completed_count": completed, "failed_count": failed, "metadata": metadata})
@@ -790,3 +934,494 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
     result = await _thread(work)
     result["workspace"] = await _workspace_supabase(client, user_id)
     return result
+
+
+def _memory_scan_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
+    workspace = _workspace_for_user(user_id)
+    job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+    if not job:
+        raise EnterpriseAccessError("Scan job not found")
+    item_ids = set(_scan_item_ids(job))
+    items = [
+        item for item in workspace["watchlist_items"]
+        if item.get("watchlist_id") == job.get("watchlist_id")
+        and item.get("status") == "active"
+        and (not item_ids or item.get("id") in item_ids)
+    ]
+    products = {p["id"]: p for p in workspace["products"]}
+    sellers = {s["id"]: s for s in workspace["sellers"]}
+    return {
+        "scan_job": job,
+        "items": [
+            {
+                "item": item,
+                "product": products.get(item.get("product_id"), {}),
+                "seller": sellers.get(item.get("seller_id"), {}),
+            }
+            for item in items
+        ],
+    }
+
+
+async def get_scan_job_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
+    """Load the queued job and its exact target set for a live worker run."""
+    client = get_supabase()
+    if not client:
+        return _memory_scan_work(user_id, scan_job_id)
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        if not jobs:
+            raise EnterpriseAccessError("Scan job not found")
+        job = jobs[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Scan job not found")
+
+        item_ids = _scan_item_ids(job)
+        item_query = client.table("watchlist_items").select("*").eq("watchlist_id", job["watchlist_id"]).eq("status", "active")
+        if item_ids:
+            item_query = item_query.in_("id", item_ids)
+        items = item_query.execute().data or []
+        if item_ids:
+            by_id = {item["id"]: item for item in items}
+            items = [by_id[item_id] for item_id in item_ids if item_id in by_id]
+
+        product_ids = list({item["product_id"] for item in items if item.get("product_id")})
+        seller_ids = list({item["seller_id"] for item in items if item.get("seller_id")})
+        products = {}
+        sellers = {}
+        if product_ids:
+            products = {p["id"]: p for p in (client.table("products").select("*").in_("id", product_ids).execute().data or [])}
+        if seller_ids:
+            sellers = {s["id"]: s for s in (client.table("sellers").select("*").in_("id", seller_ids).execute().data or [])}
+        return {
+            "scan_job": job,
+            "items": [
+                {
+                    "item": item,
+                    "product": products.get(item.get("product_id"), {}),
+                    "seller": sellers.get(item.get("seller_id"), {}),
+                }
+                for item in items
+            ],
+        }
+
+    return await _thread(work)
+
+
+async def claim_scan_job(user_id: str, scan_job_id: str) -> dict[str, Any]:
+    """Move a queued live scan job to running if it has not been claimed."""
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+        if not job:
+            raise EnterpriseAccessError("Scan job not found")
+        if job.get("status") != "queued":
+            return {"claimed": False, "scan_job": job}
+        metadata = _scan_metadata(job)
+        metadata["claimed_at"] = _now()
+        job.update({"status": "running", "started_at": _now(), "metadata": metadata})
+        _record_audit(workspace, user_id, "scan_job.claimed", "scan_job", job["id"])
+        return {"claimed": True, "scan_job": job}
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        if not jobs:
+            raise EnterpriseAccessError("Scan job not found")
+        job = jobs[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Scan job not found")
+        metadata = _scan_metadata(job)
+        metadata["claimed_at"] = _now()
+        updated = client.table("scan_jobs").update({
+            "status": "running",
+            "started_at": _now(),
+            "metadata": metadata,
+        }).eq("id", scan_job_id).eq("status", "queued").execute().data or []
+        if not updated:
+            current = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data[0]
+            return {"claimed": False, "scan_job": current}
+        client.table("audit_log").insert({
+            "organization_id": job["organization_id"],
+            "actor_user_id": user_id,
+            "action": "scan_job.claimed",
+            "entity_type": "scan_job",
+            "entity_id": scan_job_id,
+        }).execute()
+        return {"claimed": True, "scan_job": updated[0]}
+
+    return await _thread(work)
+
+
+def _record_live_result_memory(
+    user_id: str,
+    scan_job_id: str,
+    watchlist_item_id: str,
+    session: dict[str, Any],
+    probe_row_id: Optional[str],
+    error: Optional[str],
+) -> dict[str, Any]:
+    workspace = _workspace_for_user(user_id)
+    job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+    item = _find_one(workspace["watchlist_items"], id=watchlist_item_id)
+    if not job or not item:
+        raise EnterpriseAccessError("Scan target not found")
+
+    metadata = _scan_metadata(job)
+    processed = set(metadata.get("processed_item_ids") or [])
+    if watchlist_item_id in processed:
+        return {"scan_job": job, "finding": None, "evidence_items": [], "duplicate": True}
+
+    product = _find_one(workspace["products"], id=item.get("product_id")) or {}
+    seller = _find_one(workspace["sellers"], id=item.get("seller_id")) or {}
+    currency = (product.get("currency") or item.get("last_observed_currency") or "USD").upper()
+    observations = [] if error else extract_probe_observations(session, currency)
+    coverage = _coverage_from_session(session)
+    finding = None
+    evidence_rows: list[dict[str, Any]] = []
+
+    if observations:
+        job["completed_count"] = int(job.get("completed_count") or 0) + 1
+        low = min(observations, key=lambda obs: obs["observed_price"])
+        item.update({
+            "last_observed_price": low["observed_price"],
+            "last_observed_currency": currency,
+            "last_coverage_pct": coverage,
+            "updated_at": _now(),
+            "last_probe_session_id": session.get("session_id"),
+            "last_scan_status": "completed",
+        })
+        result = evaluate_map_observation(
+            product_name=product.get("name", "Unknown product"),
+            sku=product.get("sku", "UNKNOWN"),
+            seller_name=seller.get("name", "Unknown seller"),
+            target_url=item.get("target_url", ""),
+            observed_price=low["observed_price"],
+            map_floor=product.get("map_floor"),
+            currency=currency,
+            coverage_pct=coverage,
+        )
+        if result.get("is_violation"):
+            finding = {
+                "id": _id(),
+                "organization_id": workspace["organization"]["id"],
+                "scan_job_id": job["id"],
+                "watchlist_item_id": item["id"],
+                "product_id": product.get("id"),
+                "seller_id": seller.get("id"),
+                "type": result["type"],
+                "severity": result["severity"],
+                "status": "new",
+                "observed_price": result["observed_price"],
+                "map_floor": result["map_floor"],
+                "currency": result["currency"],
+                "spread_pct": result["spread_pct"],
+                "confidence": result["confidence"],
+                "evidence_summary": result["evidence_summary"],
+                "created_at": _now(),
+                "updated_at": _now(),
+            }
+            workspace["findings"].append(finding)
+            _record_audit(workspace, user_id, "finding.created", "finding", finding["id"], {"scan_job_id": scan_job_id})
+
+        for observation in observations:
+            row = {
+                "id": _id(),
+                "organization_id": workspace["organization"]["id"],
+                "finding_id": finding["id"] if finding else None,
+                "scan_job_id": scan_job_id,
+                "probe_session_id": session.get("session_id"),
+                "buyer_context": observation["buyer_context"],
+                "target_url": item["target_url"],
+                "observed_price": observation["observed_price"],
+                "currency": observation["currency"],
+                "captured_at": _now(),
+                "source": "live_probe",
+                "extraction_method": observation["extraction_method"],
+                "metadata": {
+                    **observation["metadata"],
+                    "market": item.get("market"),
+                    "coverage_pct": coverage,
+                    "probe_row_id": probe_row_id,
+                    "session_status": session.get("status"),
+                },
+            }
+            workspace["evidence_items"].append(row)
+            evidence_rows.append(row)
+    else:
+        job["failed_count"] = int(job.get("failed_count") or 0) + 1
+        item.update({
+            "last_coverage_pct": coverage,
+            "updated_at": _now(),
+            "last_probe_session_id": session.get("session_id"),
+            "last_scan_status": "failed",
+            "last_error": error or session.get("error") or "No observed price returned by the probe engine.",
+        })
+        errors = list(metadata.get("errors") or [])
+        errors.append({
+            "watchlist_item_id": watchlist_item_id,
+            "target_url": item.get("target_url"),
+            "session_id": session.get("session_id"),
+            "message": item.get("last_error"),
+        })
+        metadata["errors"] = errors[-100:]
+
+    processed.add(watchlist_item_id)
+    metadata["processed_item_ids"] = sorted(processed)
+    metadata["last_progress_at"] = _now()
+    job["metadata"] = metadata
+    _record_audit(workspace, user_id, "scan_job.target_recorded", "scan_job", scan_job_id, {
+        "watchlist_item_id": watchlist_item_id,
+        "evidence_items": len(evidence_rows),
+        "finding_id": finding.get("id") if finding else None,
+    })
+    return {"scan_job": job, "finding": finding, "evidence_items": evidence_rows, "duplicate": False}
+
+
+async def record_live_probe_result(
+    user_id: str,
+    scan_job_id: str,
+    watchlist_item_id: str,
+    session: dict[str, Any],
+    probe_row_id: Optional[str] = None,
+    error: Optional[str] = None,
+) -> dict[str, Any]:
+    """Persist one live probe session as evidence and, when warranted, a MAP finding."""
+    client = get_supabase()
+    if not client:
+        return _record_live_result_memory(user_id, scan_job_id, watchlist_item_id, session, probe_row_id, error)
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        items = client.table("watchlist_items").select("*").eq("id", watchlist_item_id).limit(1).execute().data or []
+        if not jobs or not items:
+            raise EnterpriseAccessError("Scan target not found")
+        job = jobs[0]
+        item = items[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Scan target not found")
+
+        metadata = _scan_metadata(job)
+        processed = set(metadata.get("processed_item_ids") or [])
+        if watchlist_item_id in processed:
+            return {"scan_job": job, "finding": None, "evidence_items": [], "duplicate": True}
+
+        product_rows = client.table("products").select("*").eq("id", item["product_id"]).limit(1).execute().data or []
+        seller_rows = client.table("sellers").select("*").eq("id", item["seller_id"]).limit(1).execute().data or [] if item.get("seller_id") else []
+        product = product_rows[0] if product_rows else {}
+        seller = seller_rows[0] if seller_rows else {}
+        currency = (product.get("currency") or item.get("last_observed_currency") or "USD").upper()
+        observations = [] if error else extract_probe_observations(session, currency)
+        coverage = _coverage_from_session(session)
+        finding = None
+        evidence_rows: list[dict[str, Any]] = []
+        completed = int(job.get("completed_count") or 0)
+        failed = int(job.get("failed_count") or 0)
+
+        if observations:
+            completed += 1
+            low = min(observations, key=lambda obs: obs["observed_price"])
+            item_update = {
+                "last_observed_price": low["observed_price"],
+                "last_observed_currency": currency,
+                "last_coverage_pct": coverage,
+            }
+            try:
+                item_update.update({
+                    "last_probe_session_id": session.get("session_id"),
+                    "last_scan_job_id": scan_job_id,
+                    "last_scan_status": "completed",
+                    "last_error": None,
+                })
+                client.table("watchlist_items").update(item_update).eq("id", watchlist_item_id).execute()
+            except Exception as exc:
+                if "last_probe_session_id" not in str(exc) and "last_scan_job_id" not in str(exc) and "last_scan_status" not in str(exc):
+                    raise
+                for key in ("last_probe_session_id", "last_scan_job_id", "last_scan_status", "last_error"):
+                    item_update.pop(key, None)
+                client.table("watchlist_items").update(item_update).eq("id", watchlist_item_id).execute()
+
+            result = evaluate_map_observation(
+                product_name=product.get("name", "Unknown product"),
+                sku=product.get("sku", "UNKNOWN"),
+                seller_name=seller.get("name", "Unknown seller"),
+                target_url=item.get("target_url", ""),
+                observed_price=low["observed_price"],
+                map_floor=product.get("map_floor"),
+                currency=currency,
+                coverage_pct=coverage,
+            )
+            if result.get("is_violation"):
+                finding = client.table("findings").insert({
+                    "organization_id": job["organization_id"],
+                    "scan_job_id": scan_job_id,
+                    "watchlist_item_id": watchlist_item_id,
+                    "product_id": product.get("id"),
+                    "seller_id": seller.get("id"),
+                    "type": result["type"],
+                    "severity": result["severity"],
+                    "status": "new",
+                    "observed_price": result["observed_price"],
+                    "map_floor": result["map_floor"],
+                    "currency": result["currency"],
+                    "spread_pct": result["spread_pct"],
+                    "confidence": result["confidence"],
+                    "evidence_summary": result["evidence_summary"],
+                }).execute().data[0]
+                client.table("audit_log").insert({
+                    "organization_id": job["organization_id"],
+                    "actor_user_id": user_id,
+                    "action": "finding.created",
+                    "entity_type": "finding",
+                    "entity_id": finding["id"],
+                    "metadata": {"scan_job_id": scan_job_id},
+                }).execute()
+
+            evidence_rows = [
+                {
+                    "organization_id": job["organization_id"],
+                    "finding_id": finding["id"] if finding else None,
+                    "scan_job_id": scan_job_id,
+                    "probe_session_id": session.get("session_id"),
+                    "buyer_context": observation["buyer_context"],
+                    "target_url": item["target_url"],
+                    "observed_price": observation["observed_price"],
+                    "currency": observation["currency"],
+                    "source": "live_probe",
+                    "extraction_method": observation["extraction_method"],
+                    "metadata": {
+                        **observation["metadata"],
+                        "market": item.get("market"),
+                        "coverage_pct": coverage,
+                        "probe_row_id": probe_row_id,
+                        "session_status": session.get("status"),
+                    },
+                }
+                for observation in observations
+            ]
+            if evidence_rows:
+                evidence_rows = client.table("evidence_items").insert(evidence_rows).execute().data or []
+        else:
+            failed += 1
+            message = error or session.get("error") or "No observed price returned by the probe engine."
+            item_update = {"last_coverage_pct": coverage}
+            try:
+                item_update.update({
+                    "last_probe_session_id": session.get("session_id"),
+                    "last_scan_job_id": scan_job_id,
+                    "last_scan_status": "failed",
+                    "last_error": message,
+                })
+                client.table("watchlist_items").update(item_update).eq("id", watchlist_item_id).execute()
+            except Exception as exc:
+                if "last_probe_session_id" not in str(exc) and "last_scan_job_id" not in str(exc) and "last_scan_status" not in str(exc):
+                    raise
+                for key in ("last_probe_session_id", "last_scan_job_id", "last_scan_status", "last_error"):
+                    item_update.pop(key, None)
+                client.table("watchlist_items").update(item_update).eq("id", watchlist_item_id).execute()
+            errors = list(metadata.get("errors") or [])
+            errors.append({
+                "watchlist_item_id": watchlist_item_id,
+                "target_url": item.get("target_url"),
+                "session_id": session.get("session_id"),
+                "message": message,
+            })
+            metadata["errors"] = errors[-100:]
+
+        processed.add(watchlist_item_id)
+        metadata["processed_item_ids"] = sorted(processed)
+        metadata["last_progress_at"] = _now()
+        updated_job = client.table("scan_jobs").update({
+            "completed_count": completed,
+            "failed_count": failed,
+            "metadata": metadata,
+        }).eq("id", scan_job_id).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": job["organization_id"],
+            "actor_user_id": user_id,
+            "action": "scan_job.target_recorded",
+            "entity_type": "scan_job",
+            "entity_id": scan_job_id,
+            "metadata": {
+                "watchlist_item_id": watchlist_item_id,
+                "evidence_items": len(evidence_rows),
+                "finding_id": finding.get("id") if finding else None,
+            },
+        }).execute()
+        return {"scan_job": updated_job, "finding": finding, "evidence_items": evidence_rows, "duplicate": False}
+
+    return await _thread(work)
+
+
+def _terminal_scan_status(job: dict[str, Any], error: Optional[str] = None) -> str:
+    if error:
+        return "failed"
+    target_count = int(job.get("target_count") or 0)
+    completed = int(job.get("completed_count") or 0)
+    failed = int(job.get("failed_count") or 0)
+    if target_count <= 0:
+        return "completed"
+    if completed <= 0 and failed >= target_count:
+        return "failed"
+    return "completed"
+
+
+async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] = None) -> dict[str, Any]:
+    """Mark a live scan job completed or failed after all available targets were attempted."""
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+        if not job:
+            raise EnterpriseAccessError("Scan job not found")
+        metadata = _scan_metadata(job)
+        if error:
+            metadata["terminal_error"] = error
+        metadata["finished_at"] = _now()
+        job.update({
+            "status": _terminal_scan_status(job, error),
+            "completed_at": _now(),
+            "metadata": metadata,
+        })
+        _record_audit(workspace, user_id, f"scan_job.{job['status']}", "scan_job", scan_job_id, {
+            "completed_count": job.get("completed_count"),
+            "failed_count": job.get("failed_count"),
+        })
+        return {"scan_job": job}
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        if not jobs:
+            raise EnterpriseAccessError("Scan job not found")
+        job = jobs[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Scan job not found")
+        metadata = _scan_metadata(job)
+        if error:
+            metadata["terminal_error"] = error
+        metadata["finished_at"] = _now()
+        status = _terminal_scan_status(job, error)
+        updated = client.table("scan_jobs").update({
+            "status": status,
+            "completed_at": _now(),
+            "metadata": metadata,
+        }).eq("id", scan_job_id).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": job["organization_id"],
+            "actor_user_id": user_id,
+            "action": f"scan_job.{status}",
+            "entity_type": "scan_job",
+            "entity_id": scan_job_id,
+            "metadata": {
+                "completed_count": updated.get("completed_count"),
+                "failed_count": updated.get("failed_count"),
+            },
+        }).execute()
+        return {"scan_job": updated}
+
+    return await _thread(work)

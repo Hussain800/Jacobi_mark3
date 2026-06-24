@@ -317,3 +317,68 @@ def test_durable_worker_endpoint_processes_partial_jobs_and_lists_evidence(monke
         assert detail_response.json()["evidence_item"]["scan_job_id"] == job_id
     finally:
         _clear_user()
+
+
+def test_enterprise_finding_exports_and_share_revoke(monkeypatch, client):
+    monkeypatch.setattr(enterprise_store, "get_supabase", lambda: None)
+    _clear_user()
+    user_id = "reporting-owner"
+    _set_user(_as_user(user_id))
+    try:
+        created = asyncio.run(enterprise_store.create_watchlist(
+            user_id,
+            {"name": "Reporting MAP Watchlist", "cadence": "daily", "workflow_type": "map"},
+        ))
+        watchlist_id = created["created_watchlist"]["id"]
+        csv_text = "\n".join([
+            "product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market,observed_price,coverage_pct",
+            "Pro Wireless Headphones,JCB-HP-001,199,USD,MegaDeals,megadeals.example,https://megadeals.example/p/pro-wireless?offer=123,US,176,92",
+        ])
+        imported = asyncio.run(enterprise_store.import_watchlist_items(user_id, watchlist_id, csv_text))
+        assert imported["imported"] == 1
+        scan = asyncio.run(enterprise_store.launch_scan_job(
+            user_id,
+            {"watchlist_id": watchlist_id, "audit_depth": "smart24", "limit": 10, "run_mode": "imported"},
+        ))
+        finding_id = scan["findings"][0]["id"]
+
+        pdf_response = client.post(
+            f"/api/findings/{finding_id}/exports",
+            json={"format": "pdf", "redacted": False},
+        )
+        assert pdf_response.status_code == 200
+        assert pdf_response.headers["content-type"].startswith("application/pdf")
+        assert pdf_response.content.startswith(b"%PDF")
+        assert pdf_response.headers["x-jacobi-checksum-sha256"]
+        assert pdf_response.headers["x-jacobi-export-id"]
+
+        json_response = client.post(
+            f"/api/findings/{finding_id}/exports",
+            json={"format": "json", "redacted": True},
+        )
+        assert json_response.status_code == 200
+        exported = json_response.json()
+        assert exported["evidence_checksum_sha256"]
+        assert exported["evidence_items"][0]["target_url"] == "megadeals.example"
+        assert exported["evidence_items"][0]["probe_session_id"] is None
+
+        share_response = client.post(
+            f"/api/findings/{finding_id}/share-tokens",
+            json={"expires_hours": 24, "redacted": True},
+        )
+        assert share_response.status_code == 200
+        share = share_response.json()
+        assert "/share/enterprise/" in share["token_url"]
+        token_id = share["share_token"]["id"]
+
+        shared_response = client.get(f"/api/enterprise/shared-findings/{share['token']}")
+        assert shared_response.status_code == 200
+        shared_packet = shared_response.json()["packet"]
+        assert shared_packet["evidence_items"][0]["target_url"] == "megadeals.example"
+
+        revoke_response = client.post(f"/api/share-tokens/{token_id}/revoke")
+        assert revoke_response.status_code == 200
+        assert revoke_response.json()["share_token"]["revoked_at"]
+        assert client.get(f"/api/enterprise/shared-findings/{share['token']}").status_code == 404
+    finally:
+        _clear_user()

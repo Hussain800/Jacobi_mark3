@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -85,6 +87,8 @@ def _workspace_for_user(user_id: str) -> dict[str, Any]:
         "scan_jobs": [],
         "findings": [],
         "evidence_items": [],
+        "evidence_exports": [],
+        "share_tokens": [],
         "audit_log": [],
     }
     _MEMORY_WORKSPACES[user_id] = workspace
@@ -371,6 +375,8 @@ def _serialize_workspace(workspace: dict[str, Any], mode: str) -> dict[str, Any]
         "scan_jobs": workspace["scan_jobs"],
         "findings_raw": workspace["findings"],
         "evidence_items": workspace["evidence_items"],
+        "evidence_exports": workspace.get("evidence_exports", []),
+        "share_tokens": workspace.get("share_tokens", []),
         "audit_log": workspace["audit_log"][-50:],
         "portfolio": _build_portfolio(workspace),
         "findings": _build_findings(workspace),
@@ -648,6 +654,8 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
         scan_jobs = client.table("scan_jobs").select("*").eq("organization_id", org_id).order("queued_at", desc=True).limit(25).execute().data or []
         findings = client.table("findings").select("*").eq("organization_id", org_id).order("created_at", desc=True).limit(100).execute().data or []
         evidence_items = client.table("evidence_items").select("*").eq("organization_id", org_id).order("captured_at", desc=True).limit(250).execute().data or []
+        evidence_exports = client.table("evidence_exports").select("*").eq("organization_id", org_id).order("created_at", desc=True).limit(100).execute().data or []
+        share_tokens = client.table("share_tokens").select("id,organization_id,finding_id,scope,expires_at,revoked_at,created_by,created_at").eq("organization_id", org_id).order("created_at", desc=True).limit(100).execute().data or []
         audit_log = client.table("audit_log").select("*").eq("organization_id", org_id).order("created_at", desc=True).limit(50).execute().data or []
         for item in items:
             wl = next((w for w in watchlists if w["id"] == item.get("watchlist_id")), None)
@@ -661,6 +669,8 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
             "scan_jobs": scan_jobs,
             "findings": findings,
             "evidence_items": evidence_items,
+            "evidence_exports": evidence_exports,
+            "share_tokens": share_tokens,
             "audit_log": audit_log,
         }
 
@@ -1640,5 +1650,326 @@ async def get_evidence_item(user_id: str, evidence_id: str) -> dict[str, Any]:
                     seller_rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).limit(1).execute().data or []
                     seller = seller_rows[0] if seller_rows else None
         return {"evidence_item": {**row, "finding": finding, "product": product, "seller": seller, "watchlist_item": item}}
+
+    return await _thread(work)
+
+
+def _parse_time(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _share_token_public(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in row.items() if k != "token_hash"}
+
+
+def _finding_packet_from_workspace(workspace: dict[str, Any], finding_id: str) -> dict[str, Any]:
+    finding = _find_one(workspace["findings"], id=finding_id)
+    if not finding:
+        raise EnterpriseAccessError("Finding not found")
+    item = _find_one(workspace["watchlist_items"], id=finding.get("watchlist_item_id")) if finding.get("watchlist_item_id") else None
+    product = _find_one(workspace["products"], id=finding.get("product_id")) if finding.get("product_id") else None
+    seller = _find_one(workspace["sellers"], id=finding.get("seller_id")) if finding.get("seller_id") else None
+    evidence = [
+        _enrich_evidence(workspace, row)
+        for row in workspace["evidence_items"]
+        if row.get("finding_id") == finding_id
+    ]
+    evidence = sorted(evidence, key=lambda row: row.get("captured_at", ""), reverse=True)
+    return {
+        "organization": workspace["organization"],
+        "finding": finding,
+        "watchlist_item": item,
+        "product": product,
+        "seller": seller,
+        "evidence_items": evidence,
+    }
+
+
+async def get_finding_packet(user_id: str, finding_id: str) -> dict[str, Any]:
+    """Return a finding with the evidence needed for reports/shares."""
+    client = get_supabase()
+    if not client:
+        return _finding_packet_from_workspace(_workspace_for_user(user_id), finding_id)
+
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        findings = client.table("findings").select("*").eq("id", finding_id).eq("organization_id", org["id"]).limit(1).execute().data or []
+        if not findings:
+            raise EnterpriseAccessError("Finding not found")
+        finding = findings[0]
+        item = None
+        product = None
+        seller = None
+        if finding.get("watchlist_item_id"):
+            rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
+            item = rows[0] if rows else None
+        if finding.get("product_id"):
+            rows = client.table("products").select("*").eq("id", finding["product_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
+            product = rows[0] if rows else None
+        if finding.get("seller_id"):
+            rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
+            seller = rows[0] if rows else None
+        evidence = client.table("evidence_items").select("*").eq("organization_id", org["id"]).eq("finding_id", finding_id).order("captured_at", desc=True).limit(500).execute().data or []
+        return {
+            "organization": org,
+            "finding": finding,
+            "watchlist_item": item,
+            "product": product,
+            "seller": seller,
+            "evidence_items": [
+                {**row, "finding": finding, "watchlist_item": item, "product": product, "seller": seller}
+                for row in evidence
+            ],
+        }
+
+    return await _thread(work)
+
+
+async def record_evidence_export(
+    user_id: str,
+    finding_id: str,
+    *,
+    format: str,
+    checksum_sha256: str,
+    byte_size: int,
+    redacted: bool,
+    metadata: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Persist an export audit record after bytes are generated."""
+    packet = await get_finding_packet(user_id, finding_id)
+    org_id = packet["organization"]["id"]
+    client = get_supabase()
+    now = _now()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        export = {
+            "id": _id(),
+            "organization_id": org_id,
+            "finding_id": finding_id,
+            "requested_by": user_id,
+            "format": format,
+            "status": "completed",
+            "file_url": None,
+            "checksum_sha256": checksum_sha256,
+            "byte_size": byte_size,
+            "redacted": redacted,
+            "metadata": metadata or {},
+            "created_at": now,
+        }
+        workspace.setdefault("evidence_exports", []).append(export)
+        _record_audit(workspace, user_id, "evidence_export.created", "evidence_export", export["id"], {
+            "finding_id": finding_id,
+            "format": format,
+            "checksum_sha256": checksum_sha256,
+            "redacted": redacted,
+        })
+        return {"evidence_export": export}
+
+    def work():
+        export = client.table("evidence_exports").insert({
+            "organization_id": org_id,
+            "finding_id": finding_id,
+            "requested_by": user_id,
+            "format": format,
+            "status": "completed",
+            "file_url": None,
+            "checksum_sha256": checksum_sha256,
+            "byte_size": byte_size,
+            "redacted": redacted,
+            "metadata": metadata or {},
+        }).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": org_id,
+            "actor_user_id": user_id,
+            "action": "evidence_export.created",
+            "entity_type": "evidence_export",
+            "entity_id": export["id"],
+            "metadata": {
+                "finding_id": finding_id,
+                "format": format,
+                "checksum_sha256": checksum_sha256,
+                "redacted": redacted,
+            },
+        }).execute()
+        return {"evidence_export": export}
+
+    return await _thread(work)
+
+
+async def create_share_token(
+    user_id: str,
+    finding_id: str,
+    *,
+    expires_hours: int = 168,
+    redacted: bool = True,
+) -> dict[str, Any]:
+    """Create a revocable external share token for one finding."""
+    packet = await get_finding_packet(user_id, finding_id)
+    org_id = packet["organization"]["id"]
+    token = secrets.token_urlsafe(32)
+    token_hash = _sha256(token)
+    expires_hours = max(1, min(int(expires_hours or 168), 24 * 90))
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).isoformat()
+    scope = "finding_read:redacted" if redacted else "finding_read"
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        row = {
+            "id": _id(),
+            "organization_id": org_id,
+            "finding_id": finding_id,
+            "token_hash": token_hash,
+            "scope": scope,
+            "expires_at": expires_at,
+            "revoked_at": None,
+            "revoked_by": None,
+            "redacted": redacted,
+            "created_by": user_id,
+            "created_at": _now(),
+            "last_accessed_at": None,
+        }
+        workspace.setdefault("share_tokens", []).append(row)
+        _record_audit(workspace, user_id, "share_token.created", "share_token", row["id"], {
+            "finding_id": finding_id,
+            "expires_at": expires_at,
+            "redacted": redacted,
+        })
+        return {"share_token": _share_token_public(row), "token": token}
+
+    def work():
+        row = client.table("share_tokens").insert({
+            "organization_id": org_id,
+            "finding_id": finding_id,
+            "token_hash": token_hash,
+            "scope": scope,
+            "expires_at": expires_at,
+            "created_by": user_id,
+            "redacted": redacted,
+        }).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": org_id,
+            "actor_user_id": user_id,
+            "action": "share_token.created",
+            "entity_type": "share_token",
+            "entity_id": row["id"],
+            "metadata": {
+                "finding_id": finding_id,
+                "expires_at": expires_at,
+                "redacted": redacted,
+            },
+        }).execute()
+        return {"share_token": _share_token_public(row), "token": token}
+
+    return await _thread(work)
+
+
+async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
+    """Revoke a share token owned by the user's organization."""
+    client = get_supabase()
+    now = _now()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        row = _find_one(workspace.setdefault("share_tokens", []), id=token_id)
+        if not row:
+            raise EnterpriseAccessError("Share token not found")
+        row.update({"revoked_at": now, "revoked_by": user_id})
+        _record_audit(workspace, user_id, "share_token.revoked", "share_token", token_id, {"finding_id": row.get("finding_id")})
+        return {"share_token": _share_token_public(row)}
+
+    def work():
+        rows = client.table("share_tokens").select("*").eq("id", token_id).limit(1).execute().data or []
+        if not rows:
+            raise EnterpriseAccessError("Share token not found")
+        row = rows[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", row["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Share token not found")
+        updated = client.table("share_tokens").update({
+            "revoked_at": now,
+            "revoked_by": user_id,
+        }).eq("id", token_id).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": row["organization_id"],
+            "actor_user_id": user_id,
+            "action": "share_token.revoked",
+            "entity_type": "share_token",
+            "entity_id": token_id,
+            "metadata": {"finding_id": row.get("finding_id")},
+        }).execute()
+        return {"share_token": _share_token_public(updated)}
+
+    return await _thread(work)
+
+
+async def get_shared_finding_packet(token: str) -> dict[str, Any]:
+    """Resolve a public share token to a redacted finding packet."""
+    token_hash = _sha256(_clean(token))
+    now = datetime.now(timezone.utc)
+    client = get_supabase()
+    if not client:
+        for workspace in _MEMORY_WORKSPACES.values():
+            for row in workspace.setdefault("share_tokens", []):
+                expires_at = _parse_time(row.get("expires_at"))
+                if row.get("token_hash") != token_hash or row.get("revoked_at") or not expires_at or expires_at <= now:
+                    continue
+                row["last_accessed_at"] = _now()
+                return {
+                    "share_token": _share_token_public(row),
+                    "packet": _finding_packet_from_workspace(workspace, row["finding_id"]),
+                    "redacted": bool(row.get("redacted", True)),
+                }
+        raise EnterpriseAccessError("Share token not found")
+
+    def work():
+        rows = client.table("share_tokens").select("*").eq("token_hash", token_hash).is_("revoked_at", "null").limit(1).execute().data or []
+        if not rows:
+            raise EnterpriseAccessError("Share token not found")
+        row = rows[0]
+        expires_at = _parse_time(row.get("expires_at"))
+        if not expires_at or expires_at <= now:
+            raise EnterpriseAccessError("Share token not found")
+        client.table("share_tokens").update({"last_accessed_at": _now()}).eq("id", row["id"]).execute()
+        org_rows = client.table("organizations").select("*").eq("id", row["organization_id"]).limit(1).execute().data or []
+        findings = client.table("findings").select("*").eq("id", row["finding_id"]).eq("organization_id", row["organization_id"]).limit(1).execute().data or []
+        if not findings:
+            raise EnterpriseAccessError("Share token not found")
+        finding = findings[0]
+        item = None
+        product = None
+        seller = None
+        if finding.get("watchlist_item_id"):
+            item_rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
+            item = item_rows[0] if item_rows else None
+        if finding.get("product_id"):
+            product_rows = client.table("products").select("*").eq("id", finding["product_id"]).eq("organization_id", row["organization_id"]).limit(1).execute().data or []
+            product = product_rows[0] if product_rows else None
+        if finding.get("seller_id"):
+            seller_rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).eq("organization_id", row["organization_id"]).limit(1).execute().data or []
+            seller = seller_rows[0] if seller_rows else None
+        evidence = client.table("evidence_items").select("*").eq("organization_id", row["organization_id"]).eq("finding_id", row["finding_id"]).order("captured_at", desc=True).limit(500).execute().data or []
+        packet = {
+            "organization": org_rows[0] if org_rows else {"id": row["organization_id"], "name": "Shared workspace"},
+            "finding": finding,
+            "watchlist_item": item,
+            "product": product,
+            "seller": seller,
+            "evidence_items": [
+                {**evidence_row, "finding": finding, "watchlist_item": item, "product": product, "seller": seller}
+                for evidence_row in evidence
+            ],
+        }
+        return {"share_token": _share_token_public(row), "packet": packet, "redacted": bool(row.get("redacted", True))}
 
     return await _thread(work)

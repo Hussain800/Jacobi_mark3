@@ -9,6 +9,7 @@ frontend polling.
 """
 
 import asyncio
+import hashlib
 import hmac
 import json
 import math
@@ -23,7 +24,7 @@ from typing import Optional, Dict, List, Tuple, Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from dotenv import load_dotenv
@@ -41,17 +42,23 @@ from enterprise_store import (
     EnterpriseValidationError,
     claim_next_scan_job as enterprise_claim_next_scan_job,
     claim_scan_job as enterprise_claim_scan_job,
+    create_share_token as enterprise_create_share_token,
     create_watchlist as enterprise_create_watchlist,
     finish_scan_job as enterprise_finish_scan_job,
     get_evidence_item as enterprise_get_evidence_item,
+    get_finding_packet as enterprise_get_finding_packet,
     get_scan_job_work as enterprise_get_scan_job_work,
+    get_shared_finding_packet as enterprise_get_shared_finding_packet,
     get_workspace as enterprise_get_workspace,
     import_watchlist_items as enterprise_import_watchlist_items,
     launch_scan_job as enterprise_launch_scan_job,
     list_evidence_items as enterprise_list_evidence_items,
+    record_evidence_export as enterprise_record_evidence_export,
     record_live_probe_result as enterprise_record_live_probe_result,
     release_scan_job as enterprise_release_scan_job,
+    revoke_share_token as enterprise_revoke_share_token,
 )
+from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
     # resource-constrained instance can be isolated WITHOUT a code deploy — set
@@ -146,6 +153,16 @@ class ScanWorkerRunInput(BaseModel):
     max_jobs: int = Field(default=1, ge=1, le=10)
     max_targets_per_job: int = Field(default=1, ge=1, le=20)
     worker_id: str = Field(default="enterprise-cron")
+
+
+class CreateFindingExportInput(BaseModel):
+    format: str = Field(default="pdf", description="pdf | json")
+    redacted: bool = Field(default=False)
+
+
+class CreateShareTokenInput(BaseModel):
+    expires_hours: int = Field(default=168, ge=1, le=2160)
+    redacted: bool = Field(default=True)
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -2925,6 +2942,101 @@ async def get_enterprise_finding(
     except Exception as exc:
         raise _enterprise_error(exc)
     raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Finding not found"})
+
+
+@app.post("/api/findings/{finding_id}/exports")
+async def export_enterprise_finding(
+    finding_id: str,
+    input: CreateFindingExportInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    fmt = (input.format or "pdf").strip().lower()
+    if fmt not in {"pdf", "json"}:
+        raise HTTPException(status_code=400, detail={"code": "invalid_format", "message": "format must be pdf or json."})
+    try:
+        packet = await enterprise_get_finding_packet(signed_in["id"], finding_id)
+        if fmt == "pdf":
+            content = generate_map_pdf(packet, redacted=input.redacted)
+            media_type = "application/pdf"
+            filename = f"jacobi-map-finding-{finding_id}.pdf"
+        else:
+            content = packet_json_bytes(packet, redacted=input.redacted)
+            media_type = "application/json"
+            filename = f"jacobi-map-finding-{finding_id}.json"
+        checksum = hashlib.sha256(content).hexdigest()
+        recorded = await enterprise_record_evidence_export(
+            signed_in["id"],
+            finding_id,
+            format=fmt,
+            checksum_sha256=checksum,
+            byte_size=len(content),
+            redacted=input.redacted,
+            metadata={"content_type": media_type},
+        )
+        export_id = (recorded.get("evidence_export") or {}).get("id", "")
+        return StreamingResponse(
+            iter([content]),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Jacobi-Export-Id": str(export_id),
+                "X-Jacobi-Checksum-Sha256": checksum,
+            },
+        )
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/findings/{finding_id}/share-tokens")
+async def create_enterprise_share_token(
+    finding_id: str,
+    input: CreateShareTokenInput,
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        result = await enterprise_create_share_token(
+            signed_in["id"],
+            finding_id,
+            expires_hours=input.expires_hours,
+            redacted=input.redacted,
+        )
+        token = result["token"]
+        origin = str(request.base_url).rstrip("/")
+        return {
+            "share_token": result["share_token"],
+            "token_url": f"{origin}/share/enterprise/{token}",
+            "token": token,
+        }
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/share-tokens/{token_id}/revoke")
+async def revoke_enterprise_share_token(
+    token_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_revoke_share_token(signed_in["id"], token_id)
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/enterprise/shared-findings/{token}")
+async def get_enterprise_shared_finding(token: str):
+    try:
+        result = await enterprise_get_shared_finding_packet(token)
+        return {
+            "share_token": result["share_token"],
+            "redacted": result.get("redacted", True),
+            "packet": redact_packet(result["packet"], redacted=bool(result.get("redacted", True))),
+        }
+    except Exception as exc:
+        raise _enterprise_error(exc)
 
 
 @app.post("/api/analyze")

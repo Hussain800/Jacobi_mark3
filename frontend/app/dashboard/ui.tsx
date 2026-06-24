@@ -6,9 +6,11 @@
  * reframed marketing surface.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Copy, Download, FileJson, Share2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import {
   type Severity,
   type Confidence,
@@ -172,7 +174,7 @@ export function PageHead({ eyebrow, title, lede }: { eyebrow: string; title: str
 
 /* ── Evidence export controls ─────────────────────────────────────────── */
 
-export function EvidenceActions() {
+function LegacyEvidenceActions() {
   const [copied, setCopied] = useState(false);
   return (
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -194,6 +196,127 @@ export function EvidenceActions() {
       <button className="btn btn-ghost" title="Available in the full product" style={{ opacity: 0.6, cursor: "default" }}>
         Export JSON
       </button>
+    </div>
+  );
+}
+
+export function EvidenceActions({ findingId }: { findingId?: string }) {
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const supabase = useMemo(() => createClient(), []);
+
+  async function authHeaders() {
+    const sessionResult = await supabase.auth.getSession();
+    const token = sessionResult.data.session?.access_token;
+    if (!token) throw new Error("Sign in to export or share evidence.");
+    return {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  async function downloadExport(format: "pdf" | "json") {
+    if (!findingId) {
+      window.print();
+      return;
+    }
+    setBusy(format);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/findings/${findingId}/exports`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ format, redacted: false }),
+      });
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `jacobi-map-finding-${findingId}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+      setMessage("Export recorded with checksum metadata.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createShareLink() {
+    if (!findingId) {
+      setMessage("Open a live finding before creating a share link.");
+      return;
+    }
+    setBusy("share");
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/findings/${findingId}/share-tokens`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ expires_hours: 168, redacted: true }),
+      });
+      if (!response.ok) throw new Error(`Share link failed (${response.status})`);
+      const payload = await response.json();
+      setShareUrl(payload.token_url);
+      try {
+        await navigator.clipboard.writeText(payload.token_url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch { /* clipboard unavailable */ }
+      setMessage("Redacted share link created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Share link failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <button className="btn btn-primary" onClick={() => downloadExport("pdf")} disabled={busy !== null} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <Download size={15} aria-hidden="true" />
+          {busy === "pdf" ? "Exporting..." : "Download PDF"}
+        </button>
+        <button
+          className="btn btn-ghost"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(shareUrl || window.location.href);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch { /* clipboard unavailable */ }
+          }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+        >
+          <Copy size={15} aria-hidden="true" />
+          {copied ? "Copied" : "Copy link"}
+        </button>
+        <button className="btn btn-ghost" onClick={() => downloadExport("json")} disabled={busy !== null} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <FileJson size={15} aria-hidden="true" />
+          {busy === "json" ? "Exporting..." : "Export JSON"}
+        </button>
+        <button className="btn btn-ghost" onClick={createShareLink} disabled={busy !== null} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <Share2 size={15} aria-hidden="true" />
+          {busy === "share" ? "Creating..." : "Create redacted share"}
+        </button>
+      </div>
+      {shareUrl && (
+        <div className="mono" style={{ marginTop: 12, color: "var(--cobalt-bright)", fontSize: 11, overflowWrap: "anywhere" }}>
+          {shareUrl}
+        </div>
+      )}
+      {message && (
+        <div className="mono" style={{ marginTop: 10, color: message.includes("failed") || message.includes("Sign in") ? "var(--gold)" : "var(--good)", fontSize: 11 }}>
+          {message}
+        </div>
+      )}
     </div>
   );
 }

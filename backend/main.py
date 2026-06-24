@@ -37,11 +37,13 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
+from enterprise_access import EnterprisePermissionError
 from enterprise_store import (
     EnterpriseAccessError,
     EnterpriseValidationError,
     claim_next_scan_job as enterprise_claim_next_scan_job,
     claim_scan_job as enterprise_claim_scan_job,
+    create_organization_invite as enterprise_create_organization_invite,
     create_share_token as enterprise_create_share_token,
     create_watchlist as enterprise_create_watchlist,
     finish_scan_job as enterprise_finish_scan_job,
@@ -52,11 +54,13 @@ from enterprise_store import (
     get_workspace as enterprise_get_workspace,
     import_watchlist_items as enterprise_import_watchlist_items,
     launch_scan_job as enterprise_launch_scan_job,
+    list_members_and_invites as enterprise_list_members_and_invites,
     list_evidence_items as enterprise_list_evidence_items,
     record_evidence_export as enterprise_record_evidence_export,
     record_live_probe_result as enterprise_record_live_probe_result,
     release_scan_job as enterprise_release_scan_job,
     revoke_share_token as enterprise_revoke_share_token,
+    revoke_organization_invite as enterprise_revoke_organization_invite,
 )
 from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
@@ -163,6 +167,12 @@ class CreateFindingExportInput(BaseModel):
 class CreateShareTokenInput(BaseModel):
     expires_hours: int = Field(default=168, ge=1, le=2160)
     redacted: bool = Field(default=True)
+
+
+class CreateOrganizationInviteInput(BaseModel):
+    email: str
+    role: str = Field(default="viewer", description="admin | analyst | viewer")
+    expires_hours: int = Field(default=168, ge=1, le=720)
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -2779,6 +2789,8 @@ def _require_signed_in_user(user: Optional[dict]) -> dict:
 def _enterprise_error(exc: Exception) -> HTTPException:
     if isinstance(exc, EnterpriseAccessError):
         return HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)})
+    if isinstance(exc, EnterprisePermissionError):
+        return HTTPException(status_code=403, detail={"code": "forbidden", "message": str(exc)})
     if isinstance(exc, EnterpriseValidationError):
         return HTTPException(status_code=400, detail={"code": "invalid_request", "message": str(exc)})
     return HTTPException(status_code=500, detail={"code": "enterprise_store_error", "message": "Enterprise workspace operation failed."})
@@ -2810,6 +2822,41 @@ async def get_enterprise_workspace(
     signed_in = _require_signed_in_user(user)
     try:
         return await enterprise_get_workspace(signed_in["id"])
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/enterprise/members")
+async def list_enterprise_members(
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_list_members_and_invites(signed_in["id"])
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/enterprise/invites")
+async def create_enterprise_invite(
+    input: CreateOrganizationInviteInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_create_organization_invite(signed_in["id"], input.model_dump())
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/enterprise/invites/{invite_id}/revoke")
+async def revoke_enterprise_invite(
+    invite_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_revoke_organization_invite(signed_in["id"], invite_id)
     except Exception as exc:
         raise _enterprise_error(exc)
 

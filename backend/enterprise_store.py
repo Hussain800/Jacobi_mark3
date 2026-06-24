@@ -5,13 +5,18 @@ from __future__ import annotations
 import asyncio
 import csv
 import hashlib
+import ipaddress
 import io
+import math
+import os
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from enterprise_access import EnterprisePermissionError, normalize_role, require_permission
 from map_policy import evaluate_map_observation
 from supabase_client import get_supabase
 
@@ -19,6 +24,15 @@ from supabase_client import get_supabase
 DEFAULT_WORKSPACE_NAME = "Jacobi Pilot Workspace"
 
 _MEMORY_WORKSPACES: dict[str, dict[str, Any]] = {}
+_ENTERPRISE_SCAN_RATE_BUCKETS: dict[str, list[float]] = {}
+
+ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS", "20"))
+ENTERPRISE_SCAN_MAX_TARGETS = int(os.getenv("ENTERPRISE_SCAN_MAX_TARGETS", "250"))
+ENTERPRISE_SMART24_EST_COST_USD = float(os.getenv("ENTERPRISE_SMART24_EST_COST_USD", "0.08"))
+ENTERPRISE_PRO50_EST_COST_USD = float(os.getenv("ENTERPRISE_PRO50_EST_COST_USD", "0.18"))
+ENTERPRISE_SCAN_COST_BUDGET_USD = float(os.getenv("ENTERPRISE_SCAN_COST_BUDGET_USD", "25"))
+ENTERPRISE_LIVE_SCANS_ENABLED = os.getenv("ENTERPRISE_LIVE_SCANS_ENABLED", "1") != "0"
 
 
 class EnterpriseAccessError(Exception):
@@ -57,6 +71,33 @@ def _valid_public_url_shape(url: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _safe_import_url_shape(url: str) -> bool:
+    if not url or len(url) > 2048:
+        return False
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    host = parsed.hostname.lower().rstrip(".")
+    if host in {"localhost", "metadata", "metadata.google.internal"} or host.endswith(".localhost"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
 def _domain_from_url(url: str) -> str:
     parsed = urlparse(url)
     return parsed.netloc.lower()
@@ -80,6 +121,15 @@ def _workspace_for_user(user_id: str) -> dict[str, Any]:
     }
     workspace = {
         "organization": org,
+        "members": [{
+            "id": _id(),
+            "organization_id": org["id"],
+            "user_id": user_id,
+            "email": None,
+            "role": "owner",
+            "created_at": _now(),
+        }],
+        "invites": [],
         "watchlists": [],
         "products": [],
         "sellers": [],
@@ -113,6 +163,52 @@ def _find_one(rows: list[dict[str, Any]], **query: Any) -> Optional[dict[str, An
         if all(row.get(k) == v for k, v in query.items()):
             return row
     return None
+
+
+def _memory_role(workspace: dict[str, Any], user_id: str) -> str:
+    for member in workspace.get("members", []):
+        if member.get("user_id") == user_id:
+            return normalize_role(member.get("role"))
+    if workspace["organization"].get("created_by") == user_id:
+        return "owner"
+    return "viewer"
+
+
+def _require_memory_permission(workspace: dict[str, Any], user_id: str, permission: str) -> None:
+    require_permission(_memory_role(workspace, user_id), permission)
+
+
+def _supabase_membership_role(client, org_id: str, user_id: str) -> str:
+    memberships = client.table("organization_members").select("role").eq("organization_id", org_id).eq("user_id", user_id).limit(1).execute().data or []
+    if not memberships:
+        raise EnterpriseAccessError("Organization not found")
+    return normalize_role(memberships[0].get("role"))
+
+
+def _enforce_scan_controls(org_id: str, user_id: str, run_mode: str, audit_depth: str, target_count: int, requested_limit: int) -> None:
+    if requested_limit > ENTERPRISE_SCAN_MAX_TARGETS:
+        raise EnterpriseValidationError(f"Scan limit exceeds workspace maximum of {ENTERPRISE_SCAN_MAX_TARGETS}.")
+    if run_mode == "live" and not ENTERPRISE_LIVE_SCANS_ENABLED:
+        raise EnterpriseValidationError("Live scans are currently disabled by operations.")
+    if run_mode != "live":
+        return
+    per_target = ENTERPRISE_PRO50_EST_COST_USD if (audit_depth or "").lower() == "pro50" else ENTERPRISE_SMART24_EST_COST_USD
+    estimated = target_count * per_target
+    if ENTERPRISE_SCAN_COST_BUDGET_USD > 0 and estimated > ENTERPRISE_SCAN_COST_BUDGET_USD:
+        raise EnterpriseValidationError(
+            f"Estimated scan cost ${estimated:.2f} exceeds budget ${ENTERPRISE_SCAN_COST_BUDGET_USD:.2f}."
+        )
+    if ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS <= 0 or ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS <= 0:
+        return
+    key = f"{org_id}:{user_id}"
+    now = time.time()
+    bucket = [ts for ts in _ENTERPRISE_SCAN_RATE_BUCKETS.get(key, []) if now - ts < ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS]
+    if len(bucket) >= ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS:
+        retry_after = max(1, math.ceil(ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+        _ENTERPRISE_SCAN_RATE_BUCKETS[key] = bucket
+        raise EnterpriseValidationError(f"Scan rate limit exceeded. Retry after {retry_after} seconds.")
+    bucket.append(now)
+    _ENTERPRISE_SCAN_RATE_BUCKETS[key] = bucket
 
 
 def _normalize_cadence(value: Any) -> str:
@@ -368,6 +464,8 @@ def _serialize_workspace(workspace: dict[str, Any], mode: str) -> dict[str, Any]
     return {
         "mode": mode,
         "organization": workspace["organization"],
+        "members": workspace.get("members", []),
+        "invites": workspace.get("invites", []),
         "watchlists": workspace["watchlists"],
         "products": workspace["products"],
         "sellers": workspace["sellers"],
@@ -386,6 +484,7 @@ def _serialize_workspace(workspace: dict[str, Any], mode: str) -> dict[str, Any]
 
 def _create_watchlist_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     workspace = _workspace_for_user(user_id)
+    _require_memory_permission(workspace, user_id, "watchlist.write")
     watchlist = {
         "id": _id(),
         "organization_id": workspace["organization"]["id"],
@@ -406,6 +505,7 @@ def _create_watchlist_memory(user_id: str, payload: dict[str, Any]) -> dict[str,
 
 def _import_items_memory(user_id: str, watchlist_id: str, csv_text: str) -> dict[str, Any]:
     workspace = _workspace_for_user(user_id)
+    _require_memory_permission(workspace, user_id, "watchlist.write")
     watchlist = _find_one(workspace["watchlists"], id=watchlist_id)
     if not watchlist:
         raise EnterpriseAccessError("Watchlist not found")
@@ -434,8 +534,8 @@ def _import_items_memory(user_id: str, watchlist_id: str, csv_text: str) -> dict
         if missing:
             errors.append({"row": idx, "message": f"Missing required fields: {', '.join(missing)}"})
             continue
-        if not _valid_public_url_shape(target_url):
-            errors.append({"row": idx, "message": "target_url must be an http(s) URL."})
+        if not _safe_import_url_shape(target_url):
+            errors.append({"row": idx, "message": "target_url must be a public http(s) URL."})
             continue
 
         product = _find_one(workspace["products"], sku=sku)
@@ -498,6 +598,7 @@ def _import_items_memory(user_id: str, watchlist_id: str, csv_text: str) -> dict
 
 def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     workspace = _workspace_for_user(user_id)
+    _require_memory_permission(workspace, user_id, "scan.write")
     watchlist_id = _clean(payload.get("watchlist_id"))
     watchlist = _find_one(workspace["watchlists"], id=watchlist_id)
     if not watchlist:
@@ -506,13 +607,15 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
     limit = int(payload.get("limit") or 50)
     items = [item for item in workspace["watchlist_items"] if item.get("watchlist_id") == watchlist_id and item.get("status") == "active"][:limit]
     run_mode = _normalize_scan_mode(payload.get("run_mode"))
+    audit_depth = _clean(payload.get("audit_depth"), "smart24")
+    _enforce_scan_controls(workspace["organization"]["id"], user_id, run_mode, audit_depth, len(items), limit)
     if run_mode == "live":
         job = {
             "id": _id(),
             "organization_id": workspace["organization"]["id"],
             "watchlist_id": watchlist_id,
             "requested_by": user_id,
-            "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+            "audit_depth": audit_depth,
             "status": "queued" if items else "completed",
             "target_count": len(items),
             "completed_count": 0,
@@ -536,7 +639,7 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
         "organization_id": workspace["organization"]["id"],
         "watchlist_id": watchlist_id,
         "requested_by": user_id,
-        "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+        "audit_depth": audit_depth,
         "status": "running",
         "target_count": len(items),
         "completed_count": 0,
@@ -647,6 +750,11 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
         watchlists = client.table("watchlists").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
         products = client.table("products").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
         sellers = client.table("sellers").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
+        members = client.table("organization_members").select("id,organization_id,user_id,role,created_at").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
+        try:
+            invites = client.table("organization_invites").select("id,organization_id,email,role,expires_at,accepted_at,revoked_at,created_by,created_at").eq("organization_id", org_id).order("created_at", desc=True).limit(100).execute().data or []
+        except Exception:
+            invites = []
         watchlist_ids = [w["id"] for w in watchlists]
         items = []
         if watchlist_ids:
@@ -662,6 +770,8 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
             item["cadence"] = (wl or {}).get("cadence", "manual").capitalize()
         return {
             "organization": org,
+            "members": members,
+            "invites": invites,
             "watchlists": watchlists,
             "products": products,
             "sellers": sellers,
@@ -692,6 +802,7 @@ async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, A
     org = await _ensure_supabase_org(client, user_id, payload.get("org_id"))
 
     def work():
+        require_permission(_supabase_membership_role(client, org["id"], user_id), "watchlist.write")
         watchlist = client.table("watchlists").insert({
             "organization_id": org["id"],
             "name": _clean(payload.get("name"), "MAP Pilot Watchlist"),
@@ -728,9 +839,7 @@ async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str)
             raise EnterpriseAccessError("Watchlist not found")
         watchlist = watchlists[0]
         org_id = watchlist["organization_id"]
-        memberships = client.table("organization_members").select("id").eq("organization_id", org_id).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Watchlist not found")
+        require_permission(_supabase_membership_role(client, org_id, user_id), "watchlist.write")
 
         imported = 0
         for idx, row in enumerate(rows, start=2):
@@ -754,8 +863,8 @@ async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str)
             if missing:
                 errors.append({"row": idx, "message": f"Missing required fields: {', '.join(missing)}"})
                 continue
-            if not _valid_public_url_shape(target_url):
-                errors.append({"row": idx, "message": "target_url must be an http(s) URL."})
+            if not _safe_import_url_shape(target_url):
+                errors.append({"row": idx, "message": "target_url must be a public http(s) URL."})
                 continue
 
             product = client.table("products").upsert({
@@ -813,12 +922,12 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
             raise EnterpriseAccessError("Watchlist not found")
         watchlist = watchlists[0]
         org_id = watchlist["organization_id"]
-        memberships = client.table("organization_members").select("id").eq("organization_id", org_id).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Watchlist not found")
+        require_permission(_supabase_membership_role(client, org_id, user_id), "scan.write")
         limit = int(payload.get("limit") or 50)
         items = client.table("watchlist_items").select("*").eq("watchlist_id", watchlist_id).eq("status", "active").limit(limit).execute().data or []
         run_mode = _normalize_scan_mode(payload.get("run_mode"))
+        audit_depth = _clean(payload.get("audit_depth"), "smart24")
+        _enforce_scan_controls(org_id, user_id, run_mode, audit_depth, len(items), limit)
         if run_mode == "live":
             metadata = {
                 "source": "live_probe",
@@ -831,7 +940,7 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
                 "organization_id": org_id,
                 "watchlist_id": watchlist_id,
                 "requested_by": user_id,
-                "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+                "audit_depth": audit_depth,
                 "status": "queued" if items else "completed",
                 "target_count": len(items),
                 "completed_at": _now() if not items else None,
@@ -851,7 +960,7 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
             "organization_id": org_id,
             "watchlist_id": watchlist_id,
             "requested_by": user_id,
-            "audit_depth": _clean(payload.get("audit_depth"), "smart24"),
+            "audit_depth": audit_depth,
             "status": "running",
             "target_count": len(items),
             "started_at": _now(),
@@ -1754,6 +1863,7 @@ async def record_evidence_export(
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "evidence.export")
         export = {
             "id": _id(),
             "organization_id": org_id,
@@ -1778,6 +1888,7 @@ async def record_evidence_export(
         return {"evidence_export": export}
 
     def work():
+        require_permission(_supabase_membership_role(client, org_id, user_id), "evidence.export")
         export = client.table("evidence_exports").insert({
             "organization_id": org_id,
             "finding_id": finding_id,
@@ -1826,6 +1937,7 @@ async def create_share_token(
     client = get_supabase()
     if not client:
         workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "share.write")
         row = {
             "id": _id(),
             "organization_id": org_id,
@@ -1849,6 +1961,7 @@ async def create_share_token(
         return {"share_token": _share_token_public(row), "token": token}
 
     def work():
+        require_permission(_supabase_membership_role(client, org_id, user_id), "share.write")
         row = client.table("share_tokens").insert({
             "organization_id": org_id,
             "finding_id": finding_id,
@@ -1881,6 +1994,7 @@ async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "share.write")
         row = _find_one(workspace.setdefault("share_tokens", []), id=token_id)
         if not row:
             raise EnterpriseAccessError("Share token not found")
@@ -1893,9 +2007,7 @@ async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
         if not rows:
             raise EnterpriseAccessError("Share token not found")
         row = rows[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", row["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Share token not found")
+        require_permission(_supabase_membership_role(client, row["organization_id"], user_id), "share.write")
         updated = client.table("share_tokens").update({
             "revoked_at": now,
             "revoked_by": user_id,
@@ -1909,6 +2021,120 @@ async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
             "metadata": {"finding_id": row.get("finding_id")},
         }).execute()
         return {"share_token": _share_token_public(updated)}
+
+    return await _thread(work)
+
+
+async def list_members_and_invites(user_id: str) -> dict[str, Any]:
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "workspace.read")
+        return {
+            "members": workspace.get("members", []),
+            "invites": workspace.get("invites", []),
+        }
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        role = _supabase_membership_role(client, org["id"], user_id)
+        require_permission(role, "workspace.read")
+        members = client.table("organization_members").select("id,organization_id,user_id,role,created_at").eq("organization_id", org["id"]).order("created_at", desc=True).execute().data or []
+        try:
+            invites = client.table("organization_invites").select("id,organization_id,email,role,expires_at,accepted_at,revoked_at,created_by,created_at").eq("organization_id", org["id"]).order("created_at", desc=True).execute().data or []
+        except Exception:
+            invites = []
+        return {"members": members, "invites": invites}
+
+    return await _thread(work)
+
+
+async def create_organization_invite(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    email = _clean(payload.get("email")).lower()
+    role = normalize_role(payload.get("role"))
+    if not email or "@" not in email:
+        raise EnterpriseValidationError("Invite email is invalid.")
+    if role == "owner":
+        raise EnterpriseValidationError("Invite users as admin, analyst, or viewer.")
+    expires_hours = max(1, min(int(payload.get("expires_hours") or 168), 24 * 30))
+    token = secrets.token_urlsafe(24)
+    token_hash = _sha256(token)
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).isoformat()
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "member.manage")
+        invite = {
+            "id": _id(),
+            "organization_id": workspace["organization"]["id"],
+            "email": email,
+            "role": role,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "accepted_at": None,
+            "revoked_at": None,
+            "created_by": user_id,
+            "created_at": _now(),
+        }
+        workspace.setdefault("invites", []).append(invite)
+        _record_audit(workspace, user_id, "organization_invite.created", "organization_invite", invite["id"], {"email": email, "role": role})
+        return {"invite": _share_token_public(invite), "token": token}
+
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        require_permission(_supabase_membership_role(client, org["id"], user_id), "member.manage")
+        invite = client.table("organization_invites").insert({
+            "organization_id": org["id"],
+            "email": email,
+            "role": role,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "created_by": user_id,
+        }).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": org["id"],
+            "actor_user_id": user_id,
+            "action": "organization_invite.created",
+            "entity_type": "organization_invite",
+            "entity_id": invite["id"],
+            "metadata": {"email": email, "role": role},
+        }).execute()
+        return {"invite": _share_token_public(invite), "token": token}
+
+    return await _thread(work)
+
+
+async def revoke_organization_invite(user_id: str, invite_id: str) -> dict[str, Any]:
+    client = get_supabase()
+    now = _now()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        _require_memory_permission(workspace, user_id, "member.manage")
+        invite = _find_one(workspace.setdefault("invites", []), id=invite_id)
+        if not invite:
+            raise EnterpriseAccessError("Invite not found")
+        invite["revoked_at"] = now
+        _record_audit(workspace, user_id, "organization_invite.revoked", "organization_invite", invite_id, {"email": invite.get("email")})
+        return {"invite": _share_token_public(invite)}
+
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        require_permission(_supabase_membership_role(client, org["id"], user_id), "member.manage")
+        rows = client.table("organization_invites").select("*").eq("id", invite_id).eq("organization_id", org["id"]).limit(1).execute().data or []
+        if not rows:
+            raise EnterpriseAccessError("Invite not found")
+        updated = client.table("organization_invites").update({"revoked_at": now}).eq("id", invite_id).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": org["id"],
+            "actor_user_id": user_id,
+            "action": "organization_invite.revoked",
+            "entity_type": "organization_invite",
+            "entity_id": invite_id,
+            "metadata": {"email": rows[0].get("email")},
+        }).execute()
+        return {"invite": _share_token_public(updated)}
 
     return await _thread(work)
 

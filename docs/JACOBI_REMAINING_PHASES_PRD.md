@@ -2,8 +2,8 @@
 
 Date: 2026-06-24  
 Repository: `https://github.com/Hussain800/Jacobi_mark3`  
-Roadmap status: Phases 1-2 complete, Phases 3-6 remaining  
-Current product level: early paid-pilot foundation, not final production-grade
+Roadmap status: Phases 1-6 implemented at application level
+Current product level: application-ready for paid pilot after production environment verification
 
 ## Executive Summary
 
@@ -12,14 +12,30 @@ Jacobi has completed the first two practical phases of the enterprise pivot:
 - **Phase 1:** compliance-led product reframe, investor-demo dashboard, mainline hardening, and frontend platform upgrade.
 - **Phase 2:** enterprise workspace/data foundation, MAP workflow, live watchlist scan path, and probe-backed evidence persistence.
 
-The remaining work is organized into four production-readiness phases:
+The original remaining work was organized into four production-readiness phases:
 
 - **Phase 3:** Durable Scan Execution + Evidence Locker
 - **Phase 4:** Enterprise Reporting + External Sharing
 - **Phase 5:** Security, Roles, Rate Limits, Cost Controls
 - **Phase 6:** Production Supabase, Ops, Pilot GTM
 
-The goal of these phases is to move Jacobi from early paid-pilot foundation to a production-grade enterprise product that can support design partners, paid pilots, and investor demos with credible operational safeguards.
+Those phases have now been implemented in the application codebase. The remaining work is external launch execution: production Supabase migration/RLS verification, Vercel/BrightData/Sentry environment configuration, and one controlled pilot smoke test.
+
+## Implementation Status Update
+
+Completed after this PRD was created:
+
+- **Phase 3:** durable scan worker endpoint, queue-wide claim/release, evidence APIs, evidence locker UI, Vercel cron contract.
+- **Phase 4:** MAP PDF/JSON exports, evidence checksums, export audit records, redacted external shares, share revoke, public shared-finding page.
+- **Phase 5:** centralized enterprise roles, organization invites, role-enforced mutations, stricter import URL validation, scan rate limits, cost controls, live-scan kill switch, workspace settings UI.
+- **Phase 6:** production readiness health endpoint, production verification script, pilot onboarding docs, investor demo script, pilot CSV template, production checklist.
+
+Open launch gates:
+
+- Apply migrations to production Supabase.
+- Run production RLS/table verification with `SUPABASE_DB_URL`.
+- Configure `SCAN_WORKER_SECRET`, Supabase service key, BrightData credentials, and Sentry/log redaction in production.
+- Run the production smoke protocol in `docs/PRODUCTION_READINESS_CHECKLIST.md`.
 
 ## Current State
 
@@ -495,4 +511,3 @@ Jacobi reaches production-grade enterprise pilot readiness when:
 Until then, Jacobi should be described as:
 
 **Early paid-pilot foundation with live evidence-backed scan capability.**
-

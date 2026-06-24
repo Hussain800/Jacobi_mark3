@@ -150,16 +150,17 @@ export default function PricingPage() {
                 <span className="dot">●</span> Pricing
               </span>
               <h1 className="display sec-title">
-                Run your first audit,{" "}
+                Launch a price-integrity pilot,{" "}
                 <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  free
+                  fast
                 </span>
                 .
               </h1>
               <p className="sec-lede sec">
-                Smart 24 is live today - a 24-agent evidence audit, free to start.
-                The 50-agent Pro matrix is in private beta. Enterprise teams can
-                contact us for custom compliance and brand-protection audits.
+                Choose a pilot package for MAP monitoring, synthetic-buyer
+                evidence capture, redacted external sharing, and compliance-ready
+                reporting. Smart 24 is live today; Pro 50 remains gated for
+                approved workspaces.
               </p>
               {/* The Stripe test-mode banner that used to live here was
                   removed per product direction: customer-facing UI should
@@ -172,7 +173,7 @@ export default function PricingPage() {
               <div className="plan card" data-reveal>
                 <div className="plan-head">
                   <span className="plan-name mono">
-                    Free
+                    Pilot
                     {plan?.tier === "free" && (
                       <span style={{
                         marginLeft: 10, fontSize: 9, color: "var(--good)",
@@ -185,25 +186,25 @@ export default function PricingPage() {
                     )}
                   </span>
                   <div className="plan-price">
-                    <span className="serif plan-amt">$0</span>
-                    <span className="plan-per mono">/ forever</span>
+                    <span className="serif plan-amt">Design</span>
+                    <span className="plan-per mono">/ partner</span>
                   </div>
                   <p className="plan-tag sec">
-                    Best for trying JACOBI — proof before you buy.
+                    Best for proving value on a focused MAP watchlist before a paid rollout.
                   </p>
                 </div>
                 <Link className="btn btn-ghost plan-cta" href="/chat">
-                  Start auditing
+                  Start pilot
                 </Link>
                 <ul className="plan-feats">
+                  <li><span className="pf-check">&#10003;</span> Focused MAP watchlist import</li>
                   <li><span className="pf-check">&#10003;</span> <strong>Smart 24 audit</strong> - 24-agent matrix</li>
-                  <li><span className="pf-check">&#10003;</span> Evidence table with raw on-page text</li>
+                  <li><span className="pf-check">&#10003;</span> Evidence locker and finding review</li>
                   <li><span className="pf-check">&#10003;</span> Native-currency price display</li>
-                  <li><span className="pf-check">&#10003;</span> Basic report export</li>
-                  <li><span className="pf-check">&#10003;</span> Limited monthly scans</li>
+                  <li><span className="pf-check">&#10003;</span> MAP PDF and JSON report export</li>
+                  <li><span className="pf-check">&#10003;</span> Redacted external share links</li>
                   <li className="muted-feat"><span className="pf-dash">-</span> Pro 50 advanced matrix</li>
-                  <li className="muted-feat"><span className="pf-dash">-</span> Controlled language pairs</li>
-                  <li className="muted-feat"><span className="pf-dash">-</span> Advanced PDF report</li>
+                  <li className="muted-feat"><span className="pf-dash">-</span> Dedicated SLA</li>
                 </ul>
               </div>
 
@@ -212,7 +213,7 @@ export default function PricingPage() {
                 <div className="plan-flag mono">Most popular</div>
                 <div className="plan-head">
                   <span className="plan-name mono" style={{ color: "var(--cobalt-bright)" }}>
-                    Pro
+                    Professional
                     {!pro50BetaEnabled && (
                       <span style={{
                         marginLeft: 10, fontSize: 9, color: "var(--gold)",
@@ -239,8 +240,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ month</span>
                   </div>
                   <p className="plan-tag sec">
-                    The 50-agent advanced matrix for compliance, brand-protection,
-                    and pricing teams - in private beta while Smart 24 is live.
+                    Team workspace for compliance, brand-protection, and channel
+                    operations teams running recurring MAP monitoring.
                   </p>
                 </div>
                 {isPro ? (
@@ -263,7 +264,7 @@ export default function PricingPage() {
                   >
                     {busy
                       ? busyLabel === "waking" ? "Waking server…" : "Loading…"
-                      : signedIn ? "Go Pro" : "Sign in to subscribe"}
+                      : signedIn ? "Go Professional" : "Sign in to subscribe"}
                   </button>
                 ) : (
                   <button
@@ -283,13 +284,13 @@ export default function PricingPage() {
                   </p>
                 )}
                 <ul className="plan-feats">
-                  <li><span className="pf-check pro">&#10003;</span> <strong>Pro 50 advanced matrix</strong> - 50-agent audit</li>
-                  <li><span className="pf-check pro">&#10003;</span> More controlled language pairs (EN/AR/HI/FR)</li>
-                  <li><span className="pf-check pro">&#10003;</span> Deeper cookie, referrer, device &amp; geo coverage</li>
-                  <li><span className="pf-check pro">&#10003;</span> Evidence-grade PDF report export</li>
-                  <li><span className="pf-check pro">&#10003;</span> Higher monthly scan limits</li>
-                  <li><span className="pf-check pro">&#10003;</span> Audit history &amp; private share links</li>
-                  <li><span className="pf-check pro">&#10003;</span> Everything in Free</li>
+                  <li><span className="pf-check pro">&#10003;</span> Organization workspace and roles</li>
+                  <li><span className="pf-check pro">&#10003;</span> Scheduled live watchlist scans</li>
+                  <li><span className="pf-check pro">&#10003;</span> Evidence-grade PDF and JSON exports</li>
+                  <li><span className="pf-check pro">&#10003;</span> Revocable redacted share links</li>
+                  <li><span className="pf-check pro">&#10003;</span> Rate and cost guardrails</li>
+                  <li><span className="pf-check pro">&#10003;</span> Pro 50 advanced matrix for approved workspaces</li>
+                  <li><span className="pf-check pro">&#10003;</span> Everything in Pilot</li>
                 </ul>
               </div>
 
@@ -304,8 +305,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ custom</span>
                   </div>
                   <p className="plan-tag sec">
-                    For brands and compliance teams that need bulk volume,
-                    API, and a defensible paper trail.
+                    For brands and compliance teams that need bulk watchlists,
+                    custom buyer contexts, procurement terms, and SLAs.
                   </p>
                 </div>
                 <a
@@ -316,13 +317,13 @@ export default function PricingPage() {
                   Contact us →
                 </a>
                 <ul className="plan-feats">
-                  <li><span className="pf-check pro">✓</span> Everything in Pro</li>
+                  <li><span className="pf-check pro">&#10003;</span> Everything in Professional</li>
                   <li><span className="pf-check pro">&#10003;</span> <strong>Custom audit volume</strong></li>
                   <li><span className="pf-check pro">&#10003;</span> Custom buyer-context sets</li>
-                  <li><span className="pf-check pro">&#10003;</span> Team workspaces + API access</li>
+                  <li><span className="pf-check pro">&#10003;</span> API access and custom integrations</li>
                   <li><span className="pf-check pro">&#10003;</span> Custom reporting</li>
-                  <li><span className="pf-check pro">✓</span> Dedicated support</li>
-                  <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
+                  <li><span className="pf-check pro">&#10003;</span> Dedicated support</li>
+                  <li><span className="pf-check pro">&#10003;</span> SLA and custom terms</li>
                 </ul>
               </div>
             </div>

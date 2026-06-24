@@ -1,8 +1,26 @@
 # Jacobi Session Changelog
 
-Date: 2026-06-24  
+Date: 2026-06-24 (updated 2026-06-25)  
 Repository: `https://github.com/Hussain800/Jacobi_mark3`  
-Current mainline merge: `570f49a Merge pull request #25 from Hussain800/phase/5-security-controls`
+Current mainline merge: `6629f04 Merge pull request #35 (paid-pilot hardening pass)`
+
+## 2026-06-25 — Paid-Pilot Hardening Pass (Claude Code)
+
+Independent skeptical audit of the Codex phase 2-6 work, then nine merged hardening PRs (#27-#35) plus a multi-agent verification/review. Full backend suite green (1380 passed, 1 skipped); frontend `tsc` + `build` green.
+
+Merged fixes:
+
+- **#27 P0-1** fail-closed Supabase guard — enterprise persistence 503s in production instead of silently using the in-memory fallback when `SUPABASE_SERVICE_KEY` is missing (`ENTERPRISE_REQUIRE_SUPABASE`).
+- **#28 P0-3** `save_probe` never drops `user_id` (no ownerless probe rows).
+- **#29 P1-1** cross-user IDOR regression tests — the audit's "revoke IDOR" was a false positive; the store already enforced org membership.
+- **#30 P1-3** import URL guard rejects hostnames resolving to private addresses (the live-scan worker still re-validates with the full SSRF guard at fetch).
+- **#31 P1-4 / P0-2** member-management RLS policies (`202606240005`) + `has_org_role`, a static RLS-completeness test, and a skippable cross-org RLS integration test.
+- **#32 P1-2** Sentry wired — backend `_init_sentry` with request scrubbing + frontend `@sentry/nextjs` instrumentation; fail-safe / no-op without DSN.
+- **#33 CRITICAL** Vercel cron (GET) could not reach the POST-only worker (405) → scheduled scans never ran; added a GET handler. Set `ENTERPRISE_REQUIRE_SUPABASE=1` in prod env.
+- **#34** CI hard-gates backend tests (removed `|| echo`); conftest neutralizes prod env; deleted dead consumer copy (`HeroScene`/`EmptyState`/design-preview).
+- **#35** Bounded `SESSION_STORE` + rate-limit bucket growth.
+
+Still required before a paid pilot — **external:** apply migrations `0001`–`0005` to prod Supabase, run `verify_production_readiness.py --strict` and `test_rls_integration.py` against the real DB, configure secrets (`SCAN_WORKER_SECRET`, `SUPABASE_SERVICE_KEY`, BrightData, `SENTRY_DSN`), verify the now-GET Vercel cron live, BrightData cost benchmark + load/smoke test. **Deferred larger code work (documented, not done):** realized BrightData cost accounting + monthly org budget, durable-worker stale-job reclaim, scan-job idempotency key, and pilot operational UX (scan-health surfacing, CSV row-error report).
 
 ## Living Document Rule
 

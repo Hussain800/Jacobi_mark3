@@ -1,7 +1,10 @@
 # Jacobi Enterprise Price Integrity Phase 2
 
 Date: 2026-06-24
-Branch: `phase/enterprise-data-layer`
+Original branch: `phase/enterprise-data-layer`
+Follow-up branch merged: `phase/live-watchlist-worker`
+
+Update: PR #21 (`Live watchlist scan worker and evidence persistence`) has now been merged into `main`. The original Phase 2 data/workflow foundation has been extended with a live watchlist scan worker path, real probe-backed evidence persistence, and live scan controls in the portfolio dashboard.
 
 ## Executive Summary
 
@@ -13,7 +16,10 @@ Implemented:
 - Authenticated FastAPI endpoints for the pilot MAP workflow.
 - MAP policy evaluator with severity and coverage gates.
 - CSV import contract through an API and a dashboard import panel.
+- Explicit scan modes for imported MAP preview versus live probe-backed watchlist scans.
+- Live scan worker path that claims queued scan jobs, runs the existing probe engine per watchlist item, persists probe-backed evidence, and creates MAP findings from real observed prices.
 - Dashboard pages that read live enterprise workspace data when signed in and fall back to labeled demo data when anonymous.
+- Portfolio live scan controls with scan target/completed/failed counts.
 - UI fixes for the dashboard nav overlap shown in the screenshot.
 - Local middleware guard so unauthenticated/local demo pages do not crash without Supabase env vars.
 
@@ -26,6 +32,12 @@ Meaningful commits created in this phase:
 - `f5ca24a ui: wire dashboard to enterprise workspace`
 - `d5e3c57 fix(ui): prevent dashboard nav overlap`
 - `a32eed6 fix(ui): harden dashboard local rendering`
+- `31557a7 docs: document enterprise phase 2 implementation`
+- `89ed17f schema: add live scan worker bookkeeping`
+- `8c5519d api: persist live scan evidence`
+- `afb2014 api: run live watchlist scan jobs`
+- `4424d0b test: cover live scan evidence workflow`
+- `4faece4 ui: add live scan controls`
 
 This intentionally avoids stuffing the phase into one large commit.
 
@@ -34,6 +46,7 @@ This intentionally avoids stuffing the phase into one large commit.
 Added migration:
 
 - `supabase/migrations/202606240001_enterprise_price_integrity.sql`
+- `supabase/migrations/202606240002_live_scan_worker.sql`
 
 Tables added:
 
@@ -55,6 +68,14 @@ Security:
 - RLS enabled on all new enterprise tables.
 - Org-scoped access through `public.is_org_member(org_id)`.
 - Indexes added for org, status, scan, finding, evidence, share-token, and audit-log lookups.
+- Additional indexes added for queued scan jobs, watchlist scan-job status, watchlist item scan linkage, and evidence lookup by scan job.
+
+Live scan bookkeeping added to `watchlist_items`:
+
+- `last_probe_session_id`
+- `last_scan_job_id`
+- `last_scan_status`
+- `last_error`
 
 ## Backend API
 
@@ -78,7 +99,10 @@ CSV import columns:
 product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market,observed_price,coverage_pct
 ```
 
-The current scan-job endpoint evaluates imported effective prices against MAP floors. It does not yet run the live crawler worker for every watchlist row.
+The scan-job endpoint now supports two modes:
+
+- `run_mode: "imported"` evaluates imported effective prices against MAP floors for quick CSV policy preview.
+- `run_mode: "live"` queues a probe-backed scan job that runs the existing synthetic-buyer probe engine per watchlist row, persists evidence rows, and creates MAP findings from real observed prices.
 
 ## Frontend
 
@@ -104,8 +128,12 @@ Behavior:
 - Portfolio page now includes a compact CSV import panel that:
   - creates a pilot MAP watchlist
   - imports CSV rows
-  - launches the MAP evaluator scan job
+  - launches the imported MAP evaluator scan job
   - refreshes the dashboard data
+- Portfolio page now includes live scan controls for signed-in live workspaces:
+  - `Run live`
+  - `Refresh`
+  - targets/completed/failed counts
 
 ## UI Bug Fix
 
@@ -133,7 +161,7 @@ python -m pytest tests -q
 Result:
 
 ```text
-1325 passed, 1 warning
+1326 passed, 1 warning
 ```
 
 Frontend:
@@ -171,27 +199,42 @@ Rendered QA results:
 - no console warnings/errors
 - dashboard content rendered in all checked viewports
 
+Follow-up rendered QA after PR #21:
+
+- URL: `http://localhost:3001/dashboard/portfolio`
+- Viewports checked:
+  - `1440x900`
+  - `390x844`
+- Import panel opened on both viewports.
+- Result:
+  - no detected overlaps
+  - portfolio/import layout rendered correctly
+
 ## Remaining Work
 
 Still not complete from the broader pivot plan:
 
-- Real durable worker/queue that runs the existing probe engine across watchlist rows.
+- External durable queue/cron worker. The live worker path exists, but currently runs through the FastAPI background-task pattern.
 - Persisted screenshot/source capture for every evidence item.
+- Evidence locker UI across all evidence items.
 - Enterprise evidence PDF builder for findings, not only legacy probe reports.
 - Share-token creation/revoke UI and scoped external evidence access.
 - Organization invite flow, roles UI, and deeper RBAC enforcement.
 - CSV file-picker polish and downloadable row-error report.
-- Scan-job progress UI for queued/running/partial failure states.
+- More complete scan-job progress UI for queued/running/partial failure states.
+- Rate limits and cost controls for enterprise imports/scans/exports/shares.
 - Production Supabase migration application and seed/pilot data setup.
 - Pilot onboarding docs and design-partner operating playbook.
 
 ## Recommended Next Phase
 
-Build the live watchlist scan worker:
+Continue with production hardening:
 
-1. Add a worker function that claims queued `scan_jobs`.
-2. For each `watchlist_item`, run the existing guarded probe path.
-3. Convert probe results into `evidence_items`.
-4. Run MAP evaluation from actual observed prices.
-5. Persist findings and update scan-job progress incrementally.
-6. Add UI progress states for queued, running, completed, and partial failure.
+1. Move the live scan worker from FastAPI background tasks to an external durable queue/cron worker.
+2. Build the evidence locker UI and screenshot/source artifact model.
+3. Build MAP-specific PDF/redacted reports and share-token create/revoke flows.
+4. Harden roles, rate limits, cost controls, audit logging, and production Supabase/RLS verification.
+
+Detailed remaining phases are tracked in:
+
+- `docs/JACOBI_REMAINING_PHASES_PRD.md`

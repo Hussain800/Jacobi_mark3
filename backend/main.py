@@ -18,7 +18,7 @@ import time
 import uuid
 from collections import defaultdict, Counter
 from datetime import datetime
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +35,14 @@ from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
+from enterprise_store import (
+    EnterpriseAccessError,
+    EnterpriseValidationError,
+    create_watchlist as enterprise_create_watchlist,
+    get_workspace as enterprise_get_workspace,
+    import_watchlist_items as enterprise_import_watchlist_items,
+    launch_scan_job as enterprise_launch_scan_job,
+)
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
     # resource-constrained instance can be isolated WITHOUT a code deploy — set
@@ -104,6 +112,24 @@ class TargetProbeInput(BaseModel):
     # a Free user requesting pro50 is safely downgraded to smart24 (never errors,
     # never silently runs a costlier probe).
     audit_depth: Optional[str] = Field(default=None, description="smart24 | pro50")
+
+
+class CreateWatchlistInput(BaseModel):
+    org_id: Optional[str] = None
+    name: str = Field(default="MAP Pilot Watchlist")
+    workflow_type: str = Field(default="map", description="map | surveillance")
+    cadence: str = Field(default="weekly", description="manual | daily | weekly | monthly")
+    active: bool = True
+
+
+class ImportWatchlistItemsInput(BaseModel):
+    csv_text: str = Field(..., description="CSV text using the pilot product/seller import contract")
+
+
+class LaunchScanJobInput(BaseModel):
+    watchlist_id: str
+    audit_depth: str = Field(default="smart24")
+    limit: int = Field(default=50, ge=1, le=500)
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -2559,6 +2585,104 @@ async def get_history(
         pass
 
     return sessions[:limit]
+
+
+def _require_signed_in_user(user: Optional[dict]) -> dict:
+    if not user or not user.get("id"):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "auth_required", "message": "Sign in to use the enterprise workspace."},
+        )
+    return user
+
+
+def _enterprise_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, EnterpriseAccessError):
+        return HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)})
+    if isinstance(exc, EnterpriseValidationError):
+        return HTTPException(status_code=400, detail={"code": "invalid_request", "message": str(exc)})
+    return HTTPException(status_code=500, detail={"code": "enterprise_store_error", "message": "Enterprise workspace operation failed."})
+
+
+@app.get("/api/enterprise/workspace")
+async def get_enterprise_workspace(
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Return the signed-in user's enterprise workspace.
+
+    This is the live pilot workspace contract. Anonymous dashboard views should
+    fall back to explicitly labeled seeded demo data in the frontend.
+    """
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_get_workspace(signed_in["id"])
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/watchlists")
+async def create_enterprise_watchlist(
+    input: CreateWatchlistInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_create_watchlist(signed_in["id"], input.model_dump())
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/watchlists/{watchlist_id}/items/import")
+async def import_enterprise_watchlist_items(
+    watchlist_id: str,
+    input: ImportWatchlistItemsInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_import_watchlist_items(signed_in["id"], watchlist_id, input.csv_text)
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/scan-jobs")
+async def create_enterprise_scan_job(
+    input: LaunchScanJobInput,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_launch_scan_job(signed_in["id"], input.model_dump())
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/findings")
+async def list_enterprise_findings(
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        workspace = await enterprise_get_workspace(signed_in["id"])
+        return {"findings": workspace["findings"], "kpis": workspace["kpis"]}
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/findings/{finding_id}")
+async def get_enterprise_finding(
+    finding_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        workspace = await enterprise_get_workspace(signed_in["id"])
+        for finding in workspace["findings"]:
+            if finding.get("id") == finding_id:
+                return {"finding": finding}
+    except Exception as exc:
+        raise _enterprise_error(exc)
+    raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Finding not found"})
 
 
 @app.post("/api/analyze")

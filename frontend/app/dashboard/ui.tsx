@@ -55,6 +55,7 @@ const TABS = [
   { label: "Findings", href: "/dashboard/findings" },
   { label: "Evidence", href: "/dashboard/evidence" },
   { label: "Run audit", href: "/dashboard/audits" },
+  { label: "Settings", href: "/dashboard/settings" },
 ];
 
 export function DashboardTabs() {

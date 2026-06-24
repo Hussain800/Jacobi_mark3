@@ -146,7 +146,7 @@ export default function EvidenceClient({ id }: { id: string }) {
         <p style={{ marginTop: 10, color: "var(--text-2)", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
           Export a timestamped, source-linked packet for internal review, compliance, or channel enforcement.
         </p>
-        <EvidenceActions />
+        <EvidenceActions findingId={f.id} />
         <p className="mono" style={{ fontSize: 10.5, color: "var(--text-2)", marginTop: 16, lineHeight: 1.55, maxWidth: 640 }}>
           Findings indicate observed price variation and policy-risk candidates for professional review. They are not legal conclusions and are not represented as court-admissible.
         </p>

@@ -69,7 +69,9 @@ export default function DesignNav() {
             <span className="led" />
             System · Operational
           </span>
-          <DesignNavAuth />
+          <div className="nav-auth">
+            <DesignNavAuth />
+          </div>
         </div>
       </div>
     </nav>

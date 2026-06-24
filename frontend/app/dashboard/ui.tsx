@@ -133,8 +133,8 @@ export function KpiStrip({ items }: { items: Array<{ label: string; value: strin
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+        display: "flex",
+        flexWrap: "wrap",
         gap: 1,
         background: "var(--line)",
         border: "1px solid var(--line)",
@@ -143,7 +143,7 @@ export function KpiStrip({ items }: { items: Array<{ label: string; value: strin
       }}
     >
       {items.map((it) => (
-        <div key={it.label} style={{ background: "var(--surface)", padding: "18px 20px" }}>
+        <div key={it.label} style={{ background: "var(--surface)", padding: "18px 20px", flex: "1 1 150px" }}>
           <div
             className="serif tnum"
             style={{ fontSize: 30, lineHeight: 1, color: it.accent || "var(--text)", marginBottom: 8 }}

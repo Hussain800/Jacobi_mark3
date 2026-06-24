@@ -50,6 +50,7 @@ export default function RouteChrome({ children }: { children: React.ReactNode })
     pathname.startsWith("/pricing") ||
     pathname.startsWith("/leaderboard") ||
     pathname.startsWith("/history") ||
+    pathname.startsWith("/dashboard") ||
     pathname.startsWith("/share");
 
   if (isDesign) {

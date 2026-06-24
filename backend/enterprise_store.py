@@ -284,6 +284,10 @@ def _enforce_scan_controls(org_id: str, user_id: str, run_mode: str, audit_depth
         return
     key = f"{org_id}:{user_id}"
     now = time.time()
+    if len(_ENTERPRISE_SCAN_RATE_BUCKETS) > 4096:
+        _cut = now - ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS
+        for _k in [k for k, v in list(_ENTERPRISE_SCAN_RATE_BUCKETS.items()) if not v or v[-1] < _cut]:
+            _ENTERPRISE_SCAN_RATE_BUCKETS.pop(_k, None)
     bucket = [ts for ts in _ENTERPRISE_SCAN_RATE_BUCKETS.get(key, []) if now - ts < ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS]
     if len(bucket) >= ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS:
         retry_after = max(1, math.ceil(ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))

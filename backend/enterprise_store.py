@@ -301,7 +301,9 @@ def _create_watchlist_memory(user_id: str, payload: dict[str, Any]) -> dict[str,
     }
     workspace["watchlists"].append(watchlist)
     _record_audit(workspace, user_id, "watchlist.created", "watchlist", watchlist["id"])
-    return _serialize_workspace(workspace, "memory")
+    response = _serialize_workspace(workspace, "memory")
+    response["created_watchlist"] = watchlist
+    return response
 
 
 def _import_items_memory(user_id: str, watchlist_id: str, csv_text: str) -> dict[str, Any]:
@@ -582,8 +584,10 @@ async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, A
         }).execute()
         return watchlist
 
-    await _thread(work)
-    return await _workspace_supabase(client, user_id)
+    watchlist = await _thread(work)
+    response = await _workspace_supabase(client, user_id)
+    response["created_watchlist"] = watchlist
+    return response
 
 
 async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str) -> dict[str, Any]:

@@ -17,7 +17,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
       - name: Run tests
-        run: pytest backend/tests/ || echo "No tests found"
+        run: |
+          pytest backend/tests/; code=$?
+          # Tolerate exit 5 (no tests collected); fail the job on real test
+          # failures / collection errors instead of swallowing them.
+          if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then exit "$code"; fi
 
   build-frontend:
     runs-on: ubuntu-latest

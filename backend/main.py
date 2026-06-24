@@ -38,10 +38,14 @@ from url_guard import validate_public_url, UnsafeUrlError
 from enterprise_store import (
     EnterpriseAccessError,
     EnterpriseValidationError,
+    claim_scan_job as enterprise_claim_scan_job,
     create_watchlist as enterprise_create_watchlist,
+    finish_scan_job as enterprise_finish_scan_job,
+    get_scan_job_work as enterprise_get_scan_job_work,
     get_workspace as enterprise_get_workspace,
     import_watchlist_items as enterprise_import_watchlist_items,
     launch_scan_job as enterprise_launch_scan_job,
+    record_live_probe_result as enterprise_record_live_probe_result,
 )
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
@@ -130,6 +134,7 @@ class LaunchScanJobInput(BaseModel):
     watchlist_id: str
     audit_depth: str = Field(default="smart24")
     limit: int = Field(default=50, ge=1, le=500)
+    run_mode: str = Field(default="live", description="live | imported")
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -2356,6 +2361,105 @@ async def _complete_probe_in_background(
             print(f"[PROBE-BG] increment_probe_count failed: {inc_err!r}")
 
 
+def _enterprise_engine_tier(audit_depth: Optional[str]) -> str:
+    requested = (audit_depth or "smart24").strip().lower()
+    if requested == "pro50" and PRO50_BETA_ENABLED:
+        return "pro"
+    return "free"
+
+
+async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
+    """Process a queued enterprise scan job using the live probe engine.
+
+    The store owns job state and evidence writes; this worker only handles URL
+    validation, engine execution, and probe-history persistence.
+    """
+    terminal_error = None
+    claimed = False
+    try:
+        claim = await enterprise_claim_scan_job(user_id, scan_job_id)
+        if not claim.get("claimed"):
+            return
+        claimed = True
+
+        work = await enterprise_get_scan_job_work(user_id, scan_job_id)
+        job = work["scan_job"]
+        engine_tier = _enterprise_engine_tier(job.get("audit_depth"))
+        audit_depth = "pro50" if engine_tier == "pro" else "smart24"
+
+        for target in work.get("items", []):
+            item = target.get("item") or {}
+            product = target.get("product") or {}
+            seller = target.get("seller") or {}
+            target_url = item.get("target_url") or ""
+            target_name = " / ".join(
+                part for part in (
+                    product.get("name") or product.get("sku") or "Watchlist product",
+                    seller.get("name") or seller.get("domain") or "Seller",
+                )
+                if part
+            )
+            session = {}
+            saved_id = None
+
+            try:
+                validate_public_url(target_url)
+            except UnsafeUrlError as url_err:
+                await enterprise_record_live_probe_result(
+                    user_id,
+                    scan_job_id,
+                    item["id"],
+                    {"session_id": None, "status": "failed", "error": str(url_err), "agents": []},
+                    error=f"Invalid target URL: {url_err}",
+                )
+                continue
+
+            sid, session = create_session(target_url, target_name)
+            session["user_id"] = user_id
+            session["is_public"] = False
+            session["audit_depth"] = audit_depth
+            session["enterprise_scan_job_id"] = scan_job_id
+            session["enterprise_watchlist_item_id"] = item.get("id")
+
+            try:
+                async with _SCAN_SEMAPHORE:
+                    await _run_probe_engine(
+                        session,
+                        target_url,
+                        agent_configs=get_agent_configs_for_tier(engine_tier),
+                    )
+            except Exception as engine_err:
+                print(f"[ENTERPRISE-SCAN] engine crashed for {scan_job_id}/{item.get('id')}: {engine_err!r}")
+                session["status"] = "failed"
+                session["error"] = "Probe engine error. Please retry."
+
+            try:
+                saved_id = await save_probe(session, user_id=user_id, is_public=False)
+            except Exception as db_err:
+                print(f"[ENTERPRISE-SCAN] save_probe failed for {sid}: {db_err!r}")
+
+            result_error = None
+            if session.get("status") in {"failed", "needs_context"}:
+                result_error = session.get("error") or session.get("context_message")
+            await enterprise_record_live_probe_result(
+                user_id,
+                scan_job_id,
+                item["id"],
+                session,
+                probe_row_id=saved_id,
+                error=result_error,
+            )
+    except Exception as exc:
+        terminal_error = str(exc)
+        print(f"[ENTERPRISE-SCAN] job {scan_job_id} failed: {exc!r}")
+    finally:
+        if claimed:
+            try:
+                await enterprise_finish_scan_job(user_id, scan_job_id, terminal_error)
+            except Exception as finish_err:
+                print(f"[ENTERPRISE-SCAN] finish failed for {scan_job_id}: {finish_err!r}")
+
+
 def _probe_owner_id(session: dict) -> Optional[str]:
     return (
         session.get("user_id")
@@ -2652,7 +2756,12 @@ async def create_enterprise_scan_job(
 ):
     signed_in = _require_signed_in_user(user)
     try:
-        return await enterprise_launch_scan_job(signed_in["id"], input.model_dump())
+        result = await enterprise_launch_scan_job(signed_in["id"], input.model_dump())
+        scan_job = result.get("scan_job") or {}
+        metadata = scan_job.get("metadata") or {}
+        if scan_job.get("status") == "queued" and metadata.get("run_mode") == "live":
+            asyncio.create_task(_run_enterprise_scan_job(signed_in["id"], scan_job["id"]))
+        return result
     except Exception as exc:
         raise _enterprise_error(exc)
 

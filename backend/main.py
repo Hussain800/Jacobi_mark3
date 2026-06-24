@@ -63,6 +63,7 @@ from enterprise_store import (
     revoke_organization_invite as enterprise_revoke_organization_invite,
 )
 from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet
+from ops_readiness import build_enterprise_health
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
     # resource-constrained instance can be isolated WITHOUT a code deploy — set
@@ -2824,6 +2825,15 @@ async def get_enterprise_workspace(
         return await enterprise_get_workspace(signed_in["id"])
     except Exception as exc:
         raise _enterprise_error(exc)
+
+
+@app.get("/api/enterprise/health")
+async def get_enterprise_health(
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Return enterprise production-readiness signals without secret values."""
+    _require_signed_in_user(user)
+    return build_enterprise_health()
 
 
 @app.get("/api/enterprise/members")

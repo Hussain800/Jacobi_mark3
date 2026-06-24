@@ -471,3 +471,25 @@ def test_enterprise_role_permissions_are_centralized():
         assert False, "viewer should not launch scans"
     except EnterprisePermissionError:
         pass
+
+
+def test_enterprise_health_endpoint_is_secret_safe(monkeypatch, client):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-secret-value")
+    monkeypatch.setenv("SCAN_WORKER_SECRET", "worker-secret-value")
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "brightdata-secret-value")
+    monkeypatch.setenv("BRIGHTDATA_UNLOCKER_ZONE", "unlocker-zone")
+    _clear_user()
+    _set_user(_as_user("ops-owner"))
+    try:
+        response = client.get("/api/enterprise/health")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "ready"
+        assert payload["live_scan_status"] == "ready"
+        assert payload["config"]["supabase_service_key"] is True
+        assert "service-secret-value" not in str(payload)
+        assert all(row["present"] for row in payload["migrations"])
+        assert "share_tokens" in payload["required_tables"]
+    finally:
+        _clear_user()

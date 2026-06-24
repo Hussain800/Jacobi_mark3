@@ -2,6 +2,7 @@ import asyncio
 
 import main as M
 import enterprise_store
+from enterprise_access import EnterprisePermissionError, require_permission
 from auth_user import get_optional_user
 from map_policy import evaluate_map_observation
 
@@ -17,6 +18,7 @@ def _set_user(user):
 def _clear_user():
     M.app.dependency_overrides.pop(get_optional_user, None)
     enterprise_store._MEMORY_WORKSPACES.clear()
+    enterprise_store._ENTERPRISE_SCAN_RATE_BUCKETS.clear()
 
 
 def test_map_policy_creates_high_severity_undercut():
@@ -382,3 +384,90 @@ def test_enterprise_finding_exports_and_share_revoke(monkeypatch, client):
         assert client.get(f"/api/enterprise/shared-findings/{share['token']}").status_code == 404
     finally:
         _clear_user()
+
+
+def test_enterprise_import_rejects_private_urls(monkeypatch):
+    monkeypatch.setattr(enterprise_store, "get_supabase", lambda: None)
+    _clear_user()
+    user_id = "url-guard-owner"
+    try:
+        created = asyncio.run(enterprise_store.create_watchlist(
+            user_id,
+            {"name": "Guarded Watchlist", "cadence": "daily", "workflow_type": "map"},
+        ))
+        watchlist_id = created["created_watchlist"]["id"]
+        csv_text = "\n".join([
+            "product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market",
+            "Internal Product,INT-001,199,USD,Internal,localhost,http://127.0.0.1/admin,US",
+        ])
+        imported = asyncio.run(enterprise_store.import_watchlist_items(user_id, watchlist_id, csv_text))
+        assert imported["imported"] == 0
+        assert imported["errors"][0]["message"] == "target_url must be a public http(s) URL."
+    finally:
+        _clear_user()
+
+
+def test_enterprise_scan_rate_limit_and_invites(monkeypatch, client):
+    monkeypatch.setattr(enterprise_store, "get_supabase", lambda: None)
+    monkeypatch.setattr(enterprise_store, "ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS", 1)
+    monkeypatch.setattr(enterprise_store, "ENTERPRISE_SCAN_RATE_LIMIT_WINDOW_SECONDS", 3600)
+    _clear_user()
+    user_id = "security-owner"
+    _set_user(_as_user(user_id))
+    try:
+        created = asyncio.run(enterprise_store.create_watchlist(
+            user_id,
+            {"name": "Security MAP Watchlist", "cadence": "daily", "workflow_type": "map"},
+        ))
+        watchlist_id = created["created_watchlist"]["id"]
+        csv_text = "\n".join([
+            "product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market",
+            "Pro Wireless Headphones,JCB-HP-001,199,USD,MegaDeals,megadeals.example,https://megadeals.example/p/pro-wireless,US",
+        ])
+        imported = asyncio.run(enterprise_store.import_watchlist_items(user_id, watchlist_id, csv_text))
+        assert imported["imported"] == 1
+
+        first_scan = asyncio.run(enterprise_store.launch_scan_job(
+            user_id,
+            {"watchlist_id": watchlist_id, "audit_depth": "smart24", "limit": 10, "run_mode": "live"},
+        ))
+        assert first_scan["scan_job"]["status"] == "queued"
+
+        try:
+            asyncio.run(enterprise_store.launch_scan_job(
+                user_id,
+                {"watchlist_id": watchlist_id, "audit_depth": "smart24", "limit": 10, "run_mode": "live"},
+            ))
+            assert False, "expected rate limit"
+        except enterprise_store.EnterpriseValidationError as exc:
+            assert "Scan rate limit exceeded" in str(exc)
+
+        invite_response = client.post(
+            "/api/enterprise/invites",
+            json={"email": "analyst@example.com", "role": "analyst", "expires_hours": 24},
+        )
+        assert invite_response.status_code == 200
+        invite = invite_response.json()["invite"]
+        assert invite["email"] == "analyst@example.com"
+        assert invite["role"] == "analyst"
+        assert "token_hash" not in invite
+
+        members_response = client.get("/api/enterprise/members")
+        assert members_response.status_code == 200
+        assert len(members_response.json()["invites"]) == 1
+
+        revoke_response = client.post(f"/api/enterprise/invites/{invite['id']}/revoke")
+        assert revoke_response.status_code == 200
+        assert revoke_response.json()["invite"]["revoked_at"]
+    finally:
+        _clear_user()
+
+
+def test_enterprise_role_permissions_are_centralized():
+    require_permission("owner", "member.manage")
+    require_permission("analyst", "scan.write")
+    try:
+        require_permission("viewer", "scan.write")
+        assert False, "viewer should not launch scans"
+    except EnterprisePermissionError:
+        pass

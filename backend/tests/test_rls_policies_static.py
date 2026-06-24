@@ -24,6 +24,7 @@ ENTERPRISE_TABLES = [
     "evidence_exports",
     "share_tokens",
     "audit_log",
+    "organization_invites",
 ]
 
 

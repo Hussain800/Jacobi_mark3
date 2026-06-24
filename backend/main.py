@@ -1341,6 +1341,10 @@ class BrightDataMCPClient:
 
 SESSION_STORE: Dict[str, dict] = {}
 ACTIVE_SESSION_ID: Optional[str] = None
+# Bound probe-session memory on long-lived workers: keep at most this many
+# sessions, evicting the oldest (dicts preserve insertion order). Generous so an
+# in-flight result is never evicted in practice; 0 disables the cap.
+MAX_SESSION_STORE = int(os.getenv("MAX_SESSION_STORE", "1000"))
 
 # Bound how many full probe scans run concurrently on this worker so a burst of
 # users can't pile up 50-agent matrices, starve each other, and overspend
@@ -1362,6 +1366,12 @@ def create_session(target_url: str, target_name: str) -> Tuple[str, dict]:
         discrimination_score=0.0)
     SESSION_STORE[session_id] = session
     ACTIVE_SESSION_ID = session_id
+    if MAX_SESSION_STORE > 0:
+        while len(SESSION_STORE) > MAX_SESSION_STORE:
+            oldest = next(iter(SESSION_STORE))
+            if oldest == session_id:
+                break
+            del SESSION_STORE[oldest]
     return session_id, session
 
 
@@ -2626,6 +2636,10 @@ def _enforce_probe_rate_limit(request: Request, user: Optional[dict]) -> None:
         return
     key = user.get("id") if user and user.get("id") else (request.client.host if request.client else "anonymous")
     now = time.time()
+    if len(_PROBE_RATE_BUCKETS) > 4096:
+        _cut = now - PROBE_RATE_LIMIT_WINDOW_SECONDS
+        for _k in [k for k, v in list(_PROBE_RATE_BUCKETS.items()) if not v or v[-1] < _cut]:
+            _PROBE_RATE_BUCKETS.pop(_k, None)
     bucket = [t for t in _PROBE_RATE_BUCKETS.get(key, []) if now - t < PROBE_RATE_LIMIT_WINDOW_SECONDS]
     if len(bucket) >= PROBE_RATE_LIMIT_MAX_REQUESTS:
         retry_after = max(1, math.ceil(PROBE_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))

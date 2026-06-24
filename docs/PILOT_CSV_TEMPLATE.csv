@@ -1,0 +1,3 @@
+product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market,authorization_status,observed_price,coverage_pct
+Pro Wireless Headphones,JCB-HP-001,199,USD,MegaDeals Marketplace,megadeals.example,https://megadeals.example/p/pro-wireless,US,unauthorized,176,92
+VitaBlend Pro Blender,JCB-BL-700,329,USD,HomeGoods Direct,homegoods.example,https://homegoods.example/p/vitablend-pro,US,unknown,,

@@ -2,7 +2,7 @@
 
 Date: 2026-06-24  
 Repository: `https://github.com/Hussain800/Jacobi_mark3`  
-Current mainline merge: `f03bd7d Merge pull request #21 from Hussain800/phase/live-watchlist-worker`
+Current mainline merge: `570f49a Merge pull request #25 from Hussain800/phase/5-security-controls`
 
 ## Living Document Rule
 
@@ -36,9 +36,134 @@ Today completed the first two practical build phases of the pivot:
 
 Current product verdict:
 
-**Early paid-pilot foundation. Not final production-grade.**
+**Application-level paid-pilot foundation with production-readiness tooling.**
 
-The app now has a credible enterprise workflow foundation and an end-to-end live scan path, but production-grade operation still needs durable external queueing, evidence locker UX, enterprise exports, share/revoke flows, stronger role/rate/cost controls, and production Supabase/RLS verification.
+The app now has the enterprise workflow foundation, durable worker contract, evidence locker, report exports, redacted share/revoke flow, role/rate/cost controls, and production readiness tooling. Final production launch still requires external environment execution: apply migrations in production Supabase, verify RLS against the production database, configure Vercel/BrightData/Sentry secrets, and complete one controlled pilot smoke test.
+
+## Phase 3: Durable Scan Worker And Evidence Locker
+
+PR:
+
+- `#23 Phase 3: Durable scan worker and evidence locker`
+- URL: `https://github.com/Hussain800/Jacobi_mark3/pull/23`
+- Branch: `phase/3-durable-evidence`
+- Merge commit: `8493c8514bd6f4c9fed3c2fa278b44a0bd6b7750`
+
+Commit split:
+
+- `646514a api: add durable enterprise scan worker`
+- `8ef0f8c ui: add enterprise evidence locker`
+- `1201640 test: cover durable worker evidence flow`
+
+Implemented:
+
+- Secret-protected worker endpoint: `POST /api/enterprise/scan-worker/run`.
+- Queue-wide claim helper for queued live jobs.
+- Partial worker slices with safe release back to queue.
+- Idempotent skip of already-processed watchlist items.
+- Evidence list/detail APIs: `GET /api/evidence`, `GET /api/evidence/{evidence_id}`.
+- Dashboard Evidence locker at `/dashboard/evidence`.
+- Vercel cron declaration for the worker route.
+
+Verification:
+
+- `python -m pytest tests/test_enterprise_workflow.py -q`
+- `python -m pytest tests -q`
+- `npm run build`
+- GitHub Actions and Vercel preview passed.
+
+## Phase 4: Enterprise Reporting And External Sharing
+
+PR:
+
+- `#24 Phase 4: Enterprise reporting and external sharing`
+- URL: `https://github.com/Hussain800/Jacobi_mark3/pull/24`
+- Branch: `phase/4-reporting-sharing`
+- Merge commit: `4f9fd69665c091ddf36a44b16e865eaa82fca64c`
+
+Commit split:
+
+- `04e6873 schema: add enterprise reporting and share records`
+- `2724ac8 api: add MAP report exports and shares`
+- `196abb5 ui: add enterprise report and share flows`
+- `8e76271 test: cover enterprise exports and share revoke`
+
+Implemented:
+
+- Migration `202606240003_enterprise_reporting_sharing.sql`.
+- MAP PDF and JSON finding exports.
+- Export checksums and `evidence_exports` audit records.
+- Redacted share-token create/revoke APIs.
+- Public redacted share page at `/share/enterprise/[token]`.
+- Dashboard export/share controls on finding evidence pages.
+
+Verification:
+
+- `python -m pytest tests/test_enterprise_workflow.py -q`
+- `python -m pytest tests -q`
+- `npm run build`
+- GitHub Actions and Vercel preview passed.
+
+## Phase 5: Security, Roles, Rate Limits, Cost Controls
+
+PR:
+
+- `#25 Phase 5: Enterprise security, roles, and cost controls`
+- URL: `https://github.com/Hussain800/Jacobi_mark3/pull/25`
+- Branch: `phase/5-security-controls`
+- Merge commit: `570f49aeed41c4b4c74e64ebc0cd8a67d5a622a6`
+
+Commit split:
+
+- `16085f2 schema: add enterprise role and invite controls`
+- `675f66f api: enforce enterprise roles and scan controls`
+- `f83d331 ui: add workspace access settings`
+- `8ee20b4 test: cover enterprise security controls`
+
+Implemented:
+
+- Central role/permission helper in `backend/enterprise_access.py`.
+- Organization invite migration and invite APIs.
+- Role enforcement for watchlists, imports, scans, exports, shares, and member management.
+- Stricter CSV URL validation against private/local/internal targets.
+- Live scan rate limits, max target caps, estimated cost budget checks, and live-scan kill switch.
+- Workspace Settings page at `/dashboard/settings`.
+
+Verification:
+
+- `python -m pytest tests/test_enterprise_workflow.py -q`
+- `python -m pytest tests -q`
+- `npm run build`
+- GitHub Actions and Vercel preview passed.
+
+## Phase 6: Production Ops, Supabase Verification, Pilot GTM
+
+Branch:
+
+- `phase/6-production-ops`
+
+Commit split:
+
+- `fa30f3f ops: add enterprise production readiness checks`
+- `c8f9afb ui: align pricing with enterprise pilot packaging`
+- docs commit in this PR: production checklist, pilot onboarding, investor demo script, CSV template, changelog/PRD updates
+
+Implemented in this phase:
+
+- Production readiness module: `backend/ops_readiness.py`.
+- Authenticated health endpoint: `GET /api/enterprise/health`.
+- Read-only verifier script: `scripts/verify_production_readiness.py`.
+- Production checklist: `docs/PRODUCTION_READINESS_CHECKLIST.md`.
+- Pilot onboarding guide: `docs/PILOT_ONBOARDING.md`.
+- Investor demo script: `docs/INVESTOR_DEMO_SCRIPT.md`.
+- Pilot CSV template: `docs/PILOT_CSV_TEMPLATE.csv`.
+
+Required external launch gates:
+
+- Apply all Supabase migrations to production.
+- Run `python scripts/verify_production_readiness.py --strict` with production env and `SUPABASE_DB_URL`.
+- Configure Vercel cron/worker secret and BrightData production credentials.
+- Complete one controlled pilot smoke test.
 
 ## Work Completed Before Codex Phase 2
 
@@ -430,4 +555,3 @@ The product now has the core enterprise data model and a real probe-backed watch
 The next required work is captured in:
 
 - `docs/JACOBI_REMAINING_PHASES_PRD.md`
-

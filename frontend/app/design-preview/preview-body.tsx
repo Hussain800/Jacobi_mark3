@@ -38,8 +38,8 @@ export default function PreviewBody() {
             </div>
 
             <h1 className="hero-h1" data-reveal>
-              Your browser is a{" "}
-              <span className="serif-i hero-accent">bargaining&nbsp;tool</span>
+              See your prices the way a{" "}
+              <span className="serif-i hero-accent">regulator&nbsp;will</span>
               <span className="hero-sub-rule" />
             </h1>
 

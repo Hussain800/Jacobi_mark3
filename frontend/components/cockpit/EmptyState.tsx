@@ -63,7 +63,7 @@ export default function EmptyState({
             className="font-serif text-[32px] sm:text-[44px] leading-[1.04] tracking-tight text-primary mb-10"
           >
             Paste a URL.{" "}
-            <span className="text-signal">Twenty-four shoppers</span>{" "}
+            <span className="text-signal">Twenty-four synthetic buyers</span>{" "}
             go to work.
           </motion.h1>
 

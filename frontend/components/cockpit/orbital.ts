@@ -1,6 +1,6 @@
 /**
- * Orbital primitives — shared between landing HeroScene and cockpit
- * RadialAgentStage so both surfaces use a single coordinate vocabulary.
+ * Orbital primitives — the shared coordinate vocabulary for the cockpit
+ * RadialAgentStage.
  *
  * Phase 7 simplification: stripped all per-axis color, cursor repulsion,
  * and depth opacity helpers. The new design language is neutral —

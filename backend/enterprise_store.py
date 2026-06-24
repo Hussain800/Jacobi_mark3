@@ -117,7 +117,47 @@ def _valid_public_url_shape(url: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def _safe_import_url_shape(url: str) -> bool:
+def _ip_is_non_public(ip) -> bool:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _hostname_resolves_public(host: str, resolver=None) -> bool:
+    """Best-effort: reject hostnames that resolve to a non-public address.
+
+    Hostnames that cannot be resolved (e.g. reserved demo domains like *.example)
+    are ALLOWED at import time — the live-scan worker re-validates every target
+    with the full SSRF guard (url_guard.validate_public_url) before any fetch, so
+    a non-resolving or DNS-rebinding host is still blocked at the dangerous moment.
+    """
+    if resolver is None:
+        from url_guard import _default_resolver
+        resolver = _default_resolver
+    try:
+        ips = resolver(host)
+    except Exception:
+        return True
+    if not ips:
+        return True
+    for ip_str in ips:
+        try:
+            ip = ipaddress.ip_address(ip_str.split("%", 1)[0])
+        except ValueError:
+            return False
+        if _ip_is_non_public(ip):
+            return False
+    return True
+
+
+def _safe_import_url_shape(url: str, *, resolver=None) -> bool:
     if not url or len(url) > 2048:
         return False
     parsed = urlparse(url)
@@ -126,22 +166,18 @@ def _safe_import_url_shape(url: str) -> bool:
     if parsed.username or parsed.password:
         return False
     host = parsed.hostname.lower().rstrip(".")
-    if host in {"localhost", "metadata", "metadata.google.internal"} or host.endswith(".localhost"):
+    if (
+        host in {"localhost", "ip6-localhost", "ip6-loopback", "metadata", "metadata.google.internal"}
+        or host.endswith(".localhost")
+    ):
         return False
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return True
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
-    return not (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
+        # Hostname (not an IP literal): catch hostnames that resolve to a
+        # private/internal address; allow unresolvable demo domains.
+        return _hostname_resolves_public(host, resolver)
+    return not _ip_is_non_public(ip)
 
 
 def _domain_from_url(url: str) -> str:

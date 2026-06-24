@@ -43,6 +43,52 @@ class EnterpriseValidationError(Exception):
     """Raised for invalid enterprise workflow input."""
 
 
+class EnterpriseUnavailableError(Exception):
+    """Raised when persistence is required (production) but Supabase is absent.
+
+    Prevents the in-memory fallback from silently masking a misconfigured
+    production deploy (no SUPABASE_SERVICE_KEY) by serving ephemeral,
+    per-process workspace data that looks live but is never persisted.
+    """
+
+
+def _require_supabase() -> bool:
+    """Whether a real Supabase client is mandatory (no in-memory fallback).
+
+    Explicit override ``ENTERPRISE_REQUIRE_SUPABASE`` wins (1/true/on -> require,
+    0/false/off -> allow memory). Otherwise auto-detect production from
+    APP_ENV / VERCEL_ENV / ENV / NODE_ENV. Local/dev/test (the common case)
+    leaves this off so the in-memory fallback still serves offline development
+    and the test suite.
+    """
+    override = os.getenv("ENTERPRISE_REQUIRE_SUPABASE")
+    if override is not None and override.strip() != "":
+        return override.strip().lower() not in {"0", "false", "no", "off"}
+    env = (
+        os.getenv("APP_ENV")
+        or os.getenv("VERCEL_ENV")
+        or os.getenv("ENV")
+        or os.getenv("NODE_ENV")
+        or ""
+    ).strip().lower()
+    return env == "production"
+
+
+def _store_client():
+    """Return the Supabase client, or fail closed in production.
+
+    In production we must NOT silently degrade to the in-memory store, so a
+    missing/misconfigured persistence backend surfaces as a clear 503 rather
+    than a deploy that appears to work while losing all data.
+    """
+    resolved = get_supabase()
+    if resolved is None and _require_supabase():
+        raise EnterpriseUnavailableError(
+            "Persistence backend is not configured (SUPABASE_SERVICE_KEY missing)."
+        )
+    return resolved
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -788,14 +834,14 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
 
 
 async def get_workspace(user_id: str) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     if client:
         return await _workspace_supabase(client, user_id)
     return _serialize_workspace(_workspace_for_user(user_id), "memory")
 
 
 async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _create_watchlist_memory(user_id, payload)
 
@@ -827,7 +873,7 @@ async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, A
 
 
 async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _import_items_memory(user_id, watchlist_id, csv_text)
 
@@ -911,7 +957,7 @@ async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str)
 
 
 async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _launch_scan_memory(user_id, payload)
 
@@ -1084,7 +1130,7 @@ def _memory_scan_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
 
 async def get_scan_job_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
     """Load the queued job and its exact target set for a live worker run."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _memory_scan_work(user_id, scan_job_id)
 
@@ -1131,7 +1177,7 @@ async def get_scan_job_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
 
 async def claim_scan_job(user_id: str, scan_job_id: str) -> dict[str, Any]:
     """Move a queued live scan job to running if it has not been claimed."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         job = _find_one(workspace["scan_jobs"], id=scan_job_id)
@@ -1182,7 +1228,7 @@ async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str,
     the cron/durable worker endpoint, which runs with the service-role backend
     client and then processes the job as the original requester.
     """
-    client = get_supabase()
+    client = _store_client()
     now = _now()
     if not client:
         candidates: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
@@ -1236,7 +1282,7 @@ async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str,
 
 async def release_scan_job(user_id: str, scan_job_id: str, reason: str = "partial_worker_slice") -> dict[str, Any]:
     """Return a partially processed live scan job to the queue."""
-    client = get_supabase()
+    client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
@@ -1410,7 +1456,7 @@ async def record_live_probe_result(
     error: Optional[str] = None,
 ) -> dict[str, Any]:
     """Persist one live probe session as evidence and, when warranted, a MAP finding."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _record_live_result_memory(user_id, scan_job_id, watchlist_item_id, session, probe_row_id, error)
 
@@ -1592,7 +1638,7 @@ def _terminal_scan_status(job: dict[str, Any], error: Optional[str] = None) -> s
 
 async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] = None) -> dict[str, Any]:
     """Mark a live scan job completed or failed after all available targets were attempted."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         job = _find_one(workspace["scan_jobs"], id=scan_job_id)
@@ -1670,7 +1716,7 @@ async def list_evidence_items(
 ) -> dict[str, Any]:
     """List evidence rows available to the signed-in user's organization."""
     limit = max(1, min(int(limit or 100), 250))
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         rows = list(workspace["evidence_items"])
@@ -1726,7 +1772,7 @@ async def list_evidence_items(
 
 async def get_evidence_item(user_id: str, evidence_id: str) -> dict[str, Any]:
     """Fetch one evidence row with related finding/product/seller context."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         row = _find_one(workspace["evidence_items"], id=evidence_id)
@@ -1807,7 +1853,7 @@ def _finding_packet_from_workspace(workspace: dict[str, Any], finding_id: str) -
 
 async def get_finding_packet(user_id: str, finding_id: str) -> dict[str, Any]:
     """Return a finding with the evidence needed for reports/shares."""
-    client = get_supabase()
+    client = _store_client()
     if not client:
         return _finding_packet_from_workspace(_workspace_for_user(user_id), finding_id)
 
@@ -1859,7 +1905,7 @@ async def record_evidence_export(
     """Persist an export audit record after bytes are generated."""
     packet = await get_finding_packet(user_id, finding_id)
     org_id = packet["organization"]["id"]
-    client = get_supabase()
+    client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
@@ -1934,7 +1980,7 @@ async def create_share_token(
     expires_hours = max(1, min(int(expires_hours or 168), 24 * 90))
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).isoformat()
     scope = "finding_read:redacted" if redacted else "finding_read"
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         _require_memory_permission(workspace, user_id, "share.write")
@@ -1990,7 +2036,7 @@ async def create_share_token(
 
 async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
     """Revoke a share token owned by the user's organization."""
-    client = get_supabase()
+    client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
@@ -2026,7 +2072,7 @@ async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
 
 
 async def list_members_and_invites(user_id: str) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         _require_memory_permission(workspace, user_id, "workspace.read")
@@ -2060,7 +2106,7 @@ async def create_organization_invite(user_id: str, payload: dict[str, Any]) -> d
     token = secrets.token_urlsafe(24)
     token_hash = _sha256(token)
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).isoformat()
-    client = get_supabase()
+    client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
         _require_memory_permission(workspace, user_id, "member.manage")
@@ -2106,7 +2152,7 @@ async def create_organization_invite(user_id: str, payload: dict[str, Any]) -> d
 
 
 async def revoke_organization_invite(user_id: str, invite_id: str) -> dict[str, Any]:
-    client = get_supabase()
+    client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
@@ -2143,7 +2189,7 @@ async def get_shared_finding_packet(token: str) -> dict[str, Any]:
     """Resolve a public share token to a redacted finding packet."""
     token_hash = _sha256(_clean(token))
     now = datetime.now(timezone.utc)
-    client = get_supabase()
+    client = _store_client()
     if not client:
         for workspace in _MEMORY_WORKSPACES.values():
             for row in workspace.setdefault("share_tokens", []):

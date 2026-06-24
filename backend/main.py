@@ -9,6 +9,7 @@ frontend polling.
 """
 
 import asyncio
+import hmac
 import json
 import math
 import os
@@ -20,7 +21,7 @@ from collections import defaultdict, Counter
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -38,14 +39,18 @@ from url_guard import validate_public_url, UnsafeUrlError
 from enterprise_store import (
     EnterpriseAccessError,
     EnterpriseValidationError,
+    claim_next_scan_job as enterprise_claim_next_scan_job,
     claim_scan_job as enterprise_claim_scan_job,
     create_watchlist as enterprise_create_watchlist,
     finish_scan_job as enterprise_finish_scan_job,
+    get_evidence_item as enterprise_get_evidence_item,
     get_scan_job_work as enterprise_get_scan_job_work,
     get_workspace as enterprise_get_workspace,
     import_watchlist_items as enterprise_import_watchlist_items,
     launch_scan_job as enterprise_launch_scan_job,
+    list_evidence_items as enterprise_list_evidence_items,
     record_live_probe_result as enterprise_record_live_probe_result,
+    release_scan_job as enterprise_release_scan_job,
 )
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
@@ -135,6 +140,12 @@ class LaunchScanJobInput(BaseModel):
     audit_depth: str = Field(default="smart24")
     limit: int = Field(default=50, ge=1, le=500)
     run_mode: str = Field(default="live", description="live | imported")
+
+
+class ScanWorkerRunInput(BaseModel):
+    max_jobs: int = Field(default=1, ge=1, le=10)
+    max_targets_per_job: int = Field(default=1, ge=1, le=20)
+    worker_id: str = Field(default="enterprise-cron")
 
 
 class CalculatedGradientOutput(BaseModel):
@@ -2368,7 +2379,13 @@ def _enterprise_engine_tier(audit_depth: Optional[str]) -> str:
     return "free"
 
 
-async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
+async def _run_enterprise_scan_job(
+    user_id: str,
+    scan_job_id: str,
+    *,
+    already_claimed: bool = False,
+    max_targets: Optional[int] = None,
+) -> dict:
     """Process a queued enterprise scan job using the live probe engine.
 
     The store owns job state and evidence writes; this worker only handles URL
@@ -2376,18 +2393,34 @@ async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
     """
     terminal_error = None
     claimed = False
+    finished = False
+    released = False
+    processed_targets = 0
+    remaining_targets = 0
+    latest_job: dict = {}
     try:
-        claim = await enterprise_claim_scan_job(user_id, scan_job_id)
-        if not claim.get("claimed"):
-            return
-        claimed = True
+        if already_claimed:
+            claimed = True
+        else:
+            claim = await enterprise_claim_scan_job(user_id, scan_job_id)
+            if not claim.get("claimed"):
+                return {"claimed": False, "scan_job_id": scan_job_id, "processed_targets": 0, "remaining_targets": 0}
+            claimed = True
 
         work = await enterprise_get_scan_job_work(user_id, scan_job_id)
         job = work["scan_job"]
+        latest_job = job
         engine_tier = _enterprise_engine_tier(job.get("audit_depth"))
         audit_depth = "pro50" if engine_tier == "pro" else "smart24"
+        metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+        processed_item_ids = set(metadata.get("processed_item_ids") or [])
+        pending_targets = [
+            target for target in work.get("items", [])
+            if (target.get("item") or {}).get("id") not in processed_item_ids
+        ]
+        targets = pending_targets[:max_targets] if max_targets else pending_targets
 
-        for target in work.get("items", []):
+        for target in targets:
             item = target.get("item") or {}
             product = target.get("product") or {}
             seller = target.get("seller") or {}
@@ -2405,13 +2438,15 @@ async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
             try:
                 validate_public_url(target_url)
             except UnsafeUrlError as url_err:
-                await enterprise_record_live_probe_result(
+                record = await enterprise_record_live_probe_result(
                     user_id,
                     scan_job_id,
                     item["id"],
                     {"session_id": None, "status": "failed", "error": str(url_err), "agents": []},
                     error=f"Invalid target URL: {url_err}",
                 )
+                latest_job = record.get("scan_job") or latest_job
+                processed_targets += 1
                 continue
 
             sid, session = create_session(target_url, target_name)
@@ -2441,7 +2476,7 @@ async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
             result_error = None
             if session.get("status") in {"failed", "needs_context"}:
                 result_error = session.get("error") or session.get("context_message")
-            await enterprise_record_live_probe_result(
+            record = await enterprise_record_live_probe_result(
                 user_id,
                 scan_job_id,
                 item["id"],
@@ -2449,15 +2484,39 @@ async def _run_enterprise_scan_job(user_id: str, scan_job_id: str) -> None:
                 probe_row_id=saved_id,
                 error=result_error,
             )
+            latest_job = record.get("scan_job") or latest_job
+            processed_targets += 1
+
+        remaining_targets = max(0, len(pending_targets) - processed_targets)
+        if max_targets and remaining_targets > 0 and terminal_error is None:
+            release = await enterprise_release_scan_job(user_id, scan_job_id)
+            latest_job = release.get("scan_job") or latest_job
+            released = True
+        else:
+            finish = await enterprise_finish_scan_job(user_id, scan_job_id)
+            latest_job = finish.get("scan_job") or latest_job
+            finished = True
     except Exception as exc:
         terminal_error = str(exc)
         print(f"[ENTERPRISE-SCAN] job {scan_job_id} failed: {exc!r}")
     finally:
-        if claimed:
+        if claimed and not finished and not released:
             try:
-                await enterprise_finish_scan_job(user_id, scan_job_id, terminal_error)
+                finish = await enterprise_finish_scan_job(user_id, scan_job_id, terminal_error)
+                latest_job = finish.get("scan_job") or latest_job
+                finished = True
             except Exception as finish_err:
                 print(f"[ENTERPRISE-SCAN] finish failed for {scan_job_id}: {finish_err!r}")
+    return {
+        "claimed": claimed,
+        "scan_job_id": scan_job_id,
+        "scan_job": latest_job,
+        "processed_targets": processed_targets,
+        "remaining_targets": remaining_targets,
+        "released": released,
+        "finished": finished,
+        "error": terminal_error,
+    }
 
 
 def _probe_owner_id(session: dict) -> Optional[str]:
@@ -2708,6 +2767,20 @@ def _enterprise_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail={"code": "enterprise_store_error", "message": "Enterprise workspace operation failed."})
 
 
+def _require_worker_secret(request: Request) -> None:
+    expected = os.getenv("SCAN_WORKER_SECRET") or os.getenv("CRON_SECRET")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "worker_secret_missing", "message": "SCAN_WORKER_SECRET is not configured."},
+        )
+    auth = request.headers.get("authorization") or ""
+    bearer = auth[7:] if auth.lower().startswith("bearer ") else ""
+    supplied = request.headers.get("x-jacobi-worker-secret") or bearer
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail={"code": "worker_unauthorized", "message": "Worker secret is invalid."})
+
+
 @app.get("/api/enterprise/workspace")
 async def get_enterprise_workspace(
     user: Optional[dict] = Depends(get_optional_user),
@@ -2762,6 +2835,66 @@ async def create_enterprise_scan_job(
         if scan_job.get("status") == "queued" and metadata.get("run_mode") == "live":
             asyncio.create_task(_run_enterprise_scan_job(signed_in["id"], scan_job["id"]))
         return result
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.post("/api/enterprise/scan-worker/run")
+async def run_enterprise_scan_worker(
+    input: ScanWorkerRunInput,
+    request: Request,
+):
+    _require_worker_secret(request)
+    processed = []
+    try:
+        for _ in range(input.max_jobs):
+            claim = await enterprise_claim_next_scan_job(input.worker_id)
+            if not claim.get("claimed"):
+                break
+            job = claim.get("scan_job") or {}
+            user_id = claim.get("user_id") or job.get("requested_by")
+            if not user_id or not job.get("id"):
+                processed.append({"claimed": True, "error": "Claimed job missing requester or id."})
+                continue
+            result = await _run_enterprise_scan_job(
+                user_id,
+                job["id"],
+                already_claimed=True,
+                max_targets=input.max_targets_per_job,
+            )
+            processed.append(result)
+        return {"processed_jobs": processed, "count": len(processed)}
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/evidence")
+async def list_enterprise_evidence(
+    finding_id: Optional[str] = None,
+    scan_job_id: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=250),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_list_evidence_items(
+            signed_in["id"],
+            finding_id=finding_id,
+            scan_job_id=scan_job_id,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/evidence/{evidence_id}")
+async def get_enterprise_evidence(
+    evidence_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    signed_in = _require_signed_in_user(user)
+    try:
+        return await enterprise_get_evidence_item(signed_in["id"], evidence_id)
     except Exception as exc:
         raise _enterprise_error(exc)
 

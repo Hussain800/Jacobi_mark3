@@ -9,6 +9,9 @@
   "routes": [
     { "src": "/(.*)", "dest": "main.py" }
   ],
+  "crons": [
+    { "path": "/api/enterprise/scan-worker/run", "schedule": "*/10 * * * *" }
+  ],
   "env": {
     "BRIGHTDATA_API_KEY": "${BRIGHTDATA_API_KEY}",
     "GEMINI_API_KEY": "${GEMINI_API_KEY}",
@@ -16,6 +19,7 @@
     "AIMLAPI_KEY": "${AIMLAPI_KEY}",
     "GROQ_API_KEY": "${GROQ_API_KEY}",
     "SUPABASE_URL": "${SUPABASE_URL}",
-    "SUPABASE_SERVICE_KEY": "${SUPABASE_SERVICE_KEY}"
+    "SUPABASE_SERVICE_KEY": "${SUPABASE_SERVICE_KEY}",
+    "SCAN_WORKER_SECRET": "${SCAN_WORKER_SECRET}"
   }
 }

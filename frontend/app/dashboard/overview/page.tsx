@@ -32,7 +32,7 @@ export default function OverviewPage() {
       <PageHead
         eyebrow="Overview"
         title="Price integrity posture"
-        lede="A live view of pricing-variation findings across your monitored URLs — surveillance-pricing exposure and MAP undercutting, ranked by severity and evidence quality."
+        lede="A sample view of pricing-variation findings across monitored URLs — surveillance-pricing exposure and MAP undercutting, ranked by severity and evidence quality."
       />
 
       <KpiStrip

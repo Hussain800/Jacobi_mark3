@@ -11,22 +11,22 @@ const VARIABLES = [
   {
     label: "Location",
     symbol: "geo",
-    desc: "Pricing engines geolocate every visitor. A user connecting from Manhattan often sees higher prices than one from rural Kansas. JACOBI agents are distributed across residential proxies in dozens of cities, capturing the full geography of price variation.",
+    desc: "Pricing engines can vary offers by geography. JACOBI runs controlled residential identities across cities and regions to measure location-linked price variation without making legal conclusions.",
   },
   {
     label: "Device",
     symbol: "dev",
-    desc: "Your device fingerprint signals your willingness to pay. An iPhone 16 Pro Max sends a different economic signal than a budget Android phone. Agents rotate through operating systems, browsers, and hardware profiles to isolate device-based price gaps.",
+    desc: "Device and browser fingerprints can affect what a pricing surface returns. Agents rotate operating systems, browsers, and hardware profiles to isolate device-linked price variation.",
   },
   {
     label: "Cookies",
     symbol: "ck",
-    desc: "Return visitors and logged-in users are tracked across sessions. Sellers raise prices when they detect repeat interest. Agents deploy with clean cookie jars, recent search histories, loyalty accounts, and incognito modes to map the cookie-price gradient.",
+    desc: "Session state can change displayed prices, discounts, and availability. Agents use controlled cookie profiles, clean sessions, and repeat-visit states to map session-linked variation.",
   },
   {
     label: "Referrer",
     symbol: "ref",
-    desc: "Where you came from changes what you pay. A visitor arriving from Google Flights or Kayak is a known comparison shopper — prices are adjusted to appear competitive. Agents simulate diverse traffic sources including organic search, price aggregators, and direct navigation.",
+    desc: "Referral source can influence displayed prices and promotions. Agents simulate organic search, price aggregators, and direct navigation to measure referrer-linked variation.",
   },
   {
     label: "Network Tier",
@@ -39,7 +39,7 @@ const TECH_STACK = [
   {
     name: "BrightData Unlocker API",
     role: "Browser fingerprint rotation",
-    desc: "Every probe routes through BrightData infrastructure, rotating device fingerprints, IP addresses, and session parameters to simulate 24 distinct shoppers with true location diversity.",
+    desc: "Every audit routes through BrightData infrastructure, rotating device fingerprints, IP addresses, and session parameters to simulate 24 distinct synthetic buyers with location diversity.",
   },
   {
     name: "DeepSeek / Gemini AI",

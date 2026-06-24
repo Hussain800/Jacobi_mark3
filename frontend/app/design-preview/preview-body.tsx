@@ -49,9 +49,9 @@ export default function PreviewBody() {
             </p>
 
             <p className="hero-para sec" data-reveal>
-              JACOBI deploys 24 shopper profiles against your URL and
-              surfaces the pricing&nbsp;discrimination algorithms hide behind
-              your digital&nbsp;fingerprint.
+              JACOBI deploys 24 synthetic buyer profiles against your URL and
+              surfaces buyer-context pricing&nbsp;variation hidden behind
+              digital identity signals.
             </p>
 
             <form

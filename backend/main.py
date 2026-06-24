@@ -1,8 +1,11 @@
 """
-JACOBI — Adversarial Pricing Topology Probe
-Backend: FastAPI + BrightData MCP (PRO mode)
-24-agent parallel probe in 3 staggered waves of 8.
-Zero infrastructure: in-memory dict, no Celery, no Redis, no SQL.
+JACOBI - pricing integrity audit backend.
+
+FastAPI service for controlled synthetic-buyer audits across geography,
+device, session, language, and referral contexts. Uses BrightData Unlocker
+when configured, falls back to guarded direct HTTP where allowed, persists
+completed probes to Supabase, and keeps active probe sessions in memory for
+frontend polling.
 """
 
 import asyncio
@@ -69,6 +72,11 @@ from brightdata_config import (
 
 
 FAKE_ZONE_NAMES = {"placeholder", "none", "todo", "tbd", "mcp_unlocker", "your_zone_name", "your_key_here"}
+
+
+PROBE_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("PROBE_RATE_LIMIT_WINDOW_SECONDS", "60"))
+PROBE_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("PROBE_RATE_LIMIT_MAX_REQUESTS", "5"))
+_PROBE_RATE_BUCKETS: Dict[str, List[float]] = defaultdict(list)
 
 
 def brightdata_zone_ready() -> bool:
@@ -2166,6 +2174,7 @@ async def health():
 @app.post("/api/probe")
 async def launch_probe(
     input: TargetProbeInput,
+    request: Request,
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Launch a pricing probe.
@@ -2197,6 +2206,8 @@ async def launch_probe(
                 "message": "Sign in to run a live probe.",
             },
         )
+
+    _enforce_probe_rate_limit(request, user)
 
     # SSRF gate: reject internal / non-public / non-http(s) targets before the
     # engine (or its direct-HTTP fallback) ever fetches them. See url_guard.
@@ -2258,6 +2269,8 @@ async def launch_probe(
 
     sid, session = create_session(input.target_url, input.target_name)
     session["tier"] = tier
+    session["user_id"] = user["id"]
+    session["is_public"] = bool(input.publish_to_board)
     session["audit_depth"] = "pro50" if engine_tier == "pro" else "smart24"
     asyncio.create_task(_complete_probe_in_background(
         session=session,
@@ -2317,6 +2330,63 @@ async def _complete_probe_in_background(
             print(f"[PROBE-BG] increment_probe_count failed: {inc_err!r}")
 
 
+def _probe_owner_id(session: dict) -> Optional[str]:
+    return (
+        session.get("user_id")
+        or session.get("owner_user_id")
+        or session.get("_probe_owner_user_id")
+    )
+
+
+def _probe_is_public(session: dict) -> bool:
+    return bool(
+        session.get("is_public")
+        or session.get("is_demo")
+        or session.get("_probe_is_public")
+        or session.get("_probe_is_demo")
+    )
+
+
+def _assert_can_read_probe(
+    session: dict,
+    user: Optional[dict],
+    *,
+    allow_public: bool = False,
+) -> None:
+    owner_id = _probe_owner_id(session)
+    # Legacy/in-test in-memory sessions may predate user_id stamping. Keep them
+    # readable while every newly launched live probe is stamped at launch.
+    if not owner_id:
+        return
+    if user and user.get("id") == owner_id:
+        return
+    if allow_public and _probe_is_public(session):
+        return
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+def _enforce_probe_rate_limit(request: Request, user: Optional[dict]) -> None:
+    if PROBE_RATE_LIMIT_MAX_REQUESTS <= 0 or PROBE_RATE_LIMIT_WINDOW_SECONDS <= 0:
+        return
+    key = user.get("id") if user and user.get("id") else (request.client.host if request.client else "anonymous")
+    now = time.time()
+    bucket = [t for t in _PROBE_RATE_BUCKETS.get(key, []) if now - t < PROBE_RATE_LIMIT_WINDOW_SECONDS]
+    if len(bucket) >= PROBE_RATE_LIMIT_MAX_REQUESTS:
+        retry_after = max(1, math.ceil(PROBE_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+        _PROBE_RATE_BUCKETS[key] = bucket
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "rate_limited",
+                "message": "Too many audit launches. Please wait and try again.",
+                "retry_after": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+    bucket.append(now)
+    _PROBE_RATE_BUCKETS[key] = bucket
+
+
 def build_agent_list(session: dict) -> list:
     agents = []
     for a in session.get("agents", []):
@@ -2344,7 +2414,10 @@ def build_agent_list(session: dict) -> list:
 
 
 @app.get("/api/result/{session_id}")
-async def get_result(session_id: str):
+async def get_result(
+    session_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
     if session_id == "demo_session_static":
         return DEMO_RESULT
     session = SESSION_STORE.get(session_id)
@@ -2356,6 +2429,7 @@ async def get_result(session_id: str):
             print(f"[RESULT] Supabase fetch failed: {e}")
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+    _assert_can_read_probe(session, user, allow_public=False)
     agents = build_agent_list(session)
     return dict(
         session_id=session.get("session_id", session_id), target_url=session.get("target_url"),
@@ -2550,6 +2624,7 @@ async def get_share(session_id: str):
             print(f"[SHARE] Supabase fetch failed: {e}")
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+    _assert_can_read_probe(session, None, allow_public=True)
     agents = build_agent_list(session)
     return dict(
         session_id=session.get("session_id", session_id), target_url=session.get("target_url"),

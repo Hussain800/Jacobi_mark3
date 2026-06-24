@@ -13,6 +13,9 @@ const securityHeaders = [
 
 const nextConfig = {
   images: { unoptimized: true },
+  turbopack: {
+    root: __dirname,
+  },
   async headers() {
     return [
       {

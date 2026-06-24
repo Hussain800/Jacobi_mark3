@@ -448,7 +448,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       pollRef.current = setInterval(async () => {
         if (cancelledRef.current) return;
         try {
-          const r2 = await fetch(`${apiBase}/api/result/${sessionId}`);
+          const r2 = await fetch(`${apiBase}/api/result/${sessionId}`, { headers });
           if (r2.status === 404) {
             stopTimers();
             setErrorMsg("Probe session expired");
@@ -718,7 +718,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             <span className="dot">●</span> JACOBI · probe cockpit
           </span>
           <h1 className="cockpit-h1 serif">
-            Paste a URL. <span className="cobalt-i">Twenty-four shoppers</span> go to work.
+            Paste a URL. <span className="cobalt-i">Twenty-four synthetic buyers</span> go to work.
           </h1>
 
           <form className="probe-instrument cockpit-bar" onSubmit={handleSubmit}>

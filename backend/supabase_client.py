@@ -118,6 +118,15 @@ async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
             # Reconstruct TopologyReport from stored columns + raw_result
             raw = row.get("raw_result") or {}
             raw["session_id"] = session_id
+            # Preserve row-level ownership/visibility metadata for API access
+            # checks. Older raw_result payloads may not include these fields.
+            raw.setdefault("user_id", row.get("user_id"))
+            raw.setdefault("is_public", row.get("is_public", False))
+            raw.setdefault("is_demo", row.get("is_demo", False))
+            raw["_probe_row_id"] = row.get("id")
+            raw["_probe_owner_user_id"] = row.get("user_id")
+            raw["_probe_is_public"] = row.get("is_public", False)
+            raw["_probe_is_demo"] = row.get("is_demo", False)
             return raw
         return None
 

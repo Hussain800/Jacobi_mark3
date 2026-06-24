@@ -132,8 +132,9 @@ async function fallbackResponse(path: string, request: NextRequest, bodyText?: s
   );
 }
 
-async function proxy(request: NextRequest, context: { params: { path?: string[] } }) {
-  const path = (context.params.path || []).join("/");
+async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  const params = await context.params;
+  const path = (params.path || []).join("/");
   const target = `${backendOrigin()}/api/${path}${request.nextUrl.search}`;
   const bodyText = ["GET", "HEAD"].includes(request.method)
     ? undefined

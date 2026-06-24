@@ -115,7 +115,40 @@ def _sanitize_report(report: dict) -> dict:
 _DEMO_IDS = {"demo", "demo_session_static", "demo_analyzed"}
 
 
-async def _get_report(report_id: str) -> dict:
+def _report_owner_id(report: dict) -> Optional[str]:
+    return (
+        report.get("user_id")
+        or report.get("owner_user_id")
+        or report.get("_probe_owner_user_id")
+    )
+
+
+def _report_is_public(report: dict) -> bool:
+    return bool(
+        report.get("is_public")
+        or report.get("is_demo")
+        or report.get("_probe_is_public")
+        or report.get("_probe_is_demo")
+    )
+
+
+def _assert_can_read_report(report: dict, user: Optional[dict], *, allow_public: bool = False) -> None:
+    owner_id = _report_owner_id(report)
+    if not owner_id:
+        return
+    if user and user.get("id") == owner_id:
+        return
+    if allow_public and _report_is_public(report):
+        return
+    raise HTTPException(status_code=404, detail="Report not found")
+
+
+async def _get_report(
+    report_id: str,
+    user: Optional[dict] = None,
+    *,
+    allow_public: bool = False,
+) -> dict:
     """Get report from session store, Supabase, or demo data."""
     if report_id in _DEMO_IDS or report_id.startswith("demo"):
         from main import DEMO_RESULT
@@ -129,20 +162,20 @@ async def _get_report(report_id: str) -> dict:
         except Exception:
             pass
     if not report:
-        # Last-resort: a fallback_* id (Next.js proxy fallback) or any unknown id
-        # still gets a usable PDF from the demo result rather than a dead 404 in
-        # the user's face. Real probes always resolve above.
+        # Last-resort: a fallback_* id (Next.js proxy fallback) still gets a
+        # usable demo PDF. Unknown real ids remain a clean 404.
         if report_id.startswith("fallback") or report_id.startswith("demo"):
             from main import DEMO_RESULT
             return DEMO_RESULT
         raise HTTPException(status_code=404, detail="Report not found")
+    _assert_can_read_report(report, user, allow_public=allow_public)
     return report
 
 
 @router.get("/{report_id}/json")
-async def export_json(report_id: str, _: dict = Depends(_require_pro)):
+async def export_json(report_id: str, user: dict = Depends(_require_pro)):
     """Export as JSON file. Pro-only."""
-    report = await _get_report(report_id)
+    report = await _get_report(report_id, user=user)
     data = _sanitize_report(report)
     json_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
     return StreamingResponse(
@@ -155,9 +188,9 @@ async def export_json(report_id: str, _: dict = Depends(_require_pro)):
 
 
 @router.get("/{report_id}/csv")
-async def export_csv(report_id: str, _: dict = Depends(_require_pro)):
+async def export_csv(report_id: str, user: dict = Depends(_require_pro)):
     """Export agent prices as CSV. Pro-only."""
-    report = await _get_report(report_id)
+    report = await _get_report(report_id, user=user)
     data = _sanitize_report(report)
 
     output = io.StringIO()
@@ -229,7 +262,10 @@ def _derive_display_name(name, url):
 
 
 @router.get("/{report_id}/pdf")
-async def export_pdf(report_id: str):
+async def export_pdf(
+    report_id: str,
+    user: Optional[dict] = Depends(get_optional_user),
+):
     """Export the probe as a research-grade, LaTeX-article-style PDF report.
 
     Pure white background, black Times-Roman serif text, a centered title block
@@ -241,7 +277,7 @@ async def export_pdf(report_id: str):
     or absent, agent/price lists may be empty, and divisions are guarded. Missing
     values render a clean "n/a" rather than a fabricated number.
     """
-    report = await _get_report(report_id)
+    report = await _get_report(report_id, user=user)
     data = _sanitize_report(report)
 
     # ------------------------------------------------------------------ helpers
@@ -377,7 +413,7 @@ async def export_pdf(report_id: str):
     pei_interp = _pei.get("interpretation") or ""
     pei_basis = _pei.get("basis") or ""
 
-    # Native (on-page) currency — the value the shopper actually sees. USD below
+    # Native (on-page) currency — the value the synthetic buyer actually sees. USD below
     # is the normalized comparison basis. All None-safe.
     native_ccy = data.get("native_currency")
     native_bp = _num(data.get("native_baseline_price"))
@@ -869,7 +905,7 @@ async def export_pdf(report_id: str):
             f"Table 3 lists raw price evidence captured directly from the rendered "
             f"page for {len(ev_agents)} of {total_agents} identities. Every identity "
             f"requests the <i>same product</i>; the buyer columns describe the "
-            f"simulated shopper &mdash; their location, device, and browser language "
+            f"synthetic buyer &mdash; its location, device, and browser language "
             f"&mdash; not the item being priced.", sBody))
         e_head = [
             Paragraph("Agent", sTblHead),

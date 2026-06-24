@@ -140,12 +140,12 @@ export default function LandingPage() {
         <div className="hero-grid wrap">
           <div className="hero-copy">
             <div className="chip" data-reveal>
-              Evidence-grade pricing intelligence
+              Controlled synthetic-buyer audits / evidence-grade
             </div>
 
             <h1 className="hero-h1" data-reveal>
-              Your browser is a{" "}
-              <span className="serif-i hero-accent">bargaining&nbsp;tool</span>
+              See your prices the way a{" "}
+              <span className="serif-i hero-accent">regulator&nbsp;will</span>
               <span className="hero-sub-rule" />
             </h1>
 
@@ -157,7 +157,7 @@ export default function LandingPage() {
             <p className="hero-para sec" data-reveal>
               JACOBI runs controlled buyer-context probes against your URL,
               compares what each identity is shown, captures the raw evidence, and
-              exports an audit-ready report.
+              exports an audit-ready report for compliance, MAP, and pricing teams.
             </p>
 
             <form
@@ -181,13 +181,13 @@ export default function LandingPage() {
                   inputMode="url"
                   value={heroUrl}
                   onChange={(e) => setHeroUrl(e.target.value)}
-                  placeholder="paste a flight, hotel or product URL"
+                  placeholder="paste a product, checkout, or pricing-page URL"
                   spellCheck="false"
                   autoComplete="off"
-                  aria-label="Paste a URL to probe"
+                  aria-label="Paste a URL to audit"
                 />
                 <button className="pi-submit" type="submit">
-                  Run a pricing audit <span className="pi-arrow">→</span>
+                  Run a pricing audit <span className="pi-arrow">&rarr;</span>
                 </button>
               </div>
               <span className="pi-rule" />
@@ -202,9 +202,9 @@ export default function LandingPage() {
 
             <div className="hero-proof label-mono" data-reveal>
               <a href="#case-studies" className="hero-secondary-cta">View a sample report</a>
-              <span className="sep">·</span>{" "}
-              Smart 24 — a 24-agent evidence matrix <span className="sep">·</span>{" "}
-              native-currency evidence
+              <span className="sep">/</span>{" "}
+              Smart 24 - a 24-agent evidence matrix <span className="sep">/</span>{" "}
+              public-web only
             </div>
           </div>
 
@@ -214,7 +214,7 @@ export default function LandingPage() {
             <div className="globe-readout mono">
               <div className="gr-row">
                 <span className="gr-led" />
-                <span id="gr-status">sample deployment</span>
+                <span id="gr-status">sample audit</span>
               </div>
               <div className="gr-row gr-count">
                 <span id="gr-count">00</span>
@@ -238,13 +238,13 @@ export default function LandingPage() {
             <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
               24&ndash;50
             </div>
-            <div className="label-mono">Identities per probe</div>
+            <div className="label-mono">Synthetic buyers per audit</div>
           </div>
           <div className="stat" data-reveal>
             <div className="stat-num tnum">
               <span data-count="4">0</span>
             </div>
-            <div className="label-mono">Discrimination vectors</div>
+            <div className="label-mono">Context vectors tested</div>
           </div>
           <div className="stat" data-reveal>
             <div className="stat-num tnum">
@@ -256,7 +256,7 @@ export default function LandingPage() {
             <div className="stat-num serif" style={{ color: "var(--cobalt-bright)" }}>
               ~60s
             </div>
-            <div className="label-mono">Typical probe time</div>
+            <div className="label-mono">Typical audit time</div>
           </div>
         </div>
       </section>
@@ -319,14 +319,15 @@ export default function LandingPage() {
               <span className="dot">●</span> The mechanism
             </span>
             <h2 className="display sec-title">
-              The anatomy of a{" "}
+              The anatomy of{" "}
               <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                probe
+                personalized pricing
               </span>
             </h2>
             <p className="sec-lede sec">
-              Watch the price disassemble. Each axis of your digital identity
-              peels away to reveal what was actually driving the&nbsp;markup.
+              Watch the price disassemble. Each buyer-context signal peels away
+              to reveal what actually moved the price — the mechanism a
+              surveillance-pricing audit captures.
             </p>
           </div>
 
@@ -414,8 +415,8 @@ export default function LandingPage() {
               </div>
 
               <div className="mech-caption" aria-hidden="true">
-                <strong>Scroll.</strong> The price you see is five decisions
-                deep. JACOBI peels them&nbsp;back.
+                <strong>Scroll.</strong> The price a buyer sees is five
+                decisions deep. JACOBI peels them&nbsp;back.
               </div>
             </div>
           </div>
@@ -424,19 +425,19 @@ export default function LandingPage() {
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">01</div>
               <div className="phase-ico" data-ico="target">{PhaseIcons.target}</div>
-              <h3 className="phase-title">Submit your target</h3>
+              <h3 className="phase-title">Define the audit</h3>
               <p className="phase-body sec">
-                Drop any product, flight, or booking URL into the scanner. If
-                it carries a price tag, JACOBI can find its real range.
+                Add the product, checkout, or pricing URL you want to audit.
+                If it carries a price, JACOBI can measure how it varies.
               </p>
             </div>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">02</div>
               <div className="phase-ico" data-ico="swarm">{PhaseIcons.swarm}</div>
-              <h3 className="phase-title">The swarm launches</h3>
+              <h3 className="phase-title">Synthetic buyers deploy</h3>
               <p className="phase-body sec">
-                24 identities disperse across four discrimination axes —
-                location, device, cookies, referrer — striking the URL in
+                24 controlled buyer profiles query the same URL across four
+                context axes — geography, device, cookies, referral — in
                 coordinated waves.
               </p>
             </div>
@@ -445,17 +446,19 @@ export default function LandingPage() {
               <div className="phase-ico" data-ico="patterns">{PhaseIcons.patterns}</div>
               <h3 className="phase-title">Patterns emerge</h3>
               <p className="phase-body sec">
-                Every response is cross-referenced. Statistical outliers
-                become evidence. Pricing bias becomes readable data.
+                Every response is cross-referenced. Statistically significant
+                variation becomes evidence. Personalized pricing becomes
+                readable data.
               </p>
             </div>
             <div className="phase card card-hairtop" data-reveal>
               <div className="phase-n mono">04</div>
               <div className="phase-ico" data-ico="verdict">{PhaseIcons.verdict}</div>
-              <h3 className="phase-title">Read the verdict</h3>
+              <h3 className="phase-title">Get the evidence</h3>
               <p className="phase-body sec">
-                A plain-English breakdown of what you'd save with a different
-                profile — and exactly which vector was used to overcharge&nbsp;you.
+                A plain-English finding: how much the price moved, which
+                context vector drove it, and an evidence-grade report for
+                compliance or enforcement.
               </p>
             </div>
           </div>
@@ -477,8 +480,8 @@ export default function LandingPage() {
               </span>
             </h2>
             <p className="sec-lede sec">
-              Five identities, five prices. The same seat on the same flight —
-              and the gap between them.
+              Five synthetic buyers, five prices. The same seat on the same
+              flight — the variation a surveillance-pricing audit captures.
             </p>
           </div>
 
@@ -521,7 +524,7 @@ export default function LandingPage() {
               <div className="topology-badge">
                 <span className="tb-dot" /> Progressive
               </div>
-              <div className="ev-spread-label label-mono">Hidden premium</div>
+              <div className="ev-spread-label label-mono">Observed variation</div>
               <div className="ev-spread serif tnum">
                 +$<span data-count="144" data-evidence>0</span>
               </div>
@@ -529,7 +532,7 @@ export default function LandingPage() {
 
               <div className="ev-index">
                 <div className="evi-top">
-                  <span className="label-mono">Discrimination index</span>
+                  <span className="label-mono">Variation index</span>
                   <span className="evi-val mono">
                     71<span className="muted">/100</span>
                   </span>
@@ -543,13 +546,13 @@ export default function LandingPage() {
               </div>
 
               <p className="ev-note sec">
-                An <span style={{ color: "var(--over)" }}>iPhone in Manhattan</span> paid{" "}
+                An <span style={{ color: "var(--over)" }}>iPhone in Manhattan</span> was shown{" "}
                 <span style={{ color: "var(--over)" }}>$144 more</span> than an{" "}
                 <span className="good">Android in rural Iowa</span> — same cabin, same date.
                 The driver was <strong style={{ color: "var(--text)" }}>location</strong>.
               </p>
               <a className="btn btn-ghost ev-cta" href="/chat">
-                See the full topology →
+                See the full audit →
               </a>
             </aside>
           </div>
@@ -564,17 +567,19 @@ export default function LandingPage() {
               <span className="dot">●</span> Why it matters
             </span>
             <h2 className="display why-title">
-              Pricing discrimination
+              Personalized pricing
               <br />
-              is the{" "}
+              is now a{" "}
               <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                norm
+                legal risk
               </span>
               .
             </h2>
             <p className="why-lede sec">
-              Companies build algorithms to read your willingness to pay from your browser.
-              JACOBI makes those algorithms&nbsp;visible.
+              Companies increasingly set prices from a buyer's location, device,
+              and history. Regulators, plaintiffs, and journalists are watching —
+              JACOBI gives compliance teams (and brands protecting MAP) the same
+              outside-in view first.
             </p>
           </div>
 
@@ -584,7 +589,7 @@ export default function LandingPage() {
               and a browser&nbsp;setting.&rdquo;
             </blockquote>
             <figcaption className="callout-cite label-mono">
-              — observed across independent academic studies
+              — the pattern behind 2026's surveillance-pricing lawsuits
             </figcaption>
           </figure>
         </div>
@@ -595,15 +600,15 @@ export default function LandingPage() {
         <div className="wrap cta-wrap">
           <div className="cta-aura" aria-hidden="true" />
           <h2 className="display cta-title" data-reveal>
-            Stop being <span style={{ color: "var(--over)" }}>priced</span>.
+            Stop <span style={{ color: "var(--over)" }}>guessing</span>.
             Start{" "}
             <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-              probing
+              auditing
             </span>
             .
           </h2>
           <p className="cta-sub sec mono" data-reveal>
-            24 identities. Four vectors. One URL. Paste your first target.
+            24 synthetic buyers. Four context vectors. One URL. Run your first audit.
           </p>
           <form
             className="probe-instrument cta-bar"
@@ -625,13 +630,13 @@ export default function LandingPage() {
                 inputMode="url"
                 value={ctaUrl}
                 onChange={(e) => setCtaUrl(e.target.value)}
-                placeholder="paste a URL to launch the probe"
+                placeholder="paste a URL to run a pricing audit"
                 spellCheck="false"
                 autoComplete="off"
-                aria-label="Paste a URL to launch the probe"
+                aria-label="Paste a URL to run a pricing audit"
               />
               <button className="pi-submit" type="submit">
-                Launch probe <span className="pi-arrow">→</span>
+                Run audit <span className="pi-arrow">→</span>
               </button>
             </div>
             <span className="pi-rule" />

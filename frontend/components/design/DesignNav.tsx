@@ -25,10 +25,11 @@ import { createClient } from "../../lib/supabase/client";
 import BrandLockup from "./BrandLockup";
 
 const LINKS: { label: string; href: string }[] = [
-  { label: "Probe",   href: "/chat" },
-  { label: "History", href: "/history" },
-  { label: "Board",   href: "/leaderboard" },
-  { label: "Pricing", href: "/pricing" },
+  { label: "Dashboard", href: "/dashboard" },
+  { label: "Audit",     href: "/chat" },
+  { label: "History",   href: "/history" },
+  { label: "Board",     href: "/leaderboard" },
+  { label: "Pricing",   href: "/pricing" },
 ];
 
 export default function DesignNav() {

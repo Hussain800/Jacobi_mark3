@@ -158,8 +158,8 @@ export default function LeaderboardPage() {
                 </span>
               </h1>
               <p className="sec-lede sec">
-                Every public probe, ranked by how aggressively the target
-                prices by identity. Updated as the network reports&nbsp;in.
+                Every public audit, ranked by how strongly the target varies
+                price by buyer context. Updated as the network reports&nbsp;in.
               </p>
             </div>
 
@@ -168,7 +168,7 @@ export default function LeaderboardPage() {
               <div className="board-stats" data-reveal>
                 <div className="bstat">
                   <div className="bstat-num serif tnum">{stats.total.toLocaleString()}</div>
-                  <div className="label-mono">probes logged</div>
+                  <div className="label-mono">audits logged</div>
                 </div>
                 <div className="bstat">
                   <div className="bstat-num serif tnum">
@@ -217,10 +217,10 @@ export default function LeaderboardPage() {
                 <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
                   {error
                     ? "The leaderboard service didn't respond. If you have backend access, check /api/leaderboard."
-                    : "The board fills as people publish their probes. Run one to be the first on the board."}
+                    : "The board fills as people publish their audits. Run one to be the first on the board."}
                 </p>
                 <Link href="/chat" className="btn btn-primary">
-                  Run a probe →
+                  Run an audit →
                 </Link>
               </div>
             )}

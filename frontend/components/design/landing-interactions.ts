@@ -156,7 +156,7 @@ export function useTyped() {
     const reduce = prefersReducedMotion();
     const el = document.getElementById("typed");
     if (!el) return;
-    const full = "Controlled probes. One URL. The truth about what you pay.";
+    const full = "24 synthetic buyers. One URL. Evidence-grade pricing audits.";
     if (reduce) {
       el.textContent = full;
       return;
@@ -319,11 +319,11 @@ export function useGlobe() {
           const statusEl = document.getElementById("gr-status");
           const countEl  = document.getElementById("gr-count");
           if (!countEl) return;
-          // Honest labels: this is a cinematic demo cycle, not a live probe.
-          if (statusEl) statusEl.textContent = "sample deployment";
+          // Honest labels: this is a cinematic demo cycle, not a live audit.
+          if (statusEl) statusEl.textContent = "sample audit";
           if (reduce) {
             countEl.textContent = "24";
-            if (statusEl) statusEl.textContent = "identity grid prepared";
+            if (statusEl) statusEl.textContent = "audit grid prepared";
             return;
           }
           const total = AGENTS.length;
@@ -339,7 +339,7 @@ export function useGlobe() {
               if (countEl) countEl.textContent = String(n).padStart(2, "0");
             }
             if (p < 1) requestAnimationFrame(tick);
-            else if (statusEl) statusEl.textContent = "identity grid prepared";
+            else if (statusEl) statusEl.textContent = "audit grid prepared";
           }
           requestAnimationFrame(tick);
         }, 900);

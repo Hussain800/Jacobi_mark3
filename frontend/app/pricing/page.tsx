@@ -150,16 +150,16 @@ export default function PricingPage() {
                 <span className="dot">●</span> Pricing
               </span>
               <h1 className="display sec-title">
-                Run the truth,{" "}
+                Run your first audit,{" "}
                 <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
                   free
                 </span>
                 .
               </h1>
               <p className="sec-lede sec">
-                Smart 24 is live today — a 24-agent evidence audit, free to start.
+                Smart 24 is live today - a 24-agent evidence audit, free to start.
                 The 50-agent Pro matrix is in private beta. Enterprise teams can
-                contact us for a custom audit.
+                contact us for custom compliance and brand-protection audits.
               </p>
               {/* The Stripe test-mode banner that used to live here was
                   removed per product direction: customer-facing UI should
@@ -193,17 +193,17 @@ export default function PricingPage() {
                   </p>
                 </div>
                 <Link className="btn btn-ghost plan-cta" href="/chat">
-                  Start probing
+                  Start auditing
                 </Link>
                 <ul className="plan-feats">
-                  <li><span className="pf-check">✓</span> <strong>Smart 24 audit</strong> — 24-agent matrix</li>
-                  <li><span className="pf-check">✓</span> Evidence table with raw on-page text</li>
-                  <li><span className="pf-check">✓</span> Native-currency price display</li>
-                  <li><span className="pf-check">✓</span> Basic report export</li>
-                  <li><span className="pf-check">✓</span> Limited monthly scans</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Pro 50 advanced matrix</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Controlled language pairs</li>
-                  <li className="muted-feat"><span className="pf-dash">—</span> Advanced PDF report</li>
+                  <li><span className="pf-check">&#10003;</span> <strong>Smart 24 audit</strong> - 24-agent matrix</li>
+                  <li><span className="pf-check">&#10003;</span> Evidence table with raw on-page text</li>
+                  <li><span className="pf-check">&#10003;</span> Native-currency price display</li>
+                  <li><span className="pf-check">&#10003;</span> Basic report export</li>
+                  <li><span className="pf-check">&#10003;</span> Limited monthly scans</li>
+                  <li className="muted-feat"><span className="pf-dash">-</span> Pro 50 advanced matrix</li>
+                  <li className="muted-feat"><span className="pf-dash">-</span> Controlled language pairs</li>
+                  <li className="muted-feat"><span className="pf-dash">-</span> Advanced PDF report</li>
                 </ul>
               </div>
 
@@ -239,8 +239,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ month</span>
                   </div>
                   <p className="plan-tag sec">
-                    The 50-agent advanced matrix — in private beta while Smart 24
-                    is in early access. Not yet on public sale.
+                    The 50-agent advanced matrix for compliance, brand-protection,
+                    and pricing teams - in private beta while Smart 24 is live.
                   </p>
                 </div>
                 {isPro ? (
@@ -283,13 +283,13 @@ export default function PricingPage() {
                   </p>
                 )}
                 <ul className="plan-feats">
-                  <li><span className="pf-check pro">✓</span> <strong>Pro 50 advanced matrix</strong> — 50-agent audit</li>
-                  <li><span className="pf-check pro">✓</span> More controlled language pairs (EN/AR/HI/FR)</li>
-                  <li><span className="pf-check pro">✓</span> Deeper cookie, referrer, device &amp; geo coverage</li>
-                  <li><span className="pf-check pro">✓</span> Advanced PDF report export</li>
-                  <li><span className="pf-check pro">✓</span> Higher monthly scan limits</li>
-                  <li><span className="pf-check pro">✓</span> Probe history &amp; private share links</li>
-                  <li><span className="pf-check pro">✓</span> Everything in Free</li>
+                  <li><span className="pf-check pro">&#10003;</span> <strong>Pro 50 advanced matrix</strong> - 50-agent audit</li>
+                  <li><span className="pf-check pro">&#10003;</span> More controlled language pairs (EN/AR/HI/FR)</li>
+                  <li><span className="pf-check pro">&#10003;</span> Deeper cookie, referrer, device &amp; geo coverage</li>
+                  <li><span className="pf-check pro">&#10003;</span> Evidence-grade PDF report export</li>
+                  <li><span className="pf-check pro">&#10003;</span> Higher monthly scan limits</li>
+                  <li><span className="pf-check pro">&#10003;</span> Audit history &amp; private share links</li>
+                  <li><span className="pf-check pro">&#10003;</span> Everything in Free</li>
                 </ul>
               </div>
 
@@ -304,8 +304,8 @@ export default function PricingPage() {
                     <span className="plan-per mono">/ custom</span>
                   </div>
                   <p className="plan-tag sec">
-                    For research teams, regulators, and journalism rooms
-                    that need bulk volume and a paper trail.
+                    For brands and compliance teams that need bulk volume,
+                    API, and a defensible paper trail.
                   </p>
                 </div>
                 <a
@@ -317,10 +317,10 @@ export default function PricingPage() {
                 </a>
                 <ul className="plan-feats">
                   <li><span className="pf-check pro">✓</span> Everything in Pro</li>
-                  <li><span className="pf-check pro">✓</span> <strong>100-agent custom audit</strong> (bespoke, contact us)</li>
-                  <li><span className="pf-check pro">✓</span> Custom geos &amp; proxy profiles</li>
-                  <li><span className="pf-check pro">✓</span> API access &amp; custom reporting</li>
-                  <li><span className="pf-check pro">✓</span> Team workspaces</li>
+                  <li><span className="pf-check pro">&#10003;</span> <strong>Custom audit volume</strong></li>
+                  <li><span className="pf-check pro">&#10003;</span> Custom buyer-context sets</li>
+                  <li><span className="pf-check pro">&#10003;</span> Team workspaces + API access</li>
+                  <li><span className="pf-check pro">&#10003;</span> Custom reporting</li>
                   <li><span className="pf-check pro">✓</span> Dedicated support</li>
                   <li><span className="pf-check pro">✓</span> SLA + custom terms</li>
                 </ul>

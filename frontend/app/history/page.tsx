@@ -170,11 +170,11 @@ export default function HistoryPage() {
               <h1 className="display sec-title">
                 Your{" "}
                 <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  probe history
+                  audit history
                 </span>
               </h1>
               <p className="sec-lede sec">
-                Every probe you've run, with topology, spread, and the receipts.
+                Every audit you've run, with topology, spread, and the evidence.
               </p>
             </div>
 
@@ -235,10 +235,10 @@ export default function HistoryPage() {
                   The logbook is empty
                 </div>
                 <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
-                  Probe a URL to start building your evidence trail.
+                  Audit a URL to start building your evidence trail.
                 </p>
                 <Link href="/chat" className="btn btn-primary">
-                  Start a probe →
+                  Start an audit →
                 </Link>
               </div>
             )}

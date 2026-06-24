@@ -231,11 +231,11 @@ const VECTOR_INFO: Record<string, { label: string; what: string }> = {
 };
 
 const TOPO: Record<string, [string, string, string]> = {
-  uniform:     ["#3ad79f", "Uniform",     "Prices are roughly the same across every profile we tested. Nothing meaningful to dodge."],
-  selective:   ["#d8b06a", "Selective",   "One variable is driving most of the price difference. Worth changing that one signal."],
-  progressive: ["#ff9d52", "Progressive", "Several variables stack together. The more 'premium' your fingerprint looks, the more you pay."],
-  aggressive:  ["#ff5468", "Aggressive",  "Multiple strong signals push the price up sharply. Changing your profile saves a lot."],
-  insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert price discrimination. We've shown the prices we captured; try a product page or a specific listing for a full audit."],
+  uniform:     ["#3ad79f", "Uniform",     "Prices are roughly the same across every buyer profile tested. No material variation detected."],
+  selective:   ["#d8b06a", "Selective",   "One buyer-context variable is driving most of the observed price difference."],
+  progressive: ["#ff9d52", "Progressive", "Several buyer-context variables stack together; premium-looking profiles were shown higher prices."],
+  aggressive:  ["#ff5468", "Aggressive",  "Multiple strong buyer-context signals correlate with materially higher observed prices."],
+  insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert buyer-context pricing variation. We have shown the prices captured; try a product page or a specific listing for a full audit."],
   indeterminate: ["#94a3b8", "Indeterminate", "Prices varied across profiles, but no buyer-context signal (location, device, cookies, referrer) significantly moved the price — so the spread isn't attributable to discrimination. On travel sites it usually reflects different rooms or availability across profiles, not the same product priced differently."],
 };
 
@@ -489,7 +489,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               setErrorMsg(
                 blocked
                   ? "This site blocked our agents at the perimeter. Try one of the case studies below to see how JACOBI works."
-                  : data.error || "Probe failed."
+                  : data.error || "Audit failed."
               );
               setReport(data);
               setPhase("error");
@@ -683,7 +683,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       if (r.status === 401) {
         alert("Sign in to download the PDF report.");
       } else if (r.status === 404) {
-        alert("Report not found. Run a probe first, then download.");
+        alert("Report not found. Run an audit first, then download.");
       } else if (!r.ok) {
         alert("Download failed. Please try again.");
       } else {
@@ -736,7 +736,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 autoComplete="off"
               />
               <button className="pi-submit" type="submit">
-                Probe <span className="pi-arrow">→</span>
+                Run audit <span className="pi-arrow">&rarr;</span>
               </button>
             </div>
             <span className="pi-rule" />
@@ -1120,7 +1120,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   }}>
                     Limited coverage — only {verdict.pricedAgents ?? "a few"} of{" "}
                     {verdict.configuredAgents ?? "the"} profiles returned a comparable price
-                    on this site, which isn't enough to assert price discrimination. We've
+                    on this site, which is not enough to assert buyer-context pricing variation. We've
                     shown the prices we captured; try a product page or a specific listing
                     for a full audit.
                   </div>
@@ -1163,7 +1163,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     <> · {verdict.evidenceCount} with evidence</>
                   )}
                 </div>
-                <div className="ev-spread-label label-mono">Hidden premium · what you're overpaying</div>
+                <div className="ev-spread-label label-mono">Observed variation / highest vs lowest</div>
                 <div className="ev-spread serif tnum" style={{ marginBottom: 10 }}>
                   +${verdict.spread}
                 </div>

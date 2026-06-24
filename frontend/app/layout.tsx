@@ -3,13 +3,13 @@ import "./globals.css";
 import RouteChrome from "../components/route-chrome";
 
 export const metadata: Metadata = {
-  title: "JACOBI — Pricing Topology Probe",
+  title: "JACOBI — Price Integrity Intelligence",
   description:
-    "24 synthetic shoppers. One URL. The truth about what you pay. JACOBI exposes the pricing discrimination algorithms hide behind your digital fingerprint.",
+    "JACOBI runs controlled synthetic-buyer audits to detect personalized-pricing exposure, MAP undercutting, and gray-market drift — and produces evidence-grade reports for compliance and brand-protection teams.",
   openGraph: {
-    title: "JACOBI — Pricing Topology Probe",
+    title: "JACOBI — Price Integrity Intelligence",
     description:
-      "24 synthetic shoppers. One URL. The truth about what you pay.",
+      "Controlled synthetic-buyer pricing audits. Evidence-grade price-integrity reports for compliance and brand-protection teams.",
     type: "website",
   },
 };

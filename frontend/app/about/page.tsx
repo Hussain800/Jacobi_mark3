@@ -2,31 +2,31 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "About JACOBI — Adversarial Pricing Topology Probe",
+  title: "About JACOBI — Price Integrity Intelligence",
   description:
-    "24-agent parallel probe engine that reveals hidden pricing algorithms via BrightData MCP.",
+    "A 24-agent synthetic-buyer audit engine that detects personalized-pricing exposure and MAP/gray-market drift, and produces evidence-grade reports.",
 };
 
 const VARIABLES = [
   {
     label: "Location",
     symbol: "geo",
-    desc: "Pricing engines geolocate every visitor. A user connecting from Manhattan often sees higher prices than one from rural Kansas. JACOBI agents are distributed across residential proxies in dozens of cities, capturing the full geography of price variation.",
+    desc: "Pricing engines can vary offers by geography. JACOBI runs controlled residential identities across cities and regions to measure location-linked price variation without making legal conclusions.",
   },
   {
     label: "Device",
     symbol: "dev",
-    desc: "Your device fingerprint signals your willingness to pay. An iPhone 16 Pro Max sends a different economic signal than a budget Android phone. Agents rotate through operating systems, browsers, and hardware profiles to isolate device-based price gaps.",
+    desc: "Device and browser fingerprints can affect what a pricing surface returns. Agents rotate operating systems, browsers, and hardware profiles to isolate device-linked price variation.",
   },
   {
     label: "Cookies",
     symbol: "ck",
-    desc: "Return visitors and logged-in users are tracked across sessions. Sellers raise prices when they detect repeat interest. Agents deploy with clean cookie jars, recent search histories, loyalty accounts, and incognito modes to map the cookie-price gradient.",
+    desc: "Session state can change displayed prices, discounts, and availability. Agents use controlled cookie profiles, clean sessions, and repeat-visit states to map session-linked variation.",
   },
   {
     label: "Referrer",
     symbol: "ref",
-    desc: "Where you came from changes what you pay. A visitor arriving from Google Flights or Kayak is a known comparison shopper — prices are adjusted to appear competitive. Agents simulate diverse traffic sources including organic search, price aggregators, and direct navigation.",
+    desc: "Referral source can influence displayed prices and promotions. Agents simulate organic search, price aggregators, and direct navigation to measure referrer-linked variation.",
   },
   {
     label: "Network Tier",
@@ -39,12 +39,12 @@ const TECH_STACK = [
   {
     name: "BrightData Unlocker API",
     role: "Browser fingerprint rotation",
-    desc: "Every probe routes through BrightData infrastructure, rotating device fingerprints, IP addresses, and session parameters to simulate 24 distinct shoppers with true location diversity.",
+    desc: "Every audit routes through BrightData infrastructure, rotating device fingerprints, IP addresses, and session parameters to simulate 24 distinct synthetic buyers with location diversity.",
   },
   {
     name: "DeepSeek / Gemini AI",
     role: "Price extraction & analysis",
-    desc: "Dual-model AI pipeline: DeepSeek extracts structured price data from raw HTML, while Gemini evaluates differentials and generates plain-language verdicts on discrimination severity.",
+    desc: "Dual-model AI pipeline: DeepSeek extracts structured price data from raw HTML, while Gemini evaluates differentials and generates plain-language findings on price-variation severity.",
   },
   {
     name: "FastAPI",
@@ -87,7 +87,7 @@ export default function AboutPage() {
           </h1>
 
           <p className="text-sm sm:text-base text-[#888] leading-relaxed max-w-lg mx-auto">
-            24-agent adversarial pricing topology probe
+            24-agent synthetic-buyer audit engine for price integrity
           </p>
         </div>
       </section>
@@ -99,7 +99,7 @@ export default function AboutPage() {
             What is JACOBI
           </span>
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-8 leading-[1.15]">
-            Price discrimination is real and invisible.
+            Personalized pricing is real, invisible, and now a liability.
           </h2>
 
           <div className="space-y-6 text-sm text-[#999] leading-relaxed">
@@ -123,11 +123,11 @@ export default function AboutPage() {
             </p>
 
             <p>
-              AI analyzes the results and tells you what to do. A dual-model
+              AI analyzes the results and produces evidence. A dual-model
               pipeline (DeepSeek and Gemini) compares prices across all 24
               profiles, classifies the severity of any pricing spread, and
-              delivers a plain-English verdict: exactly how much you are
-              overpaying and exactly what to do about it.
+              delivers a plain-English finding: which buyer context saw which
+              price, and an evidence-grade record for compliance or enforcement.
             </p>
           </div>
         </div>
@@ -228,7 +228,7 @@ export default function AboutPage() {
             </div>
             <span className="text-sm font-semibold text-white">JACOBI</span>
             <span className="text-[9px] text-[#555]">
-              pricing transparency
+              price integrity intelligence
             </span>
           </div>
           <div className="flex items-center gap-6 text-[11px]">
@@ -236,7 +236,7 @@ export default function AboutPage() {
               href="/chat"
               className="text-[#666] hover:text-white transition-colors"
             >
-              Probe
+              Audit
             </Link>
             <Link
               href="/about"

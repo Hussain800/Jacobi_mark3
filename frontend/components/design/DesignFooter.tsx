@@ -16,13 +16,14 @@ export default function DesignFooter() {
         <div className="footer-brand">
           <BrandLockup size={18} />
           <p className="footer-desc sec">
-            24-agent adversarial pricing probe. Illuminating the hidden
-            algorithms that decide what you pay&nbsp;online.
+            Controlled synthetic-buyer pricing audits. Evidence-grade detection
+            of personalized-pricing exposure, MAP undercutting, and gray-market
+            drift.
           </p>
         </div>
         <nav className="footer-col">
           <span className="label-mono">Product</span>
-          <Link className="nav-link" href="/chat">New probe</Link>
+          <Link className="nav-link" href="/chat">Run audit</Link>
           <Link className="nav-link" href="/leaderboard">Leaderboard</Link>
           <Link className="nav-link" href="/history">History</Link>
           <Link className="nav-link" href="/pricing">Pricing</Link>
@@ -37,7 +38,7 @@ export default function DesignFooter() {
       </div>
       <div className="wrap footer-bottom">
         <p className="footer-tag">
-          The internet prices you. JACOBI prices&nbsp;back.
+          Every price leaves evidence. JACOBI&nbsp;captures it.
         </p>
         <span className="label-mono">© 2026 JACOBI · all rights reserved</span>
       </div>

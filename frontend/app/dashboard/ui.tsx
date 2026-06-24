@@ -51,6 +51,7 @@ const TABS = [
   { label: "Overview", href: "/dashboard/overview" },
   { label: "Portfolio", href: "/dashboard/portfolio" },
   { label: "Findings", href: "/dashboard/findings" },
+  { label: "Evidence", href: "/dashboard/evidence" },
   { label: "Run audit", href: "/dashboard/audits" },
 ];
 

@@ -40,6 +40,7 @@ from url_guard import validate_public_url, UnsafeUrlError
 from enterprise_access import EnterprisePermissionError
 from enterprise_store import (
     EnterpriseAccessError,
+    EnterpriseUnavailableError,
     EnterpriseValidationError,
     claim_next_scan_job as enterprise_claim_next_scan_job,
     claim_scan_job as enterprise_claim_scan_job,
@@ -2794,6 +2795,8 @@ def _enterprise_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=403, detail={"code": "forbidden", "message": str(exc)})
     if isinstance(exc, EnterpriseValidationError):
         return HTTPException(status_code=400, detail={"code": "invalid_request", "message": str(exc)})
+    if isinstance(exc, EnterpriseUnavailableError):
+        return HTTPException(status_code=503, detail={"code": "supabase_unconfigured", "message": str(exc)})
     return HTTPException(status_code=500, detail={"code": "enterprise_store_error", "message": "Enterprise workspace operation failed."})
 
 

@@ -83,10 +83,14 @@ async def save_probe(
         return await asyncio.to_thread(_insert, data)
     except Exception as e:
         msg = str(e)
-        # Progressively drop optional columns if the migration hasn't run yet.
+        # Progressively drop OPTIONAL board-visibility columns if that migration
+        # hasn't run yet. user_id is intentionally NOT droppable (P0-3): saving a
+        # probe without its owner creates an ownerless row — an access-control
+        # and privacy hazard — so if the owner column is missing we FAIL the save
+        # (return None) rather than silently persist an unowned probe.
         fallback = dict(data)
         retried = False
-        for col in ("is_public", "is_demo", "user_id"):
+        for col in ("is_public", "is_demo"):
             if col in msg and "column" in msg and col in fallback:
                 fallback.pop(col, None)
                 retried = True
@@ -96,6 +100,10 @@ async def save_probe(
             except Exception as e2:
                 print(f"[SUPABASE] Failed to save probe (fallback): {e2}")
                 return None
+        if "user_id" in data and "user_id" in msg and "column" in msg:
+            print("[SUPABASE] Refusing to save ownerless probe: 'user_id' column "
+                  "missing — apply migration 202605262030 before production use.")
+            return None
         print(f"[SUPABASE] Failed to save probe: {e}")
         return None
 

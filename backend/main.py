@@ -2954,31 +2954,55 @@ async def create_enterprise_scan_job(
         raise _enterprise_error(exc)
 
 
+async def _drain_scan_worker(max_jobs: int, max_targets_per_job: int, worker_id: str) -> dict:
+    """Claim and process up to ``max_jobs`` queued scan jobs. Shared by the POST
+    (manual/scripted) and GET (Vercel cron) worker entrypoints."""
+    processed = []
+    for _ in range(max(1, max_jobs)):
+        claim = await enterprise_claim_next_scan_job(worker_id)
+        if not claim.get("claimed"):
+            break
+        job = claim.get("scan_job") or {}
+        user_id = claim.get("user_id") or job.get("requested_by")
+        if not user_id or not job.get("id"):
+            processed.append({"claimed": True, "error": "Claimed job missing requester or id."})
+            continue
+        result = await _run_enterprise_scan_job(
+            user_id,
+            job["id"],
+            already_claimed=True,
+            max_targets=max_targets_per_job,
+        )
+        processed.append(result)
+    return {"processed_jobs": processed, "count": len(processed)}
+
+
 @app.post("/api/enterprise/scan-worker/run")
 async def run_enterprise_scan_worker(
     input: ScanWorkerRunInput,
     request: Request,
 ):
     _require_worker_secret(request)
-    processed = []
     try:
-        for _ in range(input.max_jobs):
-            claim = await enterprise_claim_next_scan_job(input.worker_id)
-            if not claim.get("claimed"):
-                break
-            job = claim.get("scan_job") or {}
-            user_id = claim.get("user_id") or job.get("requested_by")
-            if not user_id or not job.get("id"):
-                processed.append({"claimed": True, "error": "Claimed job missing requester or id."})
-                continue
-            result = await _run_enterprise_scan_job(
-                user_id,
-                job["id"],
-                already_claimed=True,
-                max_targets=input.max_targets_per_job,
-            )
-            processed.append(result)
-        return {"processed_jobs": processed, "count": len(processed)}
+        return await _drain_scan_worker(input.max_jobs, input.max_targets_per_job, input.worker_id)
+    except Exception as exc:
+        raise _enterprise_error(exc)
+
+
+@app.get("/api/enterprise/scan-worker/run")
+async def run_enterprise_scan_worker_cron(
+    request: Request,
+    max_jobs: int = Query(default=1, ge=1, le=10),
+    max_targets_per_job: int = Query(default=25, ge=1, le=250),
+    worker_id: str = Query(default="vercel-cron"),
+):
+    # Vercel cron invokes the worker route with an HTTP GET and an
+    # "Authorization: Bearer $CRON_SECRET" header (see backend/vercel.json). The
+    # POST above remains for manual/scripted triggers; without this GET handler
+    # every scheduled cron run 405s and queued live scans are never processed.
+    _require_worker_secret(request)
+    try:
+        return await _drain_scan_worker(max_jobs, max_targets_per_job, worker_id)
     except Exception as exc:
         raise _enterprise_error(exc)
 

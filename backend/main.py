@@ -2156,6 +2156,44 @@ DEMO_RESULT: dict = {
 }
 
 
+# ── Error monitoring (Sentry) ───────────────────────────────────────────────
+# Optional + fail-safe: only initializes when SENTRY_DSN is set, and never lets
+# observability wiring break boot. PII is off and sensitive request headers /
+# cookies / bodies / query strings are scrubbed before any event is sent.
+def _sentry_before_send(event, _hint):
+    req = event.get("request") if isinstance(event, dict) else None
+    if isinstance(req, dict):
+        req.pop("headers", None)
+        req.pop("cookies", None)
+        req.pop("data", None)
+        if req.get("query_string"):
+            req["query_string"] = "[stripped]"
+    return event
+
+
+def _init_sentry() -> bool:
+    dsn = (os.getenv("SENTRY_DSN") or "").strip()
+    if not dsn:
+        return False
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=(os.getenv("APP_ENV") or os.getenv("VERCEL_ENV") or "production"),
+            release=(os.getenv("SENTRY_RELEASE") or None),
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0") or 0),
+            send_default_pii=False,
+            before_send=_sentry_before_send,
+        )
+        return True
+    except Exception as exc:  # never take the API down over monitoring
+        print(f"[SENTRY] init skipped: {exc!r}", flush=True)
+        return False
+
+
+_init_sentry()
+
+
 app = FastAPI(title="JACOBI — Adversarial Pricing Topology Probe", version="1.0.0")
 # CORS: restrict to the JACOBI frontend (production + Vercel previews) and local
 # dev instead of "*". Auth is a Bearer JWT in the Authorization header (not

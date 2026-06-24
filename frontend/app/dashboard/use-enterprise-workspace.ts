@@ -12,16 +12,44 @@ import {
 
 type DashboardKpis = ReturnType<typeof kpis>;
 
+export type WatchlistSummary = {
+  id: string;
+  name: string;
+  cadence: string;
+  workflow_type?: string;
+  active?: boolean;
+};
+
+export type ScanJobSummary = {
+  id: string;
+  watchlist_id?: string;
+  audit_depth?: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  target_count: number;
+  completed_count: number;
+  failed_count: number;
+  queued_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
 export type EnterpriseDashboardData = {
   portfolio: PortfolioItem[];
   findings: Finding[];
   kpis: DashboardKpis;
+  watchlists: WatchlistSummary[];
+  scanJobs: ScanJobSummary[];
+  evidenceCount: number;
 };
 
 type WorkspaceResponse = {
   portfolio?: PortfolioItem[];
   findings?: Finding[];
   kpis?: DashboardKpis;
+  watchlists?: WatchlistSummary[];
+  scan_jobs?: ScanJobSummary[];
+  evidence_items?: unknown[];
 };
 
 type WorkspaceState = {
@@ -36,6 +64,9 @@ const DEMO_DATA: EnterpriseDashboardData = {
   portfolio: PORTFOLIO,
   findings: FINDINGS,
   kpis: kpis(),
+  watchlists: [],
+  scanJobs: [],
+  evidenceCount: 0,
 };
 
 function normalizeWorkspace(payload: WorkspaceResponse): EnterpriseDashboardData {
@@ -50,6 +81,9 @@ function normalizeWorkspace(payload: WorkspaceResponse): EnterpriseDashboardData
       highConfidencePct: 0,
       auditsThisMonth: 0,
     },
+    watchlists: Array.isArray(payload.watchlists) ? payload.watchlists : [],
+    scanJobs: Array.isArray(payload.scan_jobs) ? payload.scan_jobs : [],
+    evidenceCount: Array.isArray(payload.evidence_items) ? payload.evidence_items.length : 0,
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Play, RefreshCw, Upload } from "lucide-react";
 import { fmtDate } from "../demo-data";
 import { SeverityBadge, PageHead } from "../ui";
 import { useEnterpriseWorkspace } from "../use-enterprise-workspace";
@@ -38,8 +39,14 @@ export default function PortfolioPage() {
   const [showImport, setShowImport] = useState(false);
   const [csvText, setCsvText] = useState(SAMPLE_CSV);
   const [busy, setBusy] = useState(false);
+  const [liveBusy, setLiveBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
+  const latestScan = data.scanJobs[0];
+  const liveWatchlist = data.watchlists[0];
+  const canRunLiveScan = mode === "live" && Boolean(liveWatchlist?.id) && data.portfolio.length > 0;
+  const latestScanDate = latestScan?.queued_at ?? latestScan?.started_at ?? latestScan?.completed_at ?? null;
 
   async function runImportFlow() {
     setBusy(true);
@@ -77,7 +84,7 @@ export default function PortfolioPage() {
       const scanResponse = await fetch("/api/scan-jobs", {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ watchlist_id: watchlistId, audit_depth: "smart24", limit: 50 }),
+        body: JSON.stringify({ watchlist_id: watchlistId, audit_depth: "smart24", limit: 50, run_mode: "imported" }),
       });
       if (!scanResponse.ok) throw new Error(`Scan job failed (${scanResponse.status})`);
       const scan = await scanResponse.json();
@@ -88,6 +95,41 @@ export default function PortfolioPage() {
       setMessage(error instanceof Error ? error.message : "Import flow failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runLiveWatchlistScan() {
+    setLiveBusy(true);
+    setLiveMessage(null);
+    try {
+      const sessionResult = await supabase.auth.getSession();
+      const token = sessionResult.data.session?.access_token;
+      if (!token) {
+        setLiveMessage("Sign in to run a live watchlist scan.");
+        return;
+      }
+      if (!liveWatchlist?.id) {
+        setLiveMessage("Import a watchlist before running a live scan.");
+        return;
+      }
+
+      const scanResponse = await fetch("/api/scan-jobs", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ watchlist_id: liveWatchlist.id, audit_depth: "smart24", limit: 50, run_mode: "live" }),
+      });
+      if (!scanResponse.ok) throw new Error(`Live scan failed (${scanResponse.status})`);
+      const scan = await scanResponse.json();
+      const job = scan.scan_job;
+      setLiveMessage(`Scan ${job?.status ?? "queued"} for ${job?.target_count ?? 0} target(s).`);
+      reload();
+    } catch (error) {
+      setLiveMessage(error instanceof Error ? error.message : "Live scan failed.");
+    } finally {
+      setLiveBusy(false);
     }
   }
 
@@ -104,7 +146,9 @@ export default function PortfolioPage() {
           }
         />
         <div style={{ display: "flex", gap: 10, marginBottom: 28, flexWrap: "wrap" }}>
-          <button className="btn btn-ghost" onClick={() => setShowImport((value) => !value)}>Import CSV</button>
+          <button className="btn btn-ghost" onClick={() => setShowImport((value) => !value)} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Upload size={15} aria-hidden="true" /> Import CSV
+          </button>
           <Link href="/dashboard/audits" className="btn btn-primary">Run an audit</Link>
         </div>
       </div>
@@ -124,7 +168,8 @@ export default function PortfolioPage() {
                 Creates a watchlist, imports rows, then runs the MAP evaluator. Live account required.
               </p>
             </div>
-            <button className="btn btn-primary" onClick={runImportFlow} disabled={busy} style={{ opacity: busy ? 0.7 : 1 }}>
+            <button className="btn btn-primary" onClick={runImportFlow} disabled={busy} style={{ opacity: busy ? 0.7 : 1, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <Upload size={15} aria-hidden="true" />
               {busy ? "Running..." : "Import and scan"}
             </button>
           </div>
@@ -152,6 +197,47 @@ export default function PortfolioPage() {
               {message}
             </p>
           )}
+        </div>
+      )}
+
+      {mode === "live" && (
+        <div style={{ border: "1px solid var(--line)", borderRadius: "var(--r-sm)", background: "var(--surface)", padding: 18, marginBottom: 20 }}>
+          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 220, flex: "1 1 280px" }}>
+              <span className="label-mono" style={{ color: "var(--text-2)" }}>Live scan job</span>
+              <div className="mono" style={{ color: "var(--text)", fontSize: 13, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {latestScan ? `${latestScan.status.toUpperCase()} | ${latestScan.audit_depth ?? "smart24"} | ${latestScanDate ? fmtDate(latestScanDate) : "No timestamp"}` : "No live scan jobs yet"}
+              </div>
+              {liveMessage && (
+                <div className="mono" style={{ color: liveMessage.includes("failed") || liveMessage.includes("Sign in") ? "var(--gold)" : "var(--good)", fontSize: 12, marginTop: 8 }}>
+                  {liveMessage}
+                </div>
+              )}
+            </div>
+            {[
+              ["Targets", latestScan?.target_count ?? data.portfolio.length],
+              ["Completed", latestScan?.completed_count ?? 0],
+              ["Failed", latestScan?.failed_count ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} style={{ minWidth: 92, flex: "0 1 110px" }}>
+                <div className="mono tnum" style={{ color: "var(--text)", fontSize: 20, lineHeight: 1 }}>{value}</div>
+                <div className="label-mono" style={{ color: "var(--text-2)", fontSize: 10, marginTop: 5 }}>{label}</div>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", flex: "1 1 240px" }}>
+              <button
+                className="btn btn-primary"
+                onClick={runLiveWatchlistScan}
+                disabled={!canRunLiveScan || liveBusy}
+                style={{ opacity: !canRunLiveScan || liveBusy ? 0.65 : 1, display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <Play size={15} aria-hidden="true" /> {liveBusy ? "Queueing..." : "Run live"}
+              </button>
+              <button className="btn btn-ghost" onClick={reload} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <RefreshCw size={15} aria-hidden="true" /> Refresh
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

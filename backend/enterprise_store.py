@@ -1056,6 +1056,107 @@ async def claim_scan_job(user_id: str, scan_job_id: str) -> dict[str, Any]:
     return await _thread(work)
 
 
+async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str, Any]:
+    """Claim the next queued live scan job across organizations.
+
+    This is intentionally worker-scoped rather than user-scoped. It is used by
+    the cron/durable worker endpoint, which runs with the service-role backend
+    client and then processes the job as the original requester.
+    """
+    client = get_supabase()
+    now = _now()
+    if not client:
+        candidates: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+        for owner_id, workspace in _MEMORY_WORKSPACES.items():
+            for job in workspace["scan_jobs"]:
+                metadata = _scan_metadata(job)
+                if job.get("status") == "queued" and metadata.get("run_mode") == "live":
+                    candidates.append((job.get("queued_at") or "", workspace, {"owner_id": owner_id, **job}))
+        if not candidates:
+            return {"claimed": False, "scan_job": None, "user_id": None}
+        _, workspace, job_with_owner = sorted(candidates, key=lambda row: row[0])[0]
+        owner_id = job_with_owner.pop("owner_id")
+        job = _find_one(workspace["scan_jobs"], id=job_with_owner["id"])
+        if not job:
+            return {"claimed": False, "scan_job": None, "user_id": None}
+        metadata = _scan_metadata(job)
+        metadata.update({"claimed_at": now, "worker_id": worker_id})
+        job.update({"status": "running", "started_at": job.get("started_at") or now, "metadata": metadata})
+        _record_audit(workspace, owner_id, "scan_job.claimed", "scan_job", job["id"], {"worker_id": worker_id})
+        return {"claimed": True, "scan_job": job, "user_id": owner_id}
+
+    def work():
+        rows = client.table("scan_jobs").select("*").eq("status", "queued").order("queued_at").limit(25).execute().data or []
+        for job in rows:
+            metadata = _scan_metadata(job)
+            if metadata.get("run_mode") != "live":
+                continue
+            metadata.update({"claimed_at": now, "worker_id": worker_id})
+            updated = client.table("scan_jobs").update({
+                "status": "running",
+                "started_at": job.get("started_at") or now,
+                "metadata": metadata,
+            }).eq("id", job["id"]).eq("status", "queued").execute().data or []
+            if not updated:
+                continue
+            claimed_job = updated[0]
+            actor = claimed_job.get("requested_by")
+            client.table("audit_log").insert({
+                "organization_id": claimed_job["organization_id"],
+                "actor_user_id": actor,
+                "action": "scan_job.claimed",
+                "entity_type": "scan_job",
+                "entity_id": claimed_job["id"],
+                "metadata": {"worker_id": worker_id},
+            }).execute()
+            return {"claimed": True, "scan_job": claimed_job, "user_id": actor}
+        return {"claimed": False, "scan_job": None, "user_id": None}
+
+    return await _thread(work)
+
+
+async def release_scan_job(user_id: str, scan_job_id: str, reason: str = "partial_worker_slice") -> dict[str, Any]:
+    """Return a partially processed live scan job to the queue."""
+    client = get_supabase()
+    now = _now()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+        if not job:
+            raise EnterpriseAccessError("Scan job not found")
+        metadata = _scan_metadata(job)
+        metadata.update({"released_at": now, "release_reason": reason})
+        job.update({"status": "queued", "metadata": metadata})
+        _record_audit(workspace, user_id, "scan_job.released", "scan_job", scan_job_id, {"reason": reason})
+        return {"scan_job": job}
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        if not jobs:
+            raise EnterpriseAccessError("Scan job not found")
+        job = jobs[0]
+        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
+        if not memberships:
+            raise EnterpriseAccessError("Scan job not found")
+        metadata = _scan_metadata(job)
+        metadata.update({"released_at": now, "release_reason": reason})
+        updated = client.table("scan_jobs").update({
+            "status": "queued",
+            "metadata": metadata,
+        }).eq("id", scan_job_id).execute().data[0]
+        client.table("audit_log").insert({
+            "organization_id": job["organization_id"],
+            "actor_user_id": user_id,
+            "action": "scan_job.released",
+            "entity_type": "scan_job",
+            "entity_id": scan_job_id,
+            "metadata": {"reason": reason},
+        }).execute()
+        return {"scan_job": updated}
+
+    return await _thread(work)
+
+
 def _record_live_result_memory(
     user_id: str,
     scan_job_id: str,
@@ -1423,5 +1524,121 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
             },
         }).execute()
         return {"scan_job": updated}
+
+    return await _thread(work)
+
+
+def _enrich_evidence(workspace: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    finding = _find_one(workspace["findings"], id=evidence.get("finding_id")) if evidence.get("finding_id") else None
+    item = _find_one(workspace["watchlist_items"], id=(finding or {}).get("watchlist_item_id")) if finding else None
+    product = _find_one(workspace["products"], id=(finding or item or {}).get("product_id"))
+    seller = _find_one(workspace["sellers"], id=(finding or item or {}).get("seller_id"))
+    return {
+        **evidence,
+        "finding": finding,
+        "product": product,
+        "seller": seller,
+        "watchlist_item": item,
+    }
+
+
+async def list_evidence_items(
+    user_id: str,
+    *,
+    finding_id: Optional[str] = None,
+    scan_job_id: Optional[str] = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List evidence rows available to the signed-in user's organization."""
+    limit = max(1, min(int(limit or 100), 250))
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        rows = list(workspace["evidence_items"])
+        if finding_id:
+            rows = [row for row in rows if row.get("finding_id") == finding_id]
+        if scan_job_id:
+            rows = [row for row in rows if row.get("scan_job_id") == scan_job_id]
+        rows = sorted(rows, key=lambda row: row.get("captured_at", ""), reverse=True)[:limit]
+        return {"evidence_items": [_enrich_evidence(workspace, row) for row in rows]}
+
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        query = client.table("evidence_items").select("*").eq("organization_id", org["id"]).order("captured_at", desc=True).limit(limit)
+        if finding_id:
+            query = query.eq("finding_id", finding_id)
+        if scan_job_id:
+            query = query.eq("scan_job_id", scan_job_id)
+        rows = query.execute().data or []
+
+        finding_ids = list({row["finding_id"] for row in rows if row.get("finding_id")})
+        findings = {}
+        products = {}
+        sellers = {}
+        items = {}
+        if finding_ids:
+            finding_rows = client.table("findings").select("*").in_("id", finding_ids).execute().data or []
+            findings = {row["id"]: row for row in finding_rows}
+            item_ids = list({row["watchlist_item_id"] for row in finding_rows if row.get("watchlist_item_id")})
+            product_ids = list({row["product_id"] for row in finding_rows if row.get("product_id")})
+            seller_ids = list({row["seller_id"] for row in finding_rows if row.get("seller_id")})
+            if item_ids:
+                items = {row["id"]: row for row in (client.table("watchlist_items").select("*").in_("id", item_ids).execute().data or [])}
+            if product_ids:
+                products = {row["id"]: row for row in (client.table("products").select("*").in_("id", product_ids).execute().data or [])}
+            if seller_ids:
+                sellers = {row["id"]: row for row in (client.table("sellers").select("*").in_("id", seller_ids).execute().data or [])}
+
+        enriched = []
+        for row in rows:
+            finding = findings.get(row.get("finding_id"))
+            enriched.append({
+                **row,
+                "finding": finding,
+                "watchlist_item": items.get((finding or {}).get("watchlist_item_id")),
+                "product": products.get((finding or {}).get("product_id")),
+                "seller": sellers.get((finding or {}).get("seller_id")),
+            })
+        return {"evidence_items": enriched}
+
+    return await _thread(work)
+
+
+async def get_evidence_item(user_id: str, evidence_id: str) -> dict[str, Any]:
+    """Fetch one evidence row with related finding/product/seller context."""
+    client = get_supabase()
+    if not client:
+        workspace = _workspace_for_user(user_id)
+        row = _find_one(workspace["evidence_items"], id=evidence_id)
+        if not row:
+            raise EnterpriseAccessError("Evidence item not found")
+        return {"evidence_item": _enrich_evidence(workspace, row)}
+
+    org = await _ensure_supabase_org(client, user_id)
+
+    def work():
+        rows = client.table("evidence_items").select("*").eq("id", evidence_id).eq("organization_id", org["id"]).limit(1).execute().data or []
+        if not rows:
+            raise EnterpriseAccessError("Evidence item not found")
+        row = rows[0]
+        finding = None
+        product = None
+        seller = None
+        item = None
+        if row.get("finding_id"):
+            finding_rows = client.table("findings").select("*").eq("id", row["finding_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
+            finding = finding_rows[0] if finding_rows else None
+            if finding:
+                if finding.get("watchlist_item_id"):
+                    item_rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
+                    item = item_rows[0] if item_rows else None
+                if finding.get("product_id"):
+                    product_rows = client.table("products").select("*").eq("id", finding["product_id"]).limit(1).execute().data or []
+                    product = product_rows[0] if product_rows else None
+                if finding.get("seller_id"):
+                    seller_rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).limit(1).execute().data or []
+                    seller = seller_rows[0] if seller_rows else None
+        return {"evidence_item": {**row, "finding": finding, "product": product, "seller": seller, "watchlist_item": item}}
 
     return await _thread(work)

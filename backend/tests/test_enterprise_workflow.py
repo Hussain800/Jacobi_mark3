@@ -208,3 +208,112 @@ def test_live_scan_job_records_probe_backed_evidence(monkeypatch):
         assert len(workspace["evidence_items"]) == 3
     finally:
         _clear_user()
+
+
+def test_durable_worker_endpoint_processes_partial_jobs_and_lists_evidence(monkeypatch, client):
+    monkeypatch.setattr(enterprise_store, "get_supabase", lambda: None)
+    monkeypatch.setenv("SCAN_WORKER_SECRET", "test-worker-secret")
+    monkeypatch.setattr(M, "validate_public_url", lambda url: url)
+
+    async def fake_run_probe_engine(session, url, agent_configs=None):
+        session.update({
+            "status": "completed",
+            "configured_agents": 2,
+            "total_agents": 2,
+            "successful_agents": 2,
+            "agents": [
+                {
+                    "agent_id": "AGENT_00",
+                    "label": "Baseline desktop",
+                    "status": "success",
+                    "price": 176,
+                    "response_time_ms": 500,
+                    "variables": {"location": "us", "device": "desktop", "cookie": "fresh", "referrer": "direct"},
+                    "evidence": {
+                        "extraction_method": "generic_price_parser",
+                        "price_raw_text": "$176.00",
+                        "native_price": 176,
+                        "native_currency": "USD",
+                    },
+                },
+                {
+                    "agent_id": "AGENT_01",
+                    "label": "Mobile buyer",
+                    "status": "success",
+                    "price": 181,
+                    "response_time_ms": 540,
+                    "variables": {"location": "us", "device": "mobile", "cookie": "fresh", "referrer": "direct"},
+                    "evidence": {
+                        "extraction_method": "generic_price_parser",
+                        "price_raw_text": "$181.00",
+                        "native_price": 181,
+                        "native_currency": "USD",
+                    },
+                },
+            ],
+        })
+
+    async def fake_save_probe(session, user_id=None, is_public=False):
+        return f"probe-{session['enterprise_watchlist_item_id']}"
+
+    monkeypatch.setattr(M, "_run_probe_engine", fake_run_probe_engine)
+    monkeypatch.setattr(M, "save_probe", fake_save_probe)
+
+    _clear_user()
+    user_id = "durable-worker-owner"
+    _set_user(_as_user(user_id))
+    try:
+        created = asyncio.run(enterprise_store.create_watchlist(
+            user_id,
+            {"name": "Durable MAP Watchlist", "cadence": "daily", "workflow_type": "map"},
+        ))
+        watchlist_id = created["created_watchlist"]["id"]
+        csv_text = "\n".join([
+            "product_name,sku,map_floor,currency,seller_name,seller_domain,target_url,market",
+            "Pro Wireless Headphones,JCB-HP-001,199,USD,MegaDeals,megadeals.example,https://megadeals.example/p/pro-wireless,US",
+            "VitaBlend Pro Blender,JCB-BL-700,329,USD,HomeGoods,homegoods.example,https://homegoods.example/p/vitablend,US",
+        ])
+        imported = asyncio.run(enterprise_store.import_watchlist_items(user_id, watchlist_id, csv_text))
+        assert imported["imported"] == 2
+        queued = asyncio.run(enterprise_store.launch_scan_job(
+            user_id,
+            {"watchlist_id": watchlist_id, "audit_depth": "smart24", "limit": 10, "run_mode": "live"},
+        ))
+        job_id = queued["scan_job"]["id"]
+
+        first_run = client.post(
+            "/api/enterprise/scan-worker/run",
+            headers={"x-jacobi-worker-secret": "test-worker-secret"},
+            json={"max_jobs": 1, "max_targets_per_job": 1, "worker_id": "pytest-worker"},
+        )
+        assert first_run.status_code == 200
+        first_result = first_run.json()["processed_jobs"][0]
+        assert first_result["processed_targets"] == 1
+        assert first_result["released"] is True
+        assert first_result["scan_job"]["status"] == "queued"
+        assert first_result["scan_job"]["completed_count"] == 1
+
+        second_run = client.post(
+            "/api/enterprise/scan-worker/run",
+            headers={"x-jacobi-worker-secret": "test-worker-secret"},
+            json={"max_jobs": 1, "max_targets_per_job": 10, "worker_id": "pytest-worker"},
+        )
+        assert second_run.status_code == 200
+        second_result = second_run.json()["processed_jobs"][0]
+        assert second_result["processed_targets"] == 1
+        assert second_result["finished"] is True
+        assert second_result["scan_job"]["status"] == "completed"
+        assert second_result["scan_job"]["completed_count"] == 2
+
+        evidence_response = client.get("/api/evidence")
+        assert evidence_response.status_code == 200
+        evidence_items = evidence_response.json()["evidence_items"]
+        assert len(evidence_items) == 4
+        assert evidence_items[0]["source"] == "live_probe"
+        assert evidence_items[0]["product"]["name"] in {"Pro Wireless Headphones", "VitaBlend Pro Blender"}
+
+        detail_response = client.get(f"/api/evidence/{evidence_items[0]['id']}")
+        assert detail_response.status_code == 200
+        assert detail_response.json()["evidence_item"]["scan_job_id"] == job_id
+    finally:
+        _clear_user()

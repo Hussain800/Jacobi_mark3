@@ -34,12 +34,31 @@ export type ScanJobSummary = {
   metadata?: Record<string, unknown>;
 };
 
+export type EvidenceItem = {
+  id: string;
+  finding_id?: string | null;
+  scan_job_id?: string | null;
+  probe_session_id?: string | null;
+  buyer_context?: string | null;
+  target_url: string;
+  observed_price?: number | null;
+  currency?: string | null;
+  captured_at?: string;
+  source: string;
+  extraction_method?: string;
+  metadata?: Record<string, unknown>;
+  product?: { name?: string; sku?: string; map_floor?: number | null; currency?: string | null } | null;
+  seller?: { name?: string; domain?: string; authorization_status?: string | null } | null;
+  finding?: { id?: string; severity?: string; status?: string; spread_pct?: number | null } | null;
+};
+
 export type EnterpriseDashboardData = {
   portfolio: PortfolioItem[];
   findings: Finding[];
   kpis: DashboardKpis;
   watchlists: WatchlistSummary[];
   scanJobs: ScanJobSummary[];
+  evidenceItems: EvidenceItem[];
   evidenceCount: number;
 };
 
@@ -49,7 +68,7 @@ type WorkspaceResponse = {
   kpis?: DashboardKpis;
   watchlists?: WatchlistSummary[];
   scan_jobs?: ScanJobSummary[];
-  evidence_items?: unknown[];
+  evidence_items?: EvidenceItem[];
 };
 
 type WorkspaceState = {
@@ -66,6 +85,7 @@ const DEMO_DATA: EnterpriseDashboardData = {
   kpis: kpis(),
   watchlists: [],
   scanJobs: [],
+  evidenceItems: [],
   evidenceCount: 0,
 };
 
@@ -83,6 +103,7 @@ function normalizeWorkspace(payload: WorkspaceResponse): EnterpriseDashboardData
     },
     watchlists: Array.isArray(payload.watchlists) ? payload.watchlists : [],
     scanJobs: Array.isArray(payload.scan_jobs) ? payload.scan_jobs : [],
+    evidenceItems: Array.isArray(payload.evidence_items) ? payload.evidence_items : [],
     evidenceCount: Array.isArray(payload.evidence_items) ? payload.evidence_items.length : 0,
   };
 }

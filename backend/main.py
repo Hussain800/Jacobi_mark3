@@ -19,7 +19,7 @@ import statistics
 import time
 import uuid
 from collections import defaultdict, Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple, Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 from gemini_analyzer import analyze_report, GeminiReport
 from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
-from supabase_client import save_probe
+from supabase_client import save_probe, update_probe
 from auth_user import get_optional_user
 from profile_store import can_run_probe, increment_probe_count
 from fastapi import Depends
@@ -1346,6 +1346,13 @@ ACTIVE_SESSION_ID: Optional[str] = None
 # in-flight result is never evicted in practice; 0 disables the cap.
 MAX_SESSION_STORE = int(os.getenv("MAX_SESSION_STORE", "1000"))
 
+# Hard ceiling on how long a single probe may run before the background
+# watchdog marks it 'timeout'. Also used (with a margin) by /api/result as a
+# read-time backstop: a persisted probe still 'running' past this age means the
+# worker that launched it was recycled mid-run and will never finish it, so we
+# surface an honest 'timeout' instead of a perpetual 'running' spinner.
+PROBE_HARD_TIMEOUT_S = int(os.getenv("PROBE_HARD_TIMEOUT_S", "150"))
+
 # Bound how many full probe scans run concurrently on this worker so a burst of
 # users can't pile up 50-agent matrices, starve each other, and overspend
 # BrightData. Excess scans queue — the session_id is still returned immediately
@@ -2287,6 +2294,9 @@ async def health():
         "brightdata_custom_headers_configured": bool(BRIGHTDATA_CUSTOM_HEADERS_ENABLED),
         "supabase_url_shape": sb_shape,
         "supabase_anon_key_configured": bool(sb_anon),
+        # Build marker so a deploy can be confirmed without guessing. Render
+        # injects RENDER_GIT_COMMIT automatically; empty locally.
+        "git_commit": (os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT") or "")[:7],
     }
 
 
@@ -2391,6 +2401,23 @@ async def launch_probe(
     session["user_id"] = user["id"]
     session["is_public"] = bool(input.publish_to_board)
     session["audit_depth"] = "pro50" if engine_tier == "pro" else "smart24"
+
+    # Durable lifecycle: persist a 'running' row BEFORE the engine starts so
+    # /api/result can always recover a persistent record — even if this worker
+    # process is recycled mid-probe (Render free tier sleeps/restarts). Without
+    # this, an in-flight probe lives only in SESSION_STORE and a lost process
+    # surfaces to the user as a false "Probe session expired". Awaited so the row
+    # exists before the frontend starts polling; a DB blip is non-fatal (the
+    # background task still does an on-completion insert as a fallback).
+    try:
+        early_row_id = await save_probe(
+            session, user_id=user["id"], is_public=bool(input.publish_to_board)
+        )
+        if early_row_id:
+            session["_probe_row_id"] = early_row_id
+    except Exception as persist_err:
+        print(f"[PROBE] early persist failed (continuing): {persist_err!r}")
+
     asyncio.create_task(_complete_probe_in_background(
         session=session,
         url=input.target_url,
@@ -2417,10 +2444,24 @@ async def _complete_probe_in_background(
     """
     try:
         # Gate concurrent scans so simultaneous users queue instead of starving
-        # each other on the single worker (see _SCAN_SEMAPHORE).
+        # each other on the single worker (see _SCAN_SEMAPHORE). The hard
+        # watchdog ensures a hung provider can't leave a probe 'running' forever.
         async with _SCAN_SEMAPHORE:
-            await _run_probe_engine(session, url,
-                                    agent_configs=get_agent_configs_for_tier(engine_tier))
+            await asyncio.wait_for(
+                _run_probe_engine(session, url,
+                                  agent_configs=get_agent_configs_for_tier(engine_tier)),
+                timeout=PROBE_HARD_TIMEOUT_S,
+            )
+    except asyncio.TimeoutError:
+        # Global watchdog tripped: surface an honest terminal 'timeout' instead
+        # of an endless spinner. Distinct from 'failed' so the UI can explain it.
+        print(f"[PROBE-BG] hard timeout after {PROBE_HARD_TIMEOUT_S}s")
+        session["status"] = "timeout"
+        session["error"] = (
+            "The audit timed out before completing. This can happen on a cold "
+            "start or when the target blocks automated access. Please retry, or "
+            "try a demo audit."
+        )
     except Exception as e:
         # Engine itself crashed. Mark the session as failed so the
         # frontend's polling loop can surface a clean error state instead
@@ -2429,16 +2470,21 @@ async def _complete_probe_in_background(
         session["status"] = "failed"
         session["error"] = "Probe engine error. Please retry."
 
-    # Persist to Supabase, stamping the owning user so RLS + history work.
-    saved_id = None
+    # Persist the terminal result. Prefer UPDATING the row created at launch so
+    # there's exactly one durable record per probe; only fall back to an insert
+    # if the early persist didn't land (e.g. the DB was briefly unavailable).
+    saved_id = session.get("_probe_row_id")
     try:
-        saved_id = await save_probe(
-            session,
-            user_id=user_id,
-            is_public=publish_to_board,
-        )
+        if saved_id:
+            await update_probe(saved_id, session)
+        else:
+            saved_id = await save_probe(
+                session,
+                user_id=user_id,
+                is_public=publish_to_board,
+            )
     except Exception as db_err:
-        print(f"[PROBE-BG] save_probe failed: {db_err!r}")
+        print(f"[PROBE-BG] persist terminal result failed: {db_err!r}")
 
     # Increment quota ONLY when a row was actually persisted. Transient
     # DB errors don't charge credit.
@@ -2683,6 +2729,25 @@ def build_agent_list(session: dict) -> list:
     return agents
 
 
+def _probe_age_exceeds(created_at, seconds: float) -> bool:
+    """True if a probe row's creation time is older than ``seconds`` ago.
+
+    Fail-safe: returns False on any parse problem so a legitimately-running
+    probe is never falsely timed out.
+    """
+    if not created_at:
+        return False
+    try:
+        ts = created_at
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds() > seconds
+    except Exception:
+        return False
+
+
 @app.get("/api/result/{session_id}")
 async def get_result(
     session_id: str,
@@ -2699,6 +2764,19 @@ async def get_result(
             print(f"[RESULT] Supabase fetch failed: {e}")
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Read-time watchdog: a persisted row still 'running' well past the hard
+        # cap means the worker that launched it was recycled mid-run (its
+        # in-memory session is gone and nothing will ever complete it). Surface
+        # an honest terminal 'timeout' instead of a perpetual 'running' spinner.
+        if session.get("status") == "running" and _probe_age_exceeds(
+            session.get("_db_created_at"), PROBE_HARD_TIMEOUT_S + 30
+        ):
+            session = dict(session)
+            session["status"] = "timeout"
+            session["error"] = (
+                "The audit didn't finish — the worker may have restarted "
+                "mid-run. Please retry, or try a demo audit."
+            )
     _assert_can_read_probe(session, user, allow_public=False)
     agents = build_agent_list(session)
     return dict(

@@ -108,6 +108,51 @@ async def save_probe(
         return None
 
 
+async def update_probe(probe_id: str, session_data: dict) -> bool:
+    """Update an existing probe row (created early as 'running') with the final
+    result + terminal status.
+
+    This is the second half of the durable-probe lifecycle: ``save_probe`` is
+    called at launch to create a ``running`` row so the frontend can always poll
+    a persistent record (even across a Render cold-start / instance recycle),
+    and this updates that same row in place on completion/failure/timeout.
+
+    Fail-soft: never raises; returns True only when the row was updated.
+    """
+    client = get_supabase()
+    if not client or not probe_id:
+        return False
+
+    data = {
+        "target_url": session_data.get("target_url", ""),
+        "target_name": session_data.get("target_name", ""),
+        "topology_class": session_data.get("topology_class", ""),
+        "baseline_price": session_data.get("baseline_price"),
+        "max_price_spread": session_data.get("max_price_spread"),
+        "max_price_spread_pct": session_data.get("max_price_spread_pct"),
+        "discrimination_index": session_data.get("discrimination_index", 0),
+        "control_stability": session_data.get("control_stability", 0),
+        "elapsed_seconds": session_data.get("elapsed_seconds", 0),
+        "total_agents": session_data.get("total_agents", 24),
+        "successful_agents": session_data.get("successful_agents", 0),
+        "all_prices": session_data.get("all_prices"),
+        "gradients": session_data.get("gradients"),
+        "agents": session_data.get("agents"),
+        "status": session_data.get("status", "completed"),
+        "raw_result": session_data,
+    }
+
+    def _update():
+        client.table("probes").update(data).eq("id", probe_id).execute()
+        return True
+
+    try:
+        return await asyncio.to_thread(_update)
+    except Exception as e:
+        print(f"[SUPABASE] Failed to update probe {probe_id}: {e}")
+        return False
+
+
 async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
     """Retrieve a full probe result from Supabase by its session_id (stored in raw_result JSONB)."""
     client = get_supabase()
@@ -135,6 +180,11 @@ async def get_probe_by_session_id(session_id: str) -> Optional[dict]:
             raw["_probe_owner_user_id"] = row.get("user_id")
             raw["_probe_is_public"] = row.get("is_public", False)
             raw["_probe_is_demo"] = row.get("is_demo", False)
+            # Row creation time — used by /api/result to detect a probe that has
+            # been 'running' far past any plausible completion (e.g. the worker
+            # process was recycled mid-probe) and surface an honest 'timeout'
+            # instead of a perpetual 'running' spinner.
+            raw["_db_created_at"] = row.get("created_at")
             return raw
         return None
 

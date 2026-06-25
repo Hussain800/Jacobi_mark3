@@ -53,6 +53,16 @@ Apply these migrations to production Supabase in order:
 - `supabase/migrations/202606240003_enterprise_reporting_sharing.sql`
 - `supabase/migrations/202606240004_enterprise_security_controls.sql`
 - `supabase/migrations/202606240005_enterprise_rls_member_management.sql`
+- `supabase/migrations/202606240006_harden_set_updated_at_search_path.sql`
+- `supabase/migrations/202606240007_optimize_rls_initplan.sql`
+
+> **Production status (2026-06-25):** all of the above migrations have been applied
+> to the production Supabase project `Jacobi_mark3` (ref `gyujyxeeteganwgcjbyv`) and
+> cross-org RLS isolation was verified directly against the database (findings and
+> members: own=visible, foreign=0 rows). Security advisors show no errors. Remaining
+> manual: enable Auth "leaked password protection" (dashboard) and point the app's
+> `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`/`NEXT_PUBLIC_SUPABASE_URL`/anon key at this
+> project (the local `.env.local` still references the old paused project).
 
 Then run:
 

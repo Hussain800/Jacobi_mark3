@@ -13,6 +13,8 @@ REQUIRED_MIGRATIONS = [
     "202606240003_enterprise_reporting_sharing.sql",
     "202606240004_enterprise_security_controls.sql",
     "202606240005_enterprise_rls_member_management.sql",
+    "202606240006_harden_set_updated_at_search_path.sql",
+    "202606240007_optimize_rls_initplan.sql",
 ]
 
 REQUIRED_ENTERPRISE_TABLES = [

@@ -32,6 +32,9 @@ ENTERPRISE_SCAN_MAX_TARGETS = int(os.getenv("ENTERPRISE_SCAN_MAX_TARGETS", "250"
 ENTERPRISE_SMART24_EST_COST_USD = float(os.getenv("ENTERPRISE_SMART24_EST_COST_USD", "0.08"))
 ENTERPRISE_PRO50_EST_COST_USD = float(os.getenv("ENTERPRISE_PRO50_EST_COST_USD", "0.18"))
 ENTERPRISE_SCAN_COST_BUDGET_USD = float(os.getenv("ENTERPRISE_SCAN_COST_BUDGET_USD", "25"))
+# Rolling calendar-month BrightData spend cap per organization. 0 disables it;
+# operators set this for paid pilots to bound uncontrolled cumulative spend.
+ENTERPRISE_SCAN_MONTHLY_BUDGET_USD = float(os.getenv("ENTERPRISE_SCAN_MONTHLY_BUDGET_USD", "0"))
 ENTERPRISE_LIVE_SCANS_ENABLED = os.getenv("ENTERPRISE_LIVE_SCANS_ENABLED", "1") != "0"
 # A live scan job claimed by a worker that then crashes/freezes would otherwise
 # stay 'running' forever. After this lease elapses, the cron worker reclaims it.
@@ -270,6 +273,38 @@ def _supabase_membership_role(client, org_id: str, user_id: str) -> str:
     return normalize_role(memberships[0].get("role"))
 
 
+def _estimate_job_cost(audit_depth: str, count: int) -> float:
+    per_target = ENTERPRISE_PRO50_EST_COST_USD if (audit_depth or "").lower() == "pro50" else ENTERPRISE_SMART24_EST_COST_USD
+    return round(per_target * max(0, int(count or 0)), 4)
+
+
+def _month_start_iso() -> str:
+    now = datetime.now(timezone.utc)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def _job_cost(job: dict[str, Any]) -> float:
+    """Realized cost if recorded (completed jobs), else the target-count estimate."""
+    realized = _scan_metadata(job).get("realized_cost_usd")
+    if realized is not None:
+        try:
+            return float(realized)
+        except (TypeError, ValueError):
+            return 0.0
+    return _estimate_job_cost(job.get("audit_depth") or "smart24", job.get("target_count") or 0)
+
+
+def _assert_monthly_budget(month_to_date: float, audit_depth: str, count: int) -> None:
+    if ENTERPRISE_SCAN_MONTHLY_BUDGET_USD <= 0:
+        return
+    projected = round(month_to_date + _estimate_job_cost(audit_depth, count), 4)
+    if projected > ENTERPRISE_SCAN_MONTHLY_BUDGET_USD:
+        raise EnterpriseValidationError(
+            f"Projected monthly scan spend ${projected:.2f} exceeds the workspace budget "
+            f"${ENTERPRISE_SCAN_MONTHLY_BUDGET_USD:.2f} (already ${month_to_date:.2f} this month)."
+        )
+
+
 def _enforce_scan_controls(org_id: str, user_id: str, run_mode: str, audit_depth: str, target_count: int, requested_limit: int) -> None:
     if requested_limit > ENTERPRISE_SCAN_MAX_TARGETS:
         raise EnterpriseValidationError(f"Scan limit exceeds workspace maximum of {ENTERPRISE_SCAN_MAX_TARGETS}.")
@@ -277,8 +312,7 @@ def _enforce_scan_controls(org_id: str, user_id: str, run_mode: str, audit_depth
         raise EnterpriseValidationError("Live scans are currently disabled by operations.")
     if run_mode != "live":
         return
-    per_target = ENTERPRISE_PRO50_EST_COST_USD if (audit_depth or "").lower() == "pro50" else ENTERPRISE_SMART24_EST_COST_USD
-    estimated = target_count * per_target
+    estimated = _estimate_job_cost(audit_depth, target_count)
     if ENTERPRISE_SCAN_COST_BUDGET_USD > 0 and estimated > ENTERPRISE_SCAN_COST_BUDGET_USD:
         raise EnterpriseValidationError(
             f"Estimated scan cost ${estimated:.2f} exceeds budget ${ENTERPRISE_SCAN_COST_BUDGET_USD:.2f}."
@@ -710,6 +744,12 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
             # Idempotent: a double-submit returns the in-flight job instead of
             # queuing a second scan (and a second BrightData fan-out).
             return {"scan_job": in_flight, "findings": [], "workspace": _serialize_workspace(workspace, "memory"), "idempotent": True}
+        month_start = _month_start_iso()
+        mtd_cost = sum(
+            _job_cost(j) for j in workspace["scan_jobs"]
+            if (j.get("queued_at") or "") >= month_start and _scan_metadata(j).get("run_mode") == "live"
+        )
+        _assert_monthly_budget(mtd_cost, audit_depth, len(items))
         job = {
             "id": _id(),
             "organization_id": workspace["organization"]["id"],
@@ -1042,6 +1082,10 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
                 # Idempotent: a double-submit returns the in-flight job instead
                 # of queuing a second scan (and a second BrightData fan-out).
                 return {"scan_job": in_flight[0], "findings": [], "idempotent": True}
+            month_start = _month_start_iso()
+            prior = client.table("scan_jobs").select("audit_depth,target_count,status,metadata").eq("organization_id", org_id).gte("queued_at", month_start).execute().data or []
+            mtd_cost = sum(_job_cost(j) for j in prior if (j.get("metadata") or {}).get("run_mode") == "live")
+            _assert_monthly_budget(mtd_cost, audit_depth, len(items))
             metadata = {
                 "source": "live_probe",
                 "run_mode": "live",
@@ -1754,6 +1798,7 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
         if error:
             metadata["terminal_error"] = error
         metadata["finished_at"] = _now()
+        metadata["realized_cost_usd"] = _estimate_job_cost(job.get("audit_depth") or "smart24", job.get("completed_count") or 0)
         job.update({
             "status": _terminal_scan_status(job, error),
             "completed_at": _now(),
@@ -1777,6 +1822,7 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
         if error:
             metadata["terminal_error"] = error
         metadata["finished_at"] = _now()
+        metadata["realized_cost_usd"] = _estimate_job_cost(job.get("audit_depth") or "smart24", job.get("completed_count") or 0)
         status = _terminal_scan_status(job, error)
         updated = client.table("scan_jobs").update({
             "status": status,

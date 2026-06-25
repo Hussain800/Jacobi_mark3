@@ -61,8 +61,10 @@ def build_enterprise_health(repo_root: Path | None = None) -> dict[str, Any]:
         "enterprise_live_scans_enabled": os.getenv("ENTERPRISE_LIVE_SCANS_ENABLED", "1") != "0",
         "sentry_dsn": _has_env("SENTRY_DSN") or _has_env("NEXT_PUBLIC_SENTRY_DSN"),
         "scan_cost_budget_usd": os.getenv("ENTERPRISE_SCAN_COST_BUDGET_USD", "25"),
+        "scan_monthly_budget_usd": os.getenv("ENTERPRISE_SCAN_MONTHLY_BUDGET_USD", "0"),
         "scan_max_targets": os.getenv("ENTERPRISE_SCAN_MAX_TARGETS", "250"),
         "scan_rate_limit_max": os.getenv("ENTERPRISE_SCAN_RATE_LIMIT_MAX_REQUESTS", "20"),
+        "scan_lease_seconds": os.getenv("ENTERPRISE_SCAN_LEASE_SECONDS", "900"),
     }
     critical_ready = all([
         config["supabase_url"],

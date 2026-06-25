@@ -33,6 +33,9 @@ ENTERPRISE_SMART24_EST_COST_USD = float(os.getenv("ENTERPRISE_SMART24_EST_COST_U
 ENTERPRISE_PRO50_EST_COST_USD = float(os.getenv("ENTERPRISE_PRO50_EST_COST_USD", "0.18"))
 ENTERPRISE_SCAN_COST_BUDGET_USD = float(os.getenv("ENTERPRISE_SCAN_COST_BUDGET_USD", "25"))
 ENTERPRISE_LIVE_SCANS_ENABLED = os.getenv("ENTERPRISE_LIVE_SCANS_ENABLED", "1") != "0"
+# A live scan job claimed by a worker that then crashes/freezes would otherwise
+# stay 'running' forever. After this lease elapses, the cron worker reclaims it.
+ENTERPRISE_SCAN_LEASE_SECONDS = int(os.getenv("ENTERPRISE_SCAN_LEASE_SECONDS", "900"))
 
 
 class EnterpriseAccessError(Exception):
@@ -696,6 +699,17 @@ def _launch_scan_memory(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
     audit_depth = _clean(payload.get("audit_depth"), "smart24")
     _enforce_scan_controls(workspace["organization"]["id"], user_id, run_mode, audit_depth, len(items), limit)
     if run_mode == "live":
+        in_flight = next(
+            (j for j in workspace["scan_jobs"]
+             if j.get("watchlist_id") == watchlist_id
+             and _scan_metadata(j).get("run_mode") == "live"
+             and j.get("status") in ("queued", "running")),
+            None,
+        )
+        if in_flight:
+            # Idempotent: a double-submit returns the in-flight job instead of
+            # queuing a second scan (and a second BrightData fan-out).
+            return {"scan_job": in_flight, "findings": [], "workspace": _serialize_workspace(workspace, "memory"), "idempotent": True}
         job = {
             "id": _id(),
             "organization_id": workspace["organization"]["id"],
@@ -1015,6 +1029,19 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
         audit_depth = _clean(payload.get("audit_depth"), "smart24")
         _enforce_scan_controls(org_id, user_id, run_mode, audit_depth, len(items), limit)
         if run_mode == "live":
+            in_flight = [
+                j for j in (
+                    client.table("scan_jobs").select("*")
+                    .eq("organization_id", org_id).eq("watchlist_id", watchlist_id)
+                    .in_("status", ["queued", "running"])
+                    .order("queued_at", desc=True).limit(5).execute().data or []
+                )
+                if (j.get("metadata") or {}).get("run_mode") == "live"
+            ]
+            if in_flight:
+                # Idempotent: a double-submit returns the in-flight job instead
+                # of queuing a second scan (and a second BrightData fan-out).
+                return {"scan_job": in_flight[0], "findings": [], "idempotent": True}
             metadata = {
                 "source": "live_probe",
                 "run_mode": "live",
@@ -1278,6 +1305,17 @@ async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str,
                 if job.get("status") == "queued" and metadata.get("run_mode") == "live":
                     candidates.append((job.get("queued_at") or "", workspace, {"owner_id": owner_id, **job}))
         if not candidates:
+            # No queued work — reclaim a live job whose worker lease has lapsed.
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=ENTERPRISE_SCAN_LEASE_SECONDS)).isoformat()
+            for owner_id, workspace in _MEMORY_WORKSPACES.items():
+                for job in workspace["scan_jobs"]:
+                    metadata = _scan_metadata(job)
+                    if (job.get("status") == "running" and metadata.get("run_mode") == "live"
+                            and (job.get("started_at") or "") < cutoff):
+                        metadata.update({"claimed_at": now, "worker_id": worker_id, "reclaimed": True})
+                        job.update({"started_at": now, "metadata": metadata})
+                        _record_audit(workspace, owner_id, "scan_job.reclaimed", "scan_job", job["id"], {"worker_id": worker_id})
+                        return {"claimed": True, "scan_job": job, "user_id": owner_id}
             return {"claimed": False, "scan_job": None, "user_id": None}
         _, workspace, job_with_owner = sorted(candidates, key=lambda row: row[0])[0]
         owner_id = job_with_owner.pop("owner_id")
@@ -1310,6 +1348,34 @@ async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str,
                 "organization_id": claimed_job["organization_id"],
                 "actor_user_id": actor,
                 "action": "scan_job.claimed",
+                "entity_type": "scan_job",
+                "entity_id": claimed_job["id"],
+                "metadata": {"worker_id": worker_id},
+            }).execute()
+            return {"claimed": True, "scan_job": claimed_job, "user_id": actor}
+
+        # No queued work — reclaim a live job whose worker lease has lapsed
+        # (crashed/timed-out worker). Optimistic concurrency on started_at keeps
+        # this race-safe across overlapping cron runs.
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=ENTERPRISE_SCAN_LEASE_SECONDS)).isoformat()
+        stale = client.table("scan_jobs").select("*").eq("status", "running").lt("started_at", cutoff).order("started_at").limit(25).execute().data or []
+        for job in stale:
+            metadata = _scan_metadata(job)
+            if metadata.get("run_mode") != "live":
+                continue
+            metadata.update({"claimed_at": now, "worker_id": worker_id, "reclaimed": True})
+            updated = client.table("scan_jobs").update({
+                "started_at": now,
+                "metadata": metadata,
+            }).eq("id", job["id"]).eq("status", "running").lt("started_at", cutoff).execute().data or []
+            if not updated:
+                continue
+            claimed_job = updated[0]
+            actor = claimed_job.get("requested_by")
+            client.table("audit_log").insert({
+                "organization_id": claimed_job["organization_id"],
+                "actor_user_id": actor,
+                "action": "scan_job.reclaimed",
                 "entity_type": "scan_job",
                 "entity_id": claimed_job["id"],
                 "metadata": {"worker_id": worker_id},

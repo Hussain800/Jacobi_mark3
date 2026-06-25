@@ -1,9 +1,9 @@
 /**
  * DesignFooter — React port of chrome.js's footer() output.
  *
- * Same DOM structure and classes as the original static footer, but
- * routes the "Product" links to our real Next.js paths. "Company"
- * links remain placeholder (`#`) since those pages don't exist yet.
+ * Same DOM structure and classes as the original static footer, and
+ * routes both the "Product" and "Company" links to our real Next.js
+ * paths.
  */
 
 import Link from "next/link";
@@ -30,10 +30,10 @@ export default function DesignFooter() {
         </nav>
         <nav className="footer-col">
           <span className="label-mono">Company</span>
-          <a className="nav-link" href="#">Method</a>
-          <a className="nav-link" href="#">Extension</a>
-          <a className="nav-link" href="#">Privacy</a>
-          <a className="nav-link" href="#">Terms</a>
+          <Link className="nav-link" href="/method">Method</Link>
+          <Link className="nav-link" href="/extension">Extension</Link>
+          <Link className="nav-link" href="/privacy">Privacy</Link>
+          <Link className="nav-link" href="/terms">Terms</Link>
         </nav>
       </div>
       <div className="wrap footer-bottom">

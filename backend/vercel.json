@@ -9,9 +9,6 @@
   "routes": [
     { "src": "/(.*)", "dest": "main.py" }
   ],
-  "crons": [
-    { "path": "/api/enterprise/scan-worker/run", "schedule": "*/10 * * * *" }
-  ],
   "env": {
     "BRIGHTDATA_API_KEY": "${BRIGHTDATA_API_KEY}",
     "GEMINI_API_KEY": "${GEMINI_API_KEY}",

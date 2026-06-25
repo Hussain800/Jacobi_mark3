@@ -383,6 +383,40 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, publishToBoard, auditDepth]);
 
+  // Guaranteed demo path: loads the cached sample report from the backend and
+  // renders it WITHOUT running a live probe (no BrightData, can't be blocked).
+  // Labeled honestly via the existing curated-sample notice so it's never
+  // presented as a fresh live scan.
+  const loadDemo = useCallback(async () => {
+    cancelledRef.current = false;
+    setRejection(null);
+    setErrorMsg(null);
+    setReport(null);
+    setReturnedAgents([]);
+    setActiveWave(2);
+    setPhase("deploying");
+    setDeckPhaseLabel("analyzing");
+    setDeckUrl("Demo · cached sample");
+    try {
+      const r = await fetch(`${apiBase}/api/result/demo_session_static`);
+      if (!r.ok) throw new Error(`Demo unavailable (${r.status})`);
+      const data = (await r.json()) as TopologyReport;
+      // Tag with the curated-sample flag so the honest "cached sample" notice
+      // renders and this is never mistaken for a live scan.
+      const demo = { ...data, _curated_fallback: true } as TopologyReport;
+      setReturnedAgents(
+        demo.agents.filter(a => a.status === "success" || a.status === "detected" || a.status === "failed")
+      );
+      saveConv(demo);
+      setReport(demo);
+      setDeckPhaseLabel("complete");
+      setPhase("complete");
+    } catch {
+      setErrorMsg("Demo data is temporarily unavailable. Please try again.");
+      setPhase("error");
+    }
+  }, [apiBase, saveConv]);
+
   const runLive = useCallback(async (url: string, name: string) => {
     try {
       // SaaS auth: attach Supabase access token so the backend can identify
@@ -445,23 +479,32 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       const b1 = await r1.json();
       const sessionId: string = b1.session_id;
 
+      let notFoundCount = 0;
       pollRef.current = setInterval(async () => {
         if (cancelledRef.current) return;
         try {
           const r2 = await fetch(`${apiBase}/api/result/${sessionId}`, { headers });
           if (r2.status === 404) {
-            stopTimers();
-            setErrorMsg("Probe session expired");
-            setPhase("error");
+            // The backend persists a 'running' row at launch, so a 404 here is
+            // only ever a transient blip (e.g. a cold-start window before the
+            // first read). Tolerate several before surfacing an honest error —
+            // never a bare "expired" for a job that may still be spinning up.
+            notFoundCount += 1;
+            if (notFoundCount >= 6) {
+              stopTimers();
+              setErrorMsg("We couldn't find this audit — it may have failed to start. Please try again.");
+              setPhase("error");
+            }
             return;
           }
+          notFoundCount = 0;
           if (!r2.ok) throw new Error(`Poll error: ${r2.status}`);
           const data: TopologyReport = await r2.json();
           setReturnedAgents(data.agents.filter(a => a.status === "success" || a.status === "detected" || a.status === "failed"));
           const succ = data.successful_agents;
           setActiveWave(succ < 8 ? 0 : succ < 16 ? 1 : 2);
 
-          if (data.status === "completed" || data.status === "failed" || data.status === "needs_context") {
+          if (data.status === "completed" || data.status === "failed" || data.status === "needs_context" || data.status === "timeout") {
             stopTimers();
             if (data.status === "completed") {
               saveConv(data);
@@ -487,9 +530,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                 raw.includes("blocked") ||
                 raw.includes("detected");
               setErrorMsg(
-                blocked
-                  ? "This site blocked our agents at the perimeter. Try one of the case studies below to see how JACOBI works."
-                  : data.error || "Audit failed."
+                data.status === "timeout"
+                  ? (data.error || "The audit timed out before completing. Please retry, or try a demo audit below.")
+                  : blocked
+                    ? "This site blocked our agents at the perimeter. Try one of the case studies below to see how JACOBI works."
+                    : data.error || "Audit failed."
               );
               setReport(data);
               setPhase("error");
@@ -862,7 +907,20 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           )}
 
           <div className="cases">
-            <div className="cases-divider"><span className="label-mono">or open a case</span></div>
+            <div className="cases-divider"><span className="label-mono">see a demo — or run a live case</span></div>
+            <button
+              type="button"
+              className="case-row"
+              onClick={loadDemo}
+            >
+              <span className="case-info">
+                <span className="case-name">▶ View demo result</span>
+                <span className="case-host mono">cached sample · no live scan</span>
+              </span>
+              <span className="case-meta">
+                <span className="case-arrow">→</span>
+              </span>
+            </button>
             <div className="cases-list">
               {CASES.map((c, i) => (
                 <button

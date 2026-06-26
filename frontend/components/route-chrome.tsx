@@ -4,10 +4,9 @@
  * RouteChrome — owns the global nav + top spacing, plus the global
  * backend warm-up ping.
  *
- * Skips the global nav on /design-preview/* so the Claude Design page
- * can render its own nav (injected by chrome.js into `#nav-root`) without
- * a stacked second nav from our app, and without the fixed-nav 60 px top
- * padding.
+ * Skips the global nav on routes that own the design-system navigation.
+ * Those pages render DesignNav themselves, so RouteChrome must never add a
+ * second fixed header or a second 60 px top offset.
  *
  * Lifted out of app/layout.tsx so the layout can stay a server component
  * (for metadata export) while this client component handles the
@@ -43,15 +42,22 @@ export default function RouteChrome({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  const designRoutePrefixes = [
+    "/design-preview",
+    "/chat",
+    "/pricing",
+    "/leaderboard",
+    "/history",
+    "/dashboard",
+    "/share",
+    "/method",
+    "/extension",
+    "/privacy",
+    "/terms",
+  ];
   const isDesign =
     pathname === "/" ||
-    pathname.startsWith("/design-preview") ||
-    pathname.startsWith("/chat") ||
-    pathname.startsWith("/pricing") ||
-    pathname.startsWith("/leaderboard") ||
-    pathname.startsWith("/history") ||
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/share");
+    designRoutePrefixes.some((prefix) => pathname.startsWith(prefix));
 
   if (isDesign) {
     return <>{children}</>;

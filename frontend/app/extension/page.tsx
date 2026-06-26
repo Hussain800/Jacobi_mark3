@@ -1,122 +1,89 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import DesignNav from "../../components/design/DesignNav";
-import DesignFooter from "../../components/design/DesignFooter";
+import { Check, MonitorSmartphone, ShieldCheck, Store } from "lucide-react";
+import DocumentShell, { DocumentArticle, DocumentToc } from "../../components/documents/DocumentShell";
 import "../jacobi-design.css";
 
 export const metadata: Metadata = {
-  title: "Browser extension — JACOBI",
+  title: "Browser extension | JACOBI",
   description:
-    "A JACOBI browser extension is in development and not yet shipped. This page describes what it is intended to do.",
+    "The status, intended workflow, and release safeguards for the JACOBI browser extension prototype.",
 };
+
+const toc = [
+  { href: "#status", label: "Current status" },
+  { href: "#workflow", label: "Intended workflow" },
+  { href: "#release-bar", label: "Release bar" },
+  { href: "#data", label: "Data and permissions" },
+];
 
 export default function ExtensionPage() {
   return (
-    <div className="jacobi-design">
-      <DesignNav />
+    <DocumentShell
+      section="Browser extension"
+      title="A faster handoff from the page you are reviewing"
+      summary="The JACOBI extension is a development prototype, not a published browser product. This page explains its intended workflow and the safeguards required before anyone should install it."
+      meta="Prototype status · No public install or Chrome Web Store listing"
+      aside={
+        <div className="extension-status-card">
+          <Store aria-hidden="true" />
+          <div><span>Availability</span><strong>Not shipped</strong></div>
+          <p>No installer. No store listing. No supported production configuration.</p>
+        </div>
+      }
+    >
+      <DocumentToc items={toc} />
+      <DocumentArticle>
+        <section id="status" className="doc-section doc-intro">
+          <p className="doc-overline">Current status</p>
+          <h2>There is no JACOBI extension for customers to install today.</h2>
+          <div className="doc-split-copy">
+            <p>
+              The repository includes a Chrome extension prototype with a popup, a context-menu action, local recent-item storage, and a lightweight on-page price cue. It is unfinished, uses development configuration, and is not published through the Chrome Web Store.
+            </p>
+            <p>
+              That distinction matters. This is a roadmap page, not a download page. The web app remains the supported way to submit an audit URL today.
+            </p>
+          </div>
+          <Link href="/chat" className="doc-action">Open the supported audit workflow <span aria-hidden="true">→</span></Link>
+        </section>
 
-      <main className="page">
-        <section className="section page-top">
-          <div className="wrap" style={{ maxWidth: 760 }}>
-            <div className="sec-head">
-              <span className="eyebrow">
-                <span className="dot">●</span> Extension
-              </span>
-              <h1 className="display sec-title">
-                Browser extension —{" "}
-                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  in development
-                </span>
-              </h1>
-              <p className="sec-lede sec">
-                A JACOBI browser extension exists as a work-in-progress in the
-                codebase. It is not published and not available to install. This
-                page is here so the link is not dead — not to suggest it ships
-                today.
-              </p>
-            </div>
-
-            <div className="card" style={{ padding: "clamp(24px, 4vw, 40px)" }}>
-              <article
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 24,
-                  fontSize: 15,
-                  lineHeight: 1.7,
-                  color: "var(--text-2)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 9,
-                    alignSelf: "flex-start",
-                    padding: "6px 12px",
-                    borderRadius: 999,
-                    border: "1px solid var(--line-2)",
-                    color: "var(--text-3)",
-                    fontFamily: "var(--mono)",
-                    fontSize: 11,
-                    letterSpacing: "0.14em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Status: not shipped
-                </div>
-
-                <section>
-                  <h2 className="label-mono" style={{ marginBottom: 10, color: "var(--text)" }}>
-                    What it is
-                  </h2>
-                  <p>
-                    A Chrome extension prototype lives in the repository&apos;s{" "}
-                    <code style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>
-                      extension/
-                    </code>{" "}
-                    directory. It is unreleased and unfinished. It is not in the
-                    Chrome Web Store, and there is no supported install path for
-                    it yet.
-                  </p>
-                </section>
-
-                <section>
-                  <h2 className="label-mono" style={{ marginBottom: 10, color: "var(--text)" }}>
-                    What it is intended to do
-                  </h2>
-                  <p>
-                    The intent is to let you start an audit from the page
-                    you&apos;re on — for example, a right-click or shortcut that
-                    sends the current product URL to JACOBI to probe — rather than
-                    copying the URL into the web app by hand. This is a
-                    convenience layer over the same probe described on the{" "}
-                    <Link href="/method" className="nav-link" style={{ display: "inline" }}>
-                      Method
-                    </Link>{" "}
-                    page; it does not change how audits work.
-                  </p>
-                </section>
-
-                <section>
-                  <h2 className="label-mono" style={{ marginBottom: 10, color: "var(--text)" }}>
-                    Until then
-                  </h2>
-                  <p>
-                    Audits run in the web app today. You can start one from the{" "}
-                    <Link href="/chat" className="nav-link" style={{ display: "inline" }}>
-                      audit page
-                    </Link>{" "}
-                    by submitting a URL directly.
-                  </p>
-                </section>
-              </article>
-            </div>
+        <section id="workflow" className="doc-section">
+          <p className="doc-overline">Intended workflow</p>
+          <h2>Keep the decision in the web app, remove the copy-and-paste.</h2>
+          <div className="extension-flow">
+            <div><MonitorSmartphone aria-hidden="true" /><span>01</span><h3>Identify a page</h3><p>From a product or offer page, the extension would let a user choose the URL they are already reviewing.</p></div>
+            <div><span>02</span><h3>Hand off the URL</h3><p>The URL would open in Jacobi&apos;s audit workflow. The extension would not make an evidence claim on the page itself.</p></div>
+            <div><span>03</span><h3>Run an explicit audit</h3><p>The user would still review the target and deliberately start the audit in Jacobi. No background live scan should begin from passive browsing.</p></div>
+            <div><span>04</span><h3>Review the evidence</h3><p>Results, coverage, exports, and any share controls remain in the authenticated Jacobi workspace.</p></div>
           </div>
         </section>
-      </main>
 
-      <DesignFooter />
-    </div>
+        <section id="release-bar" className="doc-section">
+          <p className="doc-overline">Release bar</p>
+          <h2>What must be true before this can be a product</h2>
+          <div className="release-grid">
+            {[
+              ["Production handoff", "The prototype must point to the supported production app rather than a local development address."],
+              ["Least privilege", "Every browser permission and host pattern must be reduced to the minimum needed for a specific user-facing feature."],
+              ["Clear disclosure", "The store listing, permissions explanation, privacy notice, and in-product controls must describe the same behavior."],
+              ["Independent review", "The extension needs functional, privacy, security, and Chrome Web Store policy review before release."],
+            ].map(([title, detail]) => <div key={title}><Check aria-hidden="true" /><h3>{title}</h3><p>{detail}</p></div>)}
+          </div>
+        </section>
+
+        <section id="data" className="doc-section doc-limitations">
+          <p className="doc-overline">Data and permissions</p>
+          <h2>Nothing should be implicit.</h2>
+          <p className="doc-copy">
+            A released extension would explain each requested browser permission in plain language: what it enables, when it runs, what data it can reach, whether data leaves the browser, and how the user can remove access. That disclosure does not exist for a released JACOBI extension because there is no released JACOBI extension.
+          </p>
+          <div className="doc-callout">
+            <ShieldCheck aria-hidden="true" />
+            <p><strong>For now:</strong> use the web application for audits and see the <Link href="/privacy">Privacy Policy</Link> for the current service data-handling overview.</p>
+          </div>
+        </section>
+      </DocumentArticle>
+    </DocumentShell>
   );
 }

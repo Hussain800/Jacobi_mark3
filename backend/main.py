@@ -63,7 +63,7 @@ from enterprise_store import (
     revoke_share_token as enterprise_revoke_share_token,
     revoke_organization_invite as enterprise_revoke_organization_invite,
 )
-from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet
+from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet, external_share_token_view
 from ops_readiness import build_enterprise_health
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
@@ -3245,7 +3245,9 @@ async def get_enterprise_shared_finding(token: str):
     try:
         result = await enterprise_get_shared_finding_packet(token)
         return {
-            "share_token": result["share_token"],
+            # SEC-1b: the anonymous viewer never needs the share_tokens row's
+            # internal ids (org/finding/created_by); expose only safe fields.
+            "share_token": external_share_token_view(result["share_token"]),
             "redacted": result.get("redacted", True),
             "packet": redact_packet(result["packet"], redacted=bool(result.get("redacted", True))),
         }

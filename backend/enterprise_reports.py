@@ -49,6 +49,24 @@ def _redact_url(url: str | None) -> str:
         return "redacted"
 
 
+# Fields safe to expose on an ANONYMOUS external share. Everything else on the
+# share_tokens row (id, organization_id, finding_id, created_by, revoked_by) is
+# internal workspace metadata and is dropped so a public share never leaks it.
+_EXTERNAL_SHARE_TOKEN_FIELDS = (
+    "scope", "redacted", "expires_at", "created_at", "revoked_at", "last_accessed_at",
+)
+
+
+def external_share_token_view(share_token: dict | None) -> dict:
+    """Whitelist a share_token row for anonymous (public share) consumers.
+
+    The owner-facing workspace listing keeps the full row (it's the owner's own
+    org); this is only for the unauthenticated /shared-findings endpoint.
+    """
+    st = share_token or {}
+    return {k: st[k] for k in _EXTERNAL_SHARE_TOKEN_FIELDS if k in st}
+
+
 def redact_packet(packet: dict, *, redacted: bool) -> dict:
     """Return a report/share packet with external-safe fields removed."""
     data = copy.deepcopy(packet)

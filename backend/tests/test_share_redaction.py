@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from enterprise_reports import redact_packet  # noqa: E402
+from enterprise_reports import redact_packet, external_share_token_view  # noqa: E402
 
 
 def _sample_packet() -> dict:
@@ -67,3 +67,26 @@ def test_unredacted_packet_keeps_internal_ids():
     assert out["finding"]["id"] == "f1"
     assert out["finding"]["organization_id"] == "org-1"
     assert out["evidence_items"][0]["organization_id"] == "org-1"
+
+
+def test_external_share_token_view_drops_internal_ids():
+    # SEC-1b: the share_token object returned to an anonymous viewer alongside
+    # the packet must not leak internal workspace ids.
+    row = {
+        "id": "t1", "organization_id": "org-1", "finding_id": "f1",
+        "created_by": "user-9", "revoked_by": None,
+        "token_hash": "hash-should-never-appear",
+        "scope": "finding", "redacted": True,
+        "expires_at": "2026-01-01T00:00:00Z", "created_at": "2025-01-01T00:00:00Z",
+        "revoked_at": None, "last_accessed_at": None,
+    }
+    out = external_share_token_view(row)
+    for leaked in ("id", "organization_id", "finding_id", "created_by", "revoked_by", "token_hash"):
+        assert leaked not in out, f"share_token leaked {leaked}"
+    assert out["scope"] == "finding"
+    assert out["redacted"] is True
+    assert out["expires_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_external_share_token_view_handles_none():
+    assert external_share_token_view(None) == {}

@@ -71,6 +71,26 @@ def redact_packet(packet: dict, *, redacted: bool) -> dict:
         metadata.pop("probe_row_id", None)
         metadata.pop("extraction_evidence", None)
         row["metadata"] = metadata
+
+    # Strip internal workspace identifiers from a redacted (external) packet so a
+    # public share / redacted export never leaks the customer's org / scan /
+    # finding structure. Display fields (seller name+domain, product name, prices,
+    # buyer_context, the domain-only URL) are intentionally KEPT — they are the
+    # evidence the share is meant to convey.
+    def _strip_internal_ids(obj: object) -> None:
+        if not isinstance(obj, dict):
+            return
+        for key in ("id", "organization_id", "scan_job_id", "watchlist_item_id",
+                    "product_id", "seller_id", "finding_id", "created_by",
+                    "requested_by"):
+            obj.pop(key, None)
+
+    for key in ("finding", "product", "seller", "watchlist_item"):
+        _strip_internal_ids(data.get(key))
+    for row in data.get("evidence_items") or []:
+        _strip_internal_ids(row)
+        for nested in ("finding", "product", "seller", "watchlist_item"):
+            _strip_internal_ids(row.get(nested))
     return data
 
 

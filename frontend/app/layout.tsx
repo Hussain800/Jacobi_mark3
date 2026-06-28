@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import RouteChrome from "../components/route-chrome";
+// Geist is loaded for the marketing landing's isolated `.jx` system only.
+// Applying the .variable classes here just DEFINES --font-geist-sans / -mono on
+// <body>; app routes never reference them, so their fonts are unchanged.
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 
 export const metadata: Metadata = {
   title: "JACOBI — Price Integrity Intelligence",
@@ -35,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body
-        className="text-primary antialiased"
+        className={`text-primary antialiased ${GeistSans.variable} ${GeistMono.variable}`}
         style={{
           background: "#06070c",
           fontFamily: "var(--sans)",

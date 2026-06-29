@@ -193,6 +193,21 @@
   .jx [data-reveal] { opacity: 1; transform: none; transition: none; animation: none; }
 }
 
+/* progress bars fill from 0 → their target width (--w) once the enclosing
+   [data-reveal] enters view — the old app's "data loading" feel, kept restrained.
+   default 0-width avoids the auto=full-width flash before reveal. */
+.jx [data-reveal] .jx-matrix__fill,
+.jx [data-reveal] .jx-dist__fill,
+.jx [data-reveal] .jx-driver .f { width: 0; transition: width 1.05s var(--jx-ease) .12s; }
+.jx [data-reveal].in .jx-matrix__fill,
+.jx [data-reveal].in .jx-dist__fill,
+.jx [data-reveal].in .jx-driver .f { width: var(--w, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .jx [data-reveal] .jx-matrix__fill,
+  .jx [data-reveal] .jx-dist__fill,
+  .jx [data-reveal] .jx-driver .f { width: var(--w, 0); transition: none; }
+}
+
 /* ============================================================================
    FORENSIC INSTRUMENT CHROME
    The structural signal that separates "measurement instrument" from
@@ -381,10 +396,11 @@
 .jx-hero { position: relative; min-height: 100svh; display: flex; flex-direction: column; padding: 96px 0 0; }
 .jx-hero__main { flex: 1; display: flex; align-items: center; padding-bottom: 36px; }
 .jx-hero__main > .jx-wrap { width: 100%; }
-.jx-hero__grid { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; }
+.jx-hero__grid { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 48px; align-items: center; }
 .jx-hero__copy { max-width: 600px; }
 .jx-hero__eyebrow { margin-bottom: 30px; }
 .jx-hero__title { letter-spacing: -0.042em; line-height: 0.93; text-wrap: balance; }
+.jx-hero__title .jx-hero__dot { color: var(--jx-accent); }
 /* parent-scoped so the .jx p{margin:0} reset can't override the intentional
    subhead distance below the H1 (specificity 0,2,0 > 0,1,1). */
 .jx-hero__copy .jx-hero__lede { margin-top: 34px; max-width: 40ch; line-height: 1.6; text-wrap: pretty; }
@@ -394,15 +410,19 @@
   font-family: var(--jx-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--jx-ink-3); text-transform: uppercase;
 }
 .jx-hero__meta b { color: var(--jx-ink); font-weight: 500; }
-.jx-hero__stage { position: relative; width: 100%; max-width: 540px; margin-left: auto; }
+.jx-hero__stage { position: relative; width: 100%; max-width: 620px; margin-left: auto; }
 
-/* ---- Hero canvas material: a calibrated dark instrument chamber ----------- */
+/* ---- Hero canvas material: a calibrated dark instrument chamber -----------
+   Dimensional dark material (layered radials, no lines) — reads as a lit
+   measurement chamber, not flat black, and never a grid maze. */
 .jx-hero::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(50% 58% at 73% 42%, rgba(110,146,255,0.075), transparent 72%),   /* lift behind globe */
-    radial-gradient(46% 52% at 13% 33%, rgba(190,204,238,0.038), transparent 76%),   /* lift behind headline */
-    radial-gradient(135% 140% at 50% 28%, transparent 48%, rgba(0,0,0,0.52) 100%);    /* edge vignette */
+    radial-gradient(54% 60% at 74% 44%, rgba(110,146,255,0.10), transparent 70%),    /* cobalt lift behind globe */
+    radial-gradient(34% 40% at 78% 46%, rgba(126,156,255,0.06), transparent 72%),    /* tighter inner core */
+    radial-gradient(48% 54% at 12% 32%, rgba(190,204,238,0.045), transparent 74%),   /* lift behind headline */
+    linear-gradient(180deg, rgba(140,160,210,0.020), transparent 28%),               /* top sheen */
+    radial-gradient(130% 150% at 50% 22%, transparent 44%, rgba(0,0,0,0.58) 100%);    /* deeper edge vignette */
 }
 .jx-hero__main { position: relative; z-index: 1; }
 .jx-hero .jx-ticker { position: relative; z-index: 1; }
@@ -422,8 +442,8 @@
 @media (max-width: 940px) {
   .jx-hero { min-height: auto; padding: 104px 0 56px; }
   .jx-hero__grid { grid-template-columns: 1fr; gap: 36px; }
-  .jx-hero__stage { order: -1; max-width: 420px; margin: 0 auto; }
-  .jx-hero__chrome, .jx-hero__backdrop { display: none; }
+  .jx-hero__stage { order: -1; max-width: 470px; margin: 0 auto; }
+  .jx-hero__chrome { display: none; }
 }
 
 /* ============================================================================

@@ -10,47 +10,51 @@
    ========================================================================== */
 
 .jx {
-  /* ---- surfaces: luminance ladder (lighter = more elevated) -------------- */
-  --jx-canvas:   #07080B;
-  --jx-layer-0:  #0A0C11;
-  --jx-layer-1:  #0E1117;
-  --jx-layer-2:  #13161D;
-  --jx-layer-3:  #1A1E27;
+  /* ---- surfaces: luminance ladder (lighter = more elevated) --------------
+     Exact values from the Jacobi Design Direction surface ladder:
+     canvas → bands → cards → cells → floats. Depth = luminance + hairline. */
+  --jx-canvas:   #070809;
+  --jx-layer-0:  #0b0d12;   /* surface-1 · bands  */
+  --jx-layer-1:  #10131b;   /* surface-2 · cards  */
+  --jx-layer-2:  #161a24;   /* surface-3 · cells  */
+  --jx-layer-3:  #1e2330;   /* surface-4 · floats (the only surface that may cast a shadow) */
 
   /* ---- ink --------------------------------------------------------------- */
-  --jx-ink:   #F4F6FA;
-  --jx-ink-2: #A6AEBD;
-  --jx-ink-3: #6B7480;
-  --jx-ink-4: #454C58;
+  --jx-ink:   #eef0f5;
+  --jx-ink-2: #9aa3b4;
+  --jx-ink-3: #5e6675;
+  --jx-ink-4: #3b4250;
 
   /* ---- hairlines --------------------------------------------------------- */
   --jx-line:   rgba(255,255,255,0.06);
-  --jx-line-2: rgba(255,255,255,0.12);
+  --jx-line-2: rgba(255,255,255,0.11);
 
-  /* ---- the one accent ---------------------------------------------------- */
-  --jx-accent:    #3D6BFF;
-  --jx-accent-hi: #6E92FF;
-  --jx-accent-dim: rgba(61,107,255,0.14);
+  /* ---- the one accent — cobalt, spent scarcely --------------------------- */
+  --jx-accent:      #5b7cf5;
+  --jx-accent-hi:   #92a6ff;
+  --jx-accent-deep: #3a4fc4;
+  --jx-accent-dim:  rgba(91,124,245,0.12);
+  --jx-accent-line: rgba(91,124,245,0.30);
 
   /* ---- semantic (data artifacts only) ------------------------------------ */
-  --jx-baseline: #35B083;
-  --jx-deviant:  #E5524E;
-  --jx-caution:  #D6A23E;
+  --jx-baseline: #33d39b;
+  --jx-deviant:  #ff5d6b;
+  --jx-caution:  #ffb053;
 
-  /* ---- type -------------------------------------------------------------- */
-  --jx-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --jx-mono: var(--font-geist-mono), ui-monospace, "JetBrains Mono", SFMono-Regular, monospace;
+  /* ---- type — one grotesk (display) + one mono (data) -------------------- */
+  --jx-sans: var(--font-schibsted), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --jx-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ---- radii / layout ---------------------------------------------------- */
   --jx-r-1: 4px;
   --jx-r-2: 8px;
-  --jx-r-3: 12px;
+  --jx-r-3: 14px;
   --jx-maxw: 1080px;
   --jx-maxw-wide: 1280px;
   --jx-gutter: clamp(24px, 6vw, 96px);
 
-  /* ---- motion (defined now, used later) ---------------------------------- */
-  --jx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* ---- motion ------------------------------------------------------------ */
+  --jx-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   position: relative;
   z-index: 0;
@@ -111,10 +115,10 @@
   text-transform: uppercase; letter-spacing: 0.16em; color: var(--jx-ink-3);
 }
 
-.jx-display { font-weight: 560; letter-spacing: -0.03em; line-height: 1.0; color: var(--jx-ink); }
+.jx-display { font-weight: 600; letter-spacing: -0.035em; line-height: 0.96; color: var(--jx-ink); }
 .jx-h1 { font-size: clamp(48px, 6.6vw, 92px); }
-.jx-h2 { font-size: clamp(32px, 4.4vw, 54px); font-weight: 540; letter-spacing: -0.025em; line-height: 1.05; }
-.jx-h3 { font-size: clamp(20px, 2.1vw, 24px); font-weight: 540; letter-spacing: -0.015em; line-height: 1.1; }
+.jx-h2 { font-size: clamp(30px, 4.4vw, 56px); font-weight: 600; letter-spacing: -0.032em; line-height: 1.04; }
+.jx-h3 { font-size: clamp(20px, 2.1vw, 24px); font-weight: 600; letter-spacing: -0.015em; line-height: 1.1; }
 
 .jx-lede { font-size: clamp(18px, 1.7vw, 20px); font-weight: 400; line-height: 1.5; color: var(--jx-ink-2); max-width: 62ch; }
 .jx-body { font-size: clamp(15px, 1.5vw, 16px); line-height: 1.6; color: var(--jx-ink-2); }
@@ -158,7 +162,7 @@
   --jx-ink-4: #a7a399;
   --jx-line:   rgba(20,22,28,0.09);
   --jx-line-2: rgba(20,22,28,0.18);
-  --jx-accent-dim: rgba(61,107,255,0.10);
+  --jx-accent-dim: rgba(91,124,245,0.10);
   background: var(--jx-canvas);
   color: var(--jx-ink);
 }
@@ -294,10 +298,10 @@
   padding: 13px 20px; border-radius: var(--jx-r-2); white-space: nowrap; cursor: pointer;
   transition: background .18s var(--jx-ease), border-color .18s var(--jx-ease), color .18s var(--jx-ease);
 }
-/* engineered solid CTA: crisp edges (darker 1px border + 1px top inset light),
-   slightly deeper fill so it reads as a built button, not a neon bloom. */
-.jx-btn--primary { color: #fff; background: #3a61ec; border: 1px solid #2a45bd; box-shadow: inset 0 1px 0 rgba(255,255,255,0.16); }
-.jx-btn--primary:hover { background: #4d72f1; border-color: #3a57d4; }
+/* flat cobalt command button per the design direction: one accent, deep-cobalt
+   hairline, NO glow, NO inset highlight (those read as slop). */
+.jx-btn--primary { color: #fff; background: var(--jx-accent); border: 1px solid var(--jx-accent-deep); }
+.jx-btn--primary:hover { background: #6a86f7; }
 .jx-btn--ghost { color: var(--jx-ink); background: var(--jx-layer-2); border: 1px solid var(--jx-line-2); }
 .jx-btn--ghost:hover { background: var(--jx-layer-3); }
 
@@ -328,20 +332,20 @@
   color: var(--jx-ink); font-family: var(--jx-mono); font-size: 14px; padding: 10px 2px;
 }
 .jx-probe__input::placeholder { color: var(--jx-ink-4); }
-/* PRIMARY CTA — an off-white "command" control. The single brightest element on
-   the page (the globe owns the cobalt energy, so the CTA does not). A small
-   cobalt signal dot ties it to the probe/audit identity. */
+/* PRIMARY CTA — the flat cobalt "command" control from the Jacobi Design
+   Direction: one accent carrying the primary action. Flat fill + a deep-cobalt
+   hairline; NO glow, NO drop shadow (that's the slop tell). Mono label + arrow. */
 .jx-probe__submit {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px;
-  font-family: var(--jx-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.004em;
-  color: #0c0f15; background: #e9ebf0; border: 1px solid #c9cdd6; border-radius: 6px;
-  padding: 9px 15px; cursor: pointer;
-  transition: background .16s var(--jx-ease), border-color .16s var(--jx-ease), transform .08s var(--jx-ease);
+  font-family: var(--jx-mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em;
+  color: #fff; background: var(--jx-accent); border: 1px solid var(--jx-accent-deep); border-radius: var(--jx-r-2);
+  padding: 10px 16px; cursor: pointer;
+  transition: background .18s var(--jx-ease), transform .08s var(--jx-ease);
 }
-.jx-probe__submit::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--jx-accent); flex-shrink: 0; }
-.jx-probe__submit:hover { background: #f3f4f7; border-color: #d8dbe2; }
-.jx-probe__submit:active { transform: translateY(1px); background: #dde0e7; }
-.jx-probe__submit:focus-visible { outline: 2px solid var(--jx-accent); outline-offset: 2px; }
+.jx-probe__submit::after { content: "\2192"; font-size: 13px; line-height: 1; }
+.jx-probe__submit:hover { background: #6a86f7; }
+.jx-probe__submit:active { transform: translateY(1px); background: #5274ee; }
+.jx-probe__submit:focus-visible { outline: 2px solid var(--jx-accent-hi); outline-offset: 2px; }
 .jx-probe__note { margin-top: 16px; font-family: var(--jx-mono); font-size: 11.5px; line-height: 1.6; letter-spacing: 0.02em; color: var(--jx-ink-3); }
 
 /* ============================================================================
@@ -399,11 +403,13 @@
 .jx-hero__grid { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 48px; align-items: center; }
 .jx-hero__copy { max-width: 600px; }
 .jx-hero__eyebrow { margin-bottom: 30px; }
-.jx-hero__title { letter-spacing: -0.042em; line-height: 0.93; text-wrap: balance; }
+/* longer editorial headline (per the design direction) → sized down from the
+   92px punch-line scale so it sets in ~2–3 balanced lines. */
+.jx-hero__title { font-size: clamp(40px, 5.4vw, 68px); letter-spacing: -0.038em; line-height: 1.0; text-wrap: balance; }
 .jx-hero__title .jx-hero__dot { color: var(--jx-accent); }
 /* parent-scoped so the .jx p{margin:0} reset can't override the intentional
    subhead distance below the H1 (specificity 0,2,0 > 0,1,1). */
-.jx-hero__copy .jx-hero__lede { margin-top: 34px; max-width: 40ch; line-height: 1.6; text-wrap: pretty; }
+.jx-hero__copy .jx-hero__lede { margin-top: 30px; max-width: 46ch; line-height: 1.55; text-wrap: pretty; }
 .jx-hero__cta { margin-top: 48px; }
 .jx-hero__meta {
   margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
@@ -418,8 +424,8 @@
 .jx-hero::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(54% 60% at 74% 44%, rgba(110,146,255,0.10), transparent 70%),    /* cobalt lift behind globe */
-    radial-gradient(34% 40% at 78% 46%, rgba(126,156,255,0.06), transparent 72%),    /* tighter inner core */
+    radial-gradient(54% 60% at 74% 44%, rgba(91,124,245,0.11), transparent 70%),     /* cobalt lift behind globe */
+    radial-gradient(34% 40% at 78% 46%, rgba(110,134,245,0.06), transparent 72%),    /* tighter inner core */
     radial-gradient(48% 54% at 12% 32%, rgba(190,204,238,0.045), transparent 74%),   /* lift behind headline */
     linear-gradient(180deg, rgba(140,160,210,0.020), transparent 28%),               /* top sheen */
     radial-gradient(130% 150% at 50% 22%, transparent 44%, rgba(0,0,0,0.58) 100%);    /* deeper edge vignette */
@@ -522,7 +528,7 @@
 .jx-receipt__stats { display: flex; gap: 32px; flex-wrap: wrap; }
 .jx-receipt__stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--jx-ink-3); }
 .jx-receipt__stat .v { font-size: 22px; color: var(--jx-ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
-.jx-receipt__stamp { font-size: 11px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--jx-deviant); border: 1.5px solid var(--jx-deviant); border-radius: 4px; padding: 8px 14px; transform: rotate(-3deg); background: rgba(229,82,78,0.05); }
+.jx-receipt__stamp { font-size: 11px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--jx-deviant); border: 1.5px solid var(--jx-deviant); border-radius: 4px; padding: 8px 14px; transform: rotate(-3deg); background: rgba(255,93,107,0.05); }
 .jx-receipt__hash { padding: 14px clamp(22px, 3vw, 38px); border-top: 1px dashed var(--jx-line-2); background: var(--jx-layer-2); font-size: 10.5px; color: var(--jx-ink-3); word-break: break-all; }
 @media (max-width: 640px) {
   .jx-receipt__table th:nth-child(3), .jx-receipt__table td:nth-child(3),
@@ -593,12 +599,12 @@
 .jx-dist__top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .jx-dist__who { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-2); }
 .jx-dist__tag { font-family: var(--jx-mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.12em; padding: 2px 7px; border-radius: 100px; border: 1px solid; }
-.jx-dist__tag.top { color: var(--jx-deviant); border-color: rgba(229,82,78,0.4); }
-.jx-dist__tag.base { color: var(--jx-baseline); border-color: rgba(53,176,131,0.4); }
+.jx-dist__tag.top { color: var(--jx-deviant); border-color: rgba(255,93,107,0.4); }
+.jx-dist__tag.base { color: var(--jx-baseline); border-color: rgba(51,211,155,0.4); }
 .jx-dist__track { height: 5px; border-radius: 100px; background: var(--jx-layer-3); overflow: hidden; }
 .jx-dist__fill { height: 100%; border-radius: 100px; }
 .jx-dist__price { font-family: var(--jx-mono); font-size: 14px; color: var(--jx-ink); font-variant-numeric: tabular-nums; }
-.jx-side__badge { display: inline-flex; align-items: center; gap: 8px; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-caution); border: 1px solid rgba(214,162,62,0.34); background: rgba(214,162,62,0.08); padding: 6px 11px; border-radius: 100px; }
+.jx-side__badge { display: inline-flex; align-items: center; gap: 8px; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-caution); border: 1px solid rgba(255,176,83,0.34); background: rgba(255,176,83,0.08); padding: 6px 11px; border-radius: 100px; }
 .jx-side__big { margin-top: 20px; font-size: clamp(40px, 5vw, 54px); font-weight: 500; letter-spacing: -0.03em; color: var(--jx-ink); line-height: 1; font-variant-numeric: tabular-nums; }
 .jx-side__sub { margin-top: 8px; font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-3); }
 .jx-side__drivers { margin-top: 24px; display: flex; flex-direction: column; gap: 11px; }

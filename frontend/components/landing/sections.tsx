@@ -54,10 +54,10 @@ export function Hero() {
           <div className="jx-hero__grid">
             <div className="jx-hero__copy" data-reveal>
               <span className="jx-eyebrow jx-hero__eyebrow"><span className="jx-tick" />Controlled synthetic-buyer audits</span>
-              <h1 className="jx-display jx-h1 jx-hero__title">Prove personalized pricing<span className="jx-hero__dot">.</span></h1>
+              <h1 className="jx-display jx-h1 jx-hero__title">See the price you were never meant to compare<span className="jx-hero__dot">.</span></h1>
               <p className="jx-lede jx-hero__lede">
-                Jacobi runs controlled buyer-context probes against one URL, captures
-                the raw evidence, and shows exactly which context moved the price.
+                Paste a URL. Twenty-four synthetic buyers check it from every angle — geography,
+                device, cookies, referrer, language — and return evidence, with statistics and receipts.
               </p>
               <div className="jx-hero__cta">
                 <ProbeInput cta="Run an audit" />

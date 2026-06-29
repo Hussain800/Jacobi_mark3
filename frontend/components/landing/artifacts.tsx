@@ -5,7 +5,11 @@
  * All bound to the one canonical sample dataset (data.ts) so the numbers agree.
  */
 
+import type { CSSProperties } from "react";
 import { SAMPLE, RECEIPT_ROWS, EVIDENCE_ROWS, VECTORS } from "./data";
+
+/* bar widths are driven by a --w custom property animated on reveal (see Reveals) */
+const barW = (pct: number) => ({ "--w": `${pct}%` } as CSSProperties);
 
 /* ── Evidence Receipt — the signature, printed on the light .jx-invert band ── */
 export function EvidenceReceipt() {
@@ -67,8 +71,8 @@ export function BuyerContextMatrix() {
           </div>
           <span className={`jx-matrix__state${!v.held ? " varied" : ""}`}>{v.held ? "held" : "varied"}</span>
           <div className="jx-matrix__sens">
-            <div className="jx-matrix__bar"><div className="jx-matrix__fill" style={{ width: `${v.sensitivity}%` }} /></div>
-            <span className="jx-matrix__pct">{v.sensitivity}%</span>
+            <div className="jx-matrix__bar"><div className="jx-matrix__fill" style={barW(v.sensitivity)} /></div>
+            <span className="jx-matrix__pct" data-count={v.sensitivity} data-suffix="%">{v.sensitivity}%</span>
           </div>
         </div>
       ))}
@@ -84,17 +88,17 @@ export function PriceDelta() {
       <div className="jx-pd">
         <div className="jx-pd__buyer">
           <div className="jx-pd__who">Android · Chrome<br />rural Iowa · VPN</div>
-          <div className="jx-pd__price base">${SAMPLE.baseline}</div>
+          <div className="jx-pd__price base"><span data-count={SAMPLE.baseline} data-prefix="$">${SAMPLE.baseline}</span></div>
           <div className="jx-pd__native">USD 498.00 · baseline</div>
         </div>
         <div className="jx-pd__delta">
           <span className="x">Δ</span>
-          <span className="d">+${SAMPLE.delta}</span>
-          <span className="p">+{SAMPLE.deltaPct}%</span>
+          <span className="d"><span data-count={SAMPLE.delta} data-prefix="+$">+${SAMPLE.delta}</span></span>
+          <span className="p"><span data-count={SAMPLE.deltaPct} data-prefix="+" data-suffix="%">+{SAMPLE.deltaPct}%</span></span>
         </div>
         <div className="jx-pd__buyer">
           <div className="jx-pd__who">iPhone · Safari<br />Manhattan · direct</div>
-          <div className="jx-pd__price dev">${SAMPLE.highest}</div>
+          <div className="jx-pd__price dev"><span data-count={SAMPLE.highest} data-prefix="$">${SAMPLE.highest}</span></div>
           <div className="jx-pd__native">USD 642.00 · exposed</div>
         </div>
       </div>
@@ -118,10 +122,10 @@ export function AuditReadout() {
       <div className="jx-audit__grid">
         <div className="jx-audit__main">
           <div className="jx-kpis">
-            <div className="jx-kpi"><div className="l">Baseline</div><div className="v base">${SAMPLE.baseline}</div></div>
-            <div className="jx-kpi"><div className="l">Highest</div><div className="v dev">${SAMPLE.highest}</div></div>
-            <div className="jx-kpi"><div className="l">Delta</div><div className="v">+${SAMPLE.delta}</div></div>
-            <div className="jx-kpi"><div className="l">PEI</div><div className="v">{SAMPLE.pei.toFixed(2)}</div></div>
+            <div className="jx-kpi"><div className="l">Baseline</div><div className="v base"><span data-count={SAMPLE.baseline} data-prefix="$">${SAMPLE.baseline}</span></div></div>
+            <div className="jx-kpi"><div className="l">Highest</div><div className="v dev"><span data-count={SAMPLE.highest} data-prefix="$">${SAMPLE.highest}</span></div></div>
+            <div className="jx-kpi"><div className="l">Delta</div><div className="v"><span data-count={SAMPLE.delta} data-prefix="+$">+${SAMPLE.delta}</span></div></div>
+            <div className="jx-kpi"><div className="l">PEI</div><div className="v"><span data-count={SAMPLE.pei} data-decimals="2">{SAMPLE.pei.toFixed(2)}</span></div></div>
           </div>
           <div className="jx-dist">
             {EVIDENCE_ROWS.map((e, i) => {
@@ -134,7 +138,7 @@ export function AuditReadout() {
                       {e.tag === "top" && <span className="jx-dist__tag top">top</span>}
                       {e.tag === "baseline" && <span className="jx-dist__tag base">baseline</span>}
                     </div>
-                    <div className="jx-dist__track"><div className="jx-dist__fill" style={{ width: `${w}%`, background: fillColor(e.verdict) }} /></div>
+                    <div className="jx-dist__track"><div className="jx-dist__fill" style={{ "--w": `${w}%`, background: fillColor(e.verdict) } as CSSProperties} /></div>
                   </div>
                   <span className="jx-dist__price">${e.price}</span>
                 </div>
@@ -144,14 +148,14 @@ export function AuditReadout() {
         </div>
         <div className="jx-audit__side">
           <span className="jx-side__badge"><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--jx-caution)" }} /> Progressive</span>
-          <div className="jx-side__big">+${SAMPLE.delta}</div>
+          <div className="jx-side__big"><span data-count={SAMPLE.delta} data-prefix="+$">+${SAMPLE.delta}</span></div>
           <div className="jx-side__sub">{SAMPLE.deltaPct}% over baseline · per ticket</div>
           <div className="jx-side__drivers">
             {SAMPLE.drivers.map((d) => (
               <div className="jx-driver" key={d.name}>
                 <span className="n">{d.name}</span>
-                <div className="t"><div className="f" style={{ width: `${d.weight}%` }} /></div>
-                <span className="p">{d.weight}%</span>
+                <div className="t"><div className="f" style={barW(d.weight)} /></div>
+                <span className="p" data-count={d.weight} data-suffix="%">{d.weight}%</span>
               </div>
             ))}
           </div>

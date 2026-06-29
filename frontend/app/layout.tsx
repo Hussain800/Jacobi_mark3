@@ -1,11 +1,19 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import RouteChrome from "../components/route-chrome";
-// Geist is loaded for the marketing landing's isolated `.jx` system only.
-// Applying the .variable classes here just DEFINES --font-geist-sans / -mono on
-// <body>; app routes never reference them, so their fonts are unchanged.
-import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
+// Schibsted Grotesk is loaded for the marketing landing's isolated `.jx` system
+// only (per the Jacobi Design Direction: one grotesk display + one mono). Applying
+// the .variable class here just DEFINES --font-schibsted on <body>; app routes
+// never reference it, so their fonts are unchanged. The landing's mono reuses the
+// JetBrains Mono already loaded via the <link> below (also used by app routes).
+import { Schibsted_Grotesk } from "next/font/google";
+
+const schibsted = Schibsted_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-schibsted",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "JACOBI — Price Integrity Intelligence",
@@ -40,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body
-        className={`text-primary antialiased ${GeistSans.variable} ${GeistMono.variable}`}
+        className={`text-primary antialiased ${schibsted.variable}`}
         style={{
           background: "#06070c",
           fontFamily: "var(--sans)",

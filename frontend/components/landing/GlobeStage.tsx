@@ -90,7 +90,7 @@ function GlobeFallback() {
             <stop offset="0%" stopColor="#0e1426" /><stop offset="68%" stopColor="#080b13" /><stop offset="100%" stopColor="#05070d" />
           </radialGradient>
           <radialGradient id="jxg-rim" cx="50%" cy="50%" r="50%">
-            <stop offset="78%" stopColor="rgba(61,107,255,0)" /><stop offset="93%" stopColor="rgba(61,107,255,0.18)" /><stop offset="100%" stopColor="rgba(61,107,255,0)" />
+            <stop offset="78%" stopColor="rgba(91,124,245,0)" /><stop offset="93%" stopColor="rgba(91,124,245,0.18)" /><stop offset="100%" stopColor="rgba(91,124,245,0)" />
           </radialGradient>
         </defs>
         <circle cx="220" cy="220" r="205" fill="url(#jxg-rim)" />
@@ -114,17 +114,17 @@ function GlobeFallback() {
           </g>
         ))}
         {/* a couple of route traces */}
-        <path d="M222 150 Q300 120 322 196" fill="none" stroke="rgba(61,107,255,0.4)" strokeWidth="1" />
-        <path d="M222 150 Q150 150 138 214" fill="none" stroke="rgba(61,107,255,0.32)" strokeWidth="1" />
+        <path d="M222 150 Q300 120 322 196" fill="none" stroke="rgba(91,124,245,0.4)" strokeWidth="1" />
+        <path d="M222 150 Q150 150 138 214" fill="none" stroke="rgba(91,124,245,0.32)" strokeWidth="1" />
       </svg>
     </div>
   );
 }
 
 const NODES = [
-  { x: 222, y: 150, r: 3, c: "#E5524E" }, { x: 246, y: 132, r: 2.4, c: "#E5524E" },
-  { x: 322, y: 196, r: 2.4, c: "#6E92FF" }, { x: 300, y: 168, r: 2.2, c: "#6E92FF" },
-  { x: 270, y: 210, r: 2.2, c: "#6E92FF" }, { x: 250, y: 246, r: 2.2, c: "#6E92FF" },
-  { x: 200, y: 232, r: 2.2, c: "#6E92FF" }, { x: 168, y: 196, r: 2.2, c: "#6E92FF" },
-  { x: 138, y: 214, r: 2.4, c: "#35B083" }, { x: 190, y: 270, r: 2.4, c: "#35B083" },
+  { x: 222, y: 150, r: 3, c: "#ff5d6b" }, { x: 246, y: 132, r: 2.4, c: "#ff5d6b" },
+  { x: 322, y: 196, r: 2.4, c: "#92a6ff" }, { x: 300, y: 168, r: 2.2, c: "#92a6ff" },
+  { x: 270, y: 210, r: 2.2, c: "#92a6ff" }, { x: 250, y: 246, r: 2.2, c: "#92a6ff" },
+  { x: 200, y: 232, r: 2.2, c: "#92a6ff" }, { x: 168, y: 196, r: 2.2, c: "#92a6ff" },
+  { x: 138, y: 214, r: 2.4, c: "#33d39b" }, { x: 190, y: 270, r: 2.4, c: "#33d39b" },
 ];

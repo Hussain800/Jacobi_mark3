@@ -85,10 +85,10 @@ export function createProbeGlobe(canvas: HTMLCanvasElement, opts: ProbeGlobeOpti
     grat:   new THREE.Color("#243150"),
     gratEq: new THREE.Color("#33457a"),
     coast:  new THREE.Color("#4a5e94"),
-    rim:    new THREE.Color("#3d6bff"),
-    base:   new THREE.Color("#35B083"),
-    dev:    new THREE.Color("#E5524E"),
-    norm:   new THREE.Color("#6E92FF"),
+    rim:    new THREE.Color("#5b7cf5"),
+    base:   new THREE.Color("#33d39b"),
+    dev:    new THREE.Color("#ff5d6b"),
+    norm:   new THREE.Color("#92a6ff"),
     comet:  new THREE.Color("#acc2ff"),
   };
 

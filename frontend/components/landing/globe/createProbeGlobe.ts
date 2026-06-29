@@ -101,7 +101,7 @@ export function createProbeGlobe(canvas: HTMLCanvasElement, opts: ProbeGlobeOpti
   renderer.setClearColor(0x000000, 0);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
-  camera.position.set(0, 0, 23);
+  camera.position.set(0, 0, 21);
 
   const root = new THREE.Group();
   const spin = new THREE.Group();
@@ -164,7 +164,7 @@ export function createProbeGlobe(canvas: HTMLCanvasElement, opts: ProbeGlobeOpti
   // ---- land dots (recognizable earth, sampled from a land mask) ------------
   function buildDots(sampler: ((lat: number, lng: number) => boolean) | null) {
     if (disposed) return;
-    const N = low ? 9000 : 18000, pos: number[] = [], col: number[] = [];
+    const N = low ? 11000 : 24000, pos: number[] = [], col: number[] = [];
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < N; i++) {
       const y = 1 - (i / (N - 1)) * 2, rad = Math.sqrt(1 - y * y), th = golden * i;
@@ -177,7 +177,7 @@ export function createProbeGlobe(canvas: HTMLCanvasElement, opts: ProbeGlobeOpti
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    const m = new THREE.PointsMaterial({ size: 0.07, map: softDot, vertexColors: true, transparent: true, depthWrite: false, sizeAttenuation: true, opacity: 0.95, alphaTest: 0.02, blending: THREE.NormalBlending });
+    const m = new THREE.PointsMaterial({ size: 0.066, map: softDot, vertexColors: true, transparent: true, depthWrite: false, sizeAttenuation: true, opacity: 0.96, alphaTest: 0.02, blending: THREE.NormalBlending });
     spin.add(new THREE.Points(g, m)); trash.push(g, m);
   }
   const img = new Image(); img.crossOrigin = "anonymous"; let resolved = false;

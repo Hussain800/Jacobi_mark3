@@ -36,32 +36,33 @@ except a deliberate contrast moment.**
 
 ```css
 .jx{
-  /* surfaces */
-  --jx-canvas:    #07080B;  /* page base — cool near-black, never pure #000 */
-  --jx-layer-0:   #0A0C11;  /* full-bleed bands / hero veil */
-  --jx-layer-1:   #0E1117;  /* panels, receipt body */
-  --jx-layer-2:   #13161D;  /* cards, inner cells, alt table rows */
-  --jx-layer-3:   #1A1E27;  /* elevated: hover, popover, globe HUD */
+  /* surfaces — the Jacobi Design Direction ladder (canvas → bands → cards → cells → floats) */
+  --jx-canvas:     #070809;  /* page base — cool near-black, never pure #000 */
+  --jx-layer-0:    #0b0d12;  /* full-bleed bands / hero veil (surface-1) */
+  --jx-layer-1:    #10131b;  /* panels, receipt body (surface-2) */
+  --jx-layer-2:    #161a24;  /* cards, inner cells, alt table rows (surface-3) */
+  --jx-layer-3:    #1e2330;  /* elevated: hover, popover, globe HUD (surface-4 · only shadow) */
 
   /* ink */
-  --jx-ink:       #F4F6FA;  /* display + key data */
-  --jx-ink-2:     #A6AEBD;  /* body */
-  --jx-ink-3:     #6B7480;  /* labels, captions, axis */
-  --jx-ink-4:     #454C58;  /* deepest decorative / disabled */
+  --jx-ink:        #eef0f5;  /* display + key data */
+  --jx-ink-2:      #9aa3b4;  /* body */
+  --jx-ink-3:      #5e6675;  /* labels, captions, axis */
+  --jx-ink-4:      #3b4250;  /* deepest decorative / disabled */
 
   /* hairlines */
-  --jx-line:      rgba(255,255,255,0.06);  /* subtle */
-  --jx-line-2:    rgba(255,255,255,0.12);  /* strong / hover */
+  --jx-line:       rgba(255,255,255,0.06);  /* subtle */
+  --jx-line-2:     rgba(255,255,255,0.11);  /* strong / hover */
 
   /* THE accent — Jacobi cobalt (brand equity from the [] mark). ONE accent only. */
-  --jx-accent:    #3D6BFF;
-  --jx-accent-hi: #6E92FF;  /* hover / focus only */
-  --jx-accent-dim:rgba(61,107,255,0.14);
+  --jx-accent:     #5b7cf5;
+  --jx-accent-hi:  #92a6ff;  /* hover / focus only */
+  --jx-accent-deep:#3a4fc4;  /* deep hairline on the flat cobalt CTA */
+  --jx-accent-dim: rgba(91,124,245,0.12);
 
-  /* SEMANTIC — desaturated; ONLY inside data artifacts (receipt/matrix/charts). Never chrome. */
-  --jx-baseline:  #35B083;  /* clean / cheapest / safe */
-  --jx-deviant:   #E5524E;  /* overcharge / exposed (NOT hot pink) */
-  --jx-caution:   #D6A23E;  /* progressive / partial */
+  /* SEMANTIC — ONLY inside data artifacts (receipt/matrix/charts). Never chrome. */
+  --jx-baseline:   #33d39b;  /* clean / cheapest / safe */
+  --jx-deviant:    #ff5d6b;  /* overcharge / exposed */
+  --jx-caution:    #ffb053;  /* progressive / partial (amber) */
 }
 ```
 
@@ -76,9 +77,10 @@ readable).
 
 ## 2. Typography — engineered sans + mono (NO serif, NO italic accents)
 
-- **Display / UI:** **Geist Sans** via the `geist` npm package (`geist/font/sans`, next/font, CLS-safe).
-- **Data / terminal:** **Geist Mono** (`geist/font/mono`). One mono only. Tabular numerals everywhere
-  numbers appear: `font-variant-numeric: tabular-nums; font-feature-settings:"tnum";`.
+- **Display / UI:** **Schibsted Grotesk 600** via `next/font/google` (CLS-safe); −0.035em tracking,
+  0.96 line-height on display. Distinctive engineered grotesk (the Jacobi Design Direction face).
+- **Data / terminal:** **JetBrains Mono** (loaded via the shared `<link>`, reused by app routes). One
+  mono only. Tabular numerals everywhere numbers appear: `font-variant-numeric: tabular-nums;`.
 - **Hierarchy comes from scale + weight + position + the ladder — never from switching to a serif or
   italic.** Emphasis = weight/size/colour. The previous redesign's italic-serif accent word in every
   heading is **banned**.
@@ -278,5 +280,6 @@ elements; semantic landmarks; alt text; keyboard nav; labelled inputs; full `pre
 responsive 375 / 768 / 1280 / 1440 with no horizontal overflow; `/chat` + `/pricing` + `/dashboard`
 verified unchanged.
 
-**Decisions locked in Phase 1:** mono face = **Geist Mono**; primary CTA = **solid cobalt**; target =
-**UA182 JFK→LHR**.
+**Decisions (Jacobi Design Direction, 2026-06):** display = **Schibsted Grotesk 600**; mono =
+**JetBrains Mono**; accent = **cobalt #5b7cf5**; primary CTA = **flat solid cobalt** (deep-cobalt
+hairline, no glow/shadow); target = **UA182 JFK→LHR**.

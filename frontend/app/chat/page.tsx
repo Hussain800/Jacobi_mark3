@@ -42,7 +42,7 @@ function ChatInner() {
 export default function ChatPage() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<div style={{ background: "#06070c", minHeight: "100vh" }} />}>
+      <Suspense fallback={<div style={{ background: "#070809", minHeight: "100vh" }} />}>
         <ChatInner />
       </Suspense>
     </ErrorBoundary>

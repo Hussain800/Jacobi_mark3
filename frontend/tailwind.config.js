@@ -4,8 +4,10 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        serif: ['"Instrument Serif"', 'Georgia', 'serif'],
-        sans: ['Inter', '-apple-system', 'sans-serif'],
+        // Jacobi Design Direction: one grotesk (display + UI), one mono. `serif`
+        // now resolves to the grotesk too so legacy `font-serif` usages convert.
+        serif: ['var(--font-schibsted)', 'Georgia', 'serif'],
+        sans: ['var(--font-schibsted)', '-apple-system', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
@@ -38,30 +40,30 @@ module.exports = {
         // Cool near-black surfaces (never pure black), cobalt accent,
         // green = baseline/cheapest, red = exposed only, gold = Pro.
 
-        // Surface scale
-        ink:     "#07080b",   // bg-ink     · deep canvas (was 07080c)
-        "ink-2": "#090b10",   // bg-ink-2   · slightly raised
-        raised:  "#0c0f15",   // bg-raised  · cards
-        "surface-2": "#11151d",
-        "surface-3": "#161b25",
-        line:    "#1a1f2a",   // border-line · hairline (was 16191f)
-        "line-2":"#262c39",   // border-line-2 · hover
+        // Surface scale — Jacobi Design Direction ladder
+        ink:     "#070809",   // bg-ink     · deep canvas
+        "ink-2": "#0b0d12",   // bg-ink-2   · bands
+        raised:  "#10131b",   // bg-raised  · cards
+        "surface-2": "#161a24",
+        "surface-3": "#1e2330",
+        line:    "rgba(255,255,255,0.06)",   // border-line · hairline
+        "line-2":"rgba(255,255,255,0.11)",   // border-line-2 · hover
 
         // Text scale
-        primary:   "#eceef3", // text-primary
-        secondary: "#97a0b1", // text-secondary
-        muted:     "#5b6473", // text-muted
-        "muted-2": "#3d4452", // text-muted-2 · deepest reading
+        primary:   "#eef0f5", // text-primary
+        secondary: "#9aa3b4", // text-secondary
+        muted:     "#5e6675", // text-muted
+        "muted-2": "#3b4250", // text-muted-2 · deepest reading
 
         // Cobalt — the one color that "lights up". Primary accent for
         // actions, links, focus rings, headings emphasis.
         cobalt: {
-          DEFAULT: "#3d6bff",
-          bright:  "#6e92ff",
-          deep:    "#2a4fd6",
-          soft:    "rgba(61, 107, 255, 0.12)",
-          line:    "rgba(61, 107, 255, 0.30)",
-          glow:    "rgba(61, 107, 255, 0.45)",
+          DEFAULT: "#5b7cf5",
+          bright:  "#92a6ff",
+          deep:    "#3a4fc4",
+          soft:    "rgba(91, 124, 245, 0.12)",
+          line:    "rgba(91, 124, 245, 0.30)",
+          glow:    "rgba(91, 124, 245, 0.45)",
         },
 
         // Semantic — strict usage:
@@ -70,19 +72,19 @@ module.exports = {
         //   warning     → demo mode, partial blocking
         //   gold        → Pro tier, very sparing
         signal: {
-          DEFAULT: "#34d39b",
-          soft:    "rgba(52, 211, 155, 0.12)",
-          line:    "rgba(52, 211, 155, 0.40)",
-          glow:    "rgba(52, 211, 155, 0.45)",
+          DEFAULT: "#33d39b",
+          soft:    "rgba(51, 211, 155, 0.12)",
+          line:    "rgba(51, 211, 155, 0.40)",
+          glow:    "rgba(51, 211, 155, 0.45)",
         },
         overcharge: {
-          DEFAULT: "#ff5468",
-          soft:    "rgba(255, 84, 104, 0.12)",
-          line:    "rgba(255, 84, 104, 0.32)",
+          DEFAULT: "#ff5d6b",
+          soft:    "rgba(255, 93, 107, 0.12)",
+          line:    "rgba(255, 93, 107, 0.32)",
         },
         warning: {
-          DEFAULT: "#d4a040",
-          soft:    "rgba(212, 160, 64, 0.10)",
+          DEFAULT: "#ffb053",
+          soft:    "rgba(255, 176, 83, 0.10)",
         },
         gold: {
           DEFAULT: "#d8b06a",

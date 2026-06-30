@@ -1,0 +1,651 @@
+/* ============================================================================
+   Jacobi landing — "The Forensic Instrument"
+   Isolated design system. ALL selectors scoped under `.jx`. This file must
+   never be imported by, and never affect, the shared jacobi-design.css that the
+   app routes depend on. Token contract: frontend/DESIGN.md.
+
+   PHASE 2 = structure only. Tokens + layout + type + surfaces (luminance ladder
+   for depth) + buttons + nav/footer + section skeletons + artifact placeholders.
+   No globe, no motion, no gradients/glows/shadows. Those arrive in later phases.
+   ========================================================================== */
+
+.jx {
+  /* ---- surfaces: luminance ladder (lighter = more elevated) --------------
+     Exact values from the Jacobi Design Direction surface ladder:
+     canvas → bands → cards → cells → floats. Depth = luminance + hairline. */
+  --jx-canvas:   #070809;
+  --jx-layer-0:  #0b0d12;   /* surface-1 · bands  */
+  --jx-layer-1:  #10131b;   /* surface-2 · cards  */
+  --jx-layer-2:  #161a24;   /* surface-3 · cells  */
+  --jx-layer-3:  #1e2330;   /* surface-4 · floats (the only surface that may cast a shadow) */
+
+  /* ---- ink --------------------------------------------------------------- */
+  --jx-ink:   #eef0f5;
+  --jx-ink-2: #9aa3b4;
+  --jx-ink-3: #5e6675;
+  --jx-ink-4: #3b4250;
+
+  /* ---- hairlines --------------------------------------------------------- */
+  --jx-line:   rgba(255,255,255,0.06);
+  --jx-line-2: rgba(255,255,255,0.11);
+
+  /* ---- the one accent — cobalt, spent scarcely --------------------------- */
+  --jx-accent:      #5b7cf5;
+  --jx-accent-hi:   #92a6ff;
+  --jx-accent-deep: #3a4fc4;
+  --jx-accent-dim:  rgba(91,124,245,0.12);
+  --jx-accent-line: rgba(91,124,245,0.30);
+
+  /* ---- semantic (data artifacts only) ------------------------------------ */
+  --jx-baseline: #33d39b;
+  --jx-deviant:  #ff5d6b;
+  --jx-caution:  #ffb053;
+
+  /* ---- type — one grotesk (display) + one mono (data) -------------------- */
+  --jx-sans: var(--font-schibsted), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --jx-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ---- radii / layout ---------------------------------------------------- */
+  --jx-r-1: 4px;
+  --jx-r-2: 8px;
+  --jx-r-3: 14px;
+  --jx-maxw: 1080px;
+  --jx-maxw-wide: 1280px;
+  --jx-gutter: clamp(24px, 6vw, 96px);
+
+  /* ---- motion ------------------------------------------------------------ */
+  --jx-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  position: relative;
+  z-index: 0;
+  background: var(--jx-canvas);
+  color: var(--jx-ink);
+  font-family: var(--jx-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---- reset (scoped) ------------------------------------------------------- */
+.jx *, .jx *::before, .jx *::after { box-sizing: border-box; }
+/* :where() gives this reset ZERO added specificity (stays at .jx = 0,1,0) so a
+   component's own margin (e.g. .jx-head__lede, .jx-probe__note) wins on source
+   order instead of being silently collapsed to 0. */
+.jx :where(h1, h2, h3, h4, p, ul, ol, figure, blockquote) { margin: 0; }
+.jx ul, .jx ol { list-style: none; padding: 0; }
+.jx a { color: inherit; text-decoration: none; }
+.jx button { font-family: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+.jx input { font-family: inherit; }
+.jx img, .jx svg, .jx canvas { display: block; max-width: 100%; }
+.jx ::selection { background: var(--jx-accent-dim); color: #fff; }
+
+/* ---- focus (a11y, not decoration) ---------------------------------------- */
+.jx a:focus-visible,
+.jx button:focus-visible,
+.jx input:focus-visible {
+  outline: 2px solid var(--jx-accent);
+  outline-offset: 2px;
+  border-radius: var(--jx-r-1);
+}
+
+/* ============================================================================
+   Layout primitives
+   ========================================================================== */
+.jx-wrap { width: 100%; max-width: var(--jx-maxw); margin: 0 auto; padding: 0 var(--jx-gutter); }
+.jx-wrap--wide { max-width: var(--jx-maxw-wide); }
+.jx-section { position: relative; padding: clamp(96px, 12vh, 176px) 0; }
+.jx-section--tight { padding: clamp(64px, 8vh, 112px) 0; }
+.jx-rule { border-top: 1px solid var(--jx-line); }
+
+/* ============================================================================
+   Type
+   ========================================================================== */
+.jx-mono { font-family: var(--jx-mono); }
+.jx-tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+.jx-eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--jx-mono); font-size: clamp(11px, 1.1vw, 12px); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.18em; color: var(--jx-ink-3);
+}
+.jx-eyebrow .jx-tick { width: 18px; height: 1px; background: var(--jx-line-2); }
+
+.jx-label {
+  font-family: var(--jx-mono); font-size: 10.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.16em; color: var(--jx-ink-3);
+}
+
+.jx-display { font-weight: 600; letter-spacing: -0.035em; line-height: 0.96; color: var(--jx-ink); }
+.jx-h1 { font-size: clamp(48px, 6.6vw, 92px); }
+.jx-h2 { font-size: clamp(30px, 4.4vw, 56px); font-weight: 600; letter-spacing: -0.032em; line-height: 1.04; }
+.jx-h3 { font-size: clamp(20px, 2.1vw, 24px); font-weight: 600; letter-spacing: -0.015em; line-height: 1.1; }
+
+.jx-lede { font-size: clamp(18px, 1.7vw, 20px); font-weight: 400; line-height: 1.5; color: var(--jx-ink-2); max-width: 62ch; }
+.jx-body { font-size: clamp(15px, 1.5vw, 16px); line-height: 1.6; color: var(--jx-ink-2); }
+
+.jx-ink2 { color: var(--jx-ink-2); }
+.jx-muted { color: var(--jx-ink-3); }
+.jx-accent { color: var(--jx-accent-hi); }
+.jx-c-baseline { color: var(--jx-baseline); }
+.jx-c-deviant { color: var(--jx-deviant); }
+.jx-c-caution { color: var(--jx-caution); }
+
+/* section head block */
+.jx-head { max-width: 720px; }
+.jx-head__title { margin-top: 20px; }
+.jx-head__lede { margin-top: 20px; }
+
+/* ============================================================================
+   Surfaces — elevation is VISIBLE (luminance step + 1px top-light highlight, so
+   higher surfaces catch light the way Carbon/Linear panels do).
+   ========================================================================== */
+.jx-panel { background: var(--jx-layer-1); border: 1px solid var(--jx-line); border-radius: var(--jx-r-3); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+.jx-cell  { background: var(--jx-layer-2); border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
+.jx-band  { background: var(--jx-layer-0); }   /* full-bleed alternating band for rhythm */
+
+/* ============================================================================
+   INVERTED LIGHT BAND — Apple-style edge-to-edge alternation, used ONLY where
+   it's meaningful (the evidence receipt is a printout, so it lives on paper).
+   Redefines the token roles to a warm ivory/ink palette; everything scoped
+   under .jx-invert flips automatically. Breaks the all-dark monotony the
+   research warns reads as slop, without losing the instrument identity.
+   ========================================================================== */
+.jx-invert {
+  --jx-canvas:  #f4f2ec;   /* warm ivory */
+  --jx-layer-0: #efece3;
+  --jx-layer-1: #ffffff;   /* paper */
+  --jx-layer-2: #f8f6f0;
+  --jx-layer-3: #ffffff;
+  --jx-ink:   #15171c;
+  --jx-ink-2: #44474f;
+  --jx-ink-3: #6c7079;
+  --jx-ink-4: #a7a399;
+  --jx-line:   rgba(20,22,28,0.09);
+  --jx-line-2: rgba(20,22,28,0.18);
+  --jx-accent-dim: rgba(91,124,245,0.10);
+  background: var(--jx-canvas);
+  color: var(--jx-ink);
+}
+/* on light, the "catch-the-light" top highlight becomes a faint dark hairline */
+.jx-invert .jx-panel { box-shadow: inset 0 1px 0 rgba(20,22,28,0.04); }
+.jx-invert .jx-cell  { box-shadow: inset 0 1px 0 rgba(20,22,28,0.05); }
+.jx-invert .jx-ph    { background: var(--jx-layer-1); }
+
+/* ----------------------------------------------------------------------------
+   Section tones — a deliberate tonal rhythm (Carbon ladder + Cohere bands) so
+   the page isn't one flat near-black, and the light evidence band reads as part
+   of a composed progression rather than an orphan.
+     canvas → canvas → raised → LIGHT → deep(navy) → canvas → raised
+   -------------------------------------------------------------------------- */
+.jx-sec { position: relative; }
+.jx-sec--raised { background: #0c0f16; }   /* a clearly readable step up from canvas */
+.jx-sec--deep   { background: #0a0e1c; }   /* cooler, navy-leaning band (Cohere-style) */
+
+/* ----------------------------------------------------------------------------
+   Reveal-on-scroll — subtle (fade + 14px rise, ≤600ms). A CSS animation
+   fallback guarantees content is never stuck hidden if JS doesn't run.
+   -------------------------------------------------------------------------- */
+.jx [data-reveal] {
+  opacity: 0; transform: translateY(14px);
+  transition: opacity .6s var(--jx-ease), transform .6s var(--jx-ease);
+  will-change: opacity, transform;
+  animation: jx-reveal-fallback .6s var(--jx-ease) .7s forwards;
+}
+.jx [data-reveal].in { opacity: 1; transform: none; animation: none; }
+@keyframes jx-reveal-fallback { to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .jx [data-reveal] { opacity: 1; transform: none; transition: none; animation: none; }
+}
+
+/* progress bars fill from 0 → their target width (--w) once the enclosing
+   [data-reveal] enters view — the old app's "data loading" feel, kept restrained.
+   default 0-width avoids the auto=full-width flash before reveal. */
+.jx [data-reveal] .jx-matrix__fill,
+.jx [data-reveal] .jx-dist__fill,
+.jx [data-reveal] .jx-driver .f { width: 0; transition: width 1.05s var(--jx-ease) .12s; }
+.jx [data-reveal].in .jx-matrix__fill,
+.jx [data-reveal].in .jx-dist__fill,
+.jx [data-reveal].in .jx-driver .f { width: var(--w, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .jx [data-reveal] .jx-matrix__fill,
+  .jx [data-reveal] .jx-dist__fill,
+  .jx [data-reveal] .jx-driver .f { width: var(--w, 0); transition: none; }
+}
+
+/* ============================================================================
+   FORENSIC INSTRUMENT CHROME
+   The structural signal that separates "measurement instrument" from
+   "generic dark SaaS": measurement gridlines with mono coordinates/indices.
+   ========================================================================== */
+.jx-marker { border-top: 1px solid var(--jx-line-2); }
+.jx-marker__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-top: 14px;
+  font-family: var(--jx-mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--jx-ink-3);
+}
+.jx-marker__id { color: var(--jx-ink-2); }
+.jx-marker__id b { color: var(--jx-accent-hi); font-weight: 500; }
+.jx-marker__name { color: var(--jx-ink-2); flex: 1; }
+.jx-marker__meta { color: var(--jx-ink-4); white-space: nowrap; }
+@media (max-width: 640px) { .jx-marker__meta { display: none; } }
+
+/* instrument ticker — a full-bleed mono readout strip (fills space with signal) */
+.jx-ticker {
+  border-top: 1px solid var(--jx-line); border-bottom: 1px solid var(--jx-line);
+  background: var(--jx-layer-0);
+}
+.jx-ticker__row {
+  display: flex; align-items: center; gap: clamp(16px, 3vw, 40px); flex-wrap: wrap;
+  padding: 14px 0;
+  font-family: var(--jx-mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--jx-ink-3);
+}
+.jx-ticker__k { color: var(--jx-ink-4); }
+.jx-ticker__v { color: var(--jx-ink); }
+.jx-ticker__v.is-dev { color: var(--jx-deviant); }
+.jx-ticker__v.is-base { color: var(--jx-baseline); }
+.jx-ticker__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--jx-accent); box-shadow: 0 0 0 0 var(--jx-accent-dim); }
+
+/* ============================================================================
+   GLOBE STAGE — the globe framed as a measurement instrument
+   ========================================================================== */
+.jx-globe-stage { position: relative; width: 100%; }
+.jx-globe-viewport { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+.jx-globe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.jx-globe-fallback { position: absolute; inset: 0; display: grid; place-items: center; }
+.jx-globe-fallback svg { width: 100%; height: 100%; }
+
+/* coordinate crop-marks at the viewport corners (instrument framing) */
+.jx-globe-crop { position: absolute; width: 13px; height: 13px; pointer-events: none; z-index: 3; }
+.jx-globe-crop::before, .jx-globe-crop::after { content: ""; position: absolute; background: var(--jx-line-2); }
+.jx-globe-crop::before { width: 100%; height: 1px; } .jx-globe-crop::after { width: 1px; height: 100%; }
+.jx-globe-crop.tl { top: 0; left: 0; } .jx-globe-crop.tr { top: 0; right: 0; } .jx-globe-crop.tr::after { right: 0; }
+.jx-globe-crop.bl { bottom: 0; left: 0; } .jx-globe-crop.bl::before { bottom: 0; }
+.jx-globe-crop.br { bottom: 0; right: 0; } .jx-globe-crop.br::before { bottom: 0; } .jx-globe-crop.br::after { right: 0; }
+
+/* verdict legend — top-right inside the viewport (over empty sky) */
+.jx-legend { position: absolute; right: 4%; top: 5%; z-index: 3; pointer-events: none; display: flex; flex-direction: column; gap: 6px; font-family: var(--jx-mono); }
+.jx-legend__item { display: flex; align-items: center; gap: 7px; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jx-ink-3); }
+.jx-legend__dot { width: 6px; height: 6px; border-radius: 50%; }
+.jx-legend__dot.base { background: var(--jx-baseline); } .jx-legend__dot.norm { background: var(--jx-accent-hi); } .jx-legend__dot.dev { background: var(--jx-deviant); }
+
+/* readout — a clean instrument caption bar BELOW the globe, hairline-separated.
+   No longer overlaps the sphere. */
+.jx-globe-readout { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--jx-line); font-family: var(--jx-mono); }
+.jx-readout__count { display: flex; align-items: baseline; gap: 7px; }
+.jx-readout__n { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; color: var(--jx-ink); font-variant-numeric: tabular-nums; }
+.jx-readout__of { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--jx-ink-3); }
+
+/* artifact / globe placeholder (wireframe only) */
+.jx-ph {
+  display: grid; place-items: center; gap: 8px;
+  background: var(--jx-layer-1);
+  border: 1px dashed var(--jx-line-2);
+  border-radius: var(--jx-r-3);
+  color: var(--jx-ink-3);
+  text-align: center;
+  padding: 24px;
+}
+.jx-ph__tag { font-family: var(--jx-mono); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--jx-ink-2); }
+.jx-ph__note { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-4); }
+
+/* ============================================================================
+   Buttons + links
+   ========================================================================== */
+.jx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  font-family: var(--jx-mono); font-size: 12.5px; font-weight: 500; letter-spacing: 0.01em;
+  padding: 13px 20px; border-radius: var(--jx-r-2); white-space: nowrap; cursor: pointer;
+  transition: background .18s var(--jx-ease), border-color .18s var(--jx-ease), color .18s var(--jx-ease);
+}
+/* flat cobalt command button per the design direction: one accent, deep-cobalt
+   hairline, NO glow, NO inset highlight (those read as slop). */
+.jx-btn--primary { color: #fff; background: var(--jx-accent); border: 1px solid var(--jx-accent-deep); }
+.jx-btn--primary:hover { background: #6a86f7; }
+.jx-btn--ghost { color: var(--jx-ink); background: var(--jx-layer-2); border: 1px solid var(--jx-line-2); }
+.jx-btn--ghost:hover { background: var(--jx-layer-3); }
+
+.jx-textlink {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--jx-mono); font-size: 12.5px; font-weight: 500; color: var(--jx-ink-2);
+  border-bottom: 1px solid var(--jx-line-2); padding-bottom: 2px;
+  transition: color .18s var(--jx-ease), border-color .18s var(--jx-ease);
+}
+.jx-textlink:hover { color: var(--jx-ink); border-bottom-color: var(--jx-accent); }
+
+/* ============================================================================
+   Probe input (the hero CTA: URL -> /chat)
+   ========================================================================== */
+.jx-probe { width: 100%; max-width: 540px; }
+.jx-probe__row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 7px 7px 16px;
+  background: var(--jx-layer-2);
+  border: 1px solid var(--jx-line-2);
+  border-radius: var(--jx-r-2);
+  transition: border-color .18s var(--jx-ease);
+}
+.jx-probe__row:focus-within { border-color: var(--jx-accent); }
+.jx-probe__glyph { font-family: var(--jx-mono); color: var(--jx-ink-3); font-size: 13px; user-select: none; }
+.jx-probe__input {
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
+  color: var(--jx-ink); font-family: var(--jx-mono); font-size: 14px; padding: 10px 2px;
+}
+.jx-probe__input::placeholder { color: var(--jx-ink-4); }
+/* PRIMARY CTA — the flat cobalt "command" control from the Jacobi Design
+   Direction: one accent carrying the primary action. Flat fill + a deep-cobalt
+   hairline; NO glow, NO drop shadow (that's the slop tell). Mono label + arrow. */
+.jx-probe__submit {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--jx-mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em;
+  color: #fff; background: var(--jx-accent); border: 1px solid var(--jx-accent-deep); border-radius: var(--jx-r-2);
+  padding: 10px 16px; cursor: pointer;
+  transition: background .18s var(--jx-ease), transform .08s var(--jx-ease);
+}
+.jx-probe__submit::after { content: "\2192"; font-size: 13px; line-height: 1; }
+.jx-probe__submit:hover { background: #6a86f7; }
+.jx-probe__submit:active { transform: translateY(1px); background: #5274ee; }
+.jx-probe__submit:focus-visible { outline: 2px solid var(--jx-accent-hi); outline-offset: 2px; }
+.jx-probe__note { margin-top: 16px; font-family: var(--jx-mono); font-size: 11.5px; line-height: 1.6; letter-spacing: 0.02em; color: var(--jx-ink-3); }
+
+/* ============================================================================
+   Nav
+   ========================================================================== */
+.jx-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: 64px;
+  display: flex; align-items: center; border-bottom: 1px solid transparent;
+  transition: background .3s var(--jx-ease), border-color .3s var(--jx-ease), backdrop-filter .3s;
+}
+.jx-nav.is-scrolled {
+  background: rgba(7,8,11,0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-bottom-color: var(--jx-line);
+}
+.jx-nav__row {
+  width: 100%; max-width: var(--jx-maxw-wide); margin: 0 auto; padding: 0 var(--jx-gutter);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px;
+}
+.jx-nav__links { display: flex; align-items: center; justify-content: center; gap: clamp(20px, 2.4vw, 32px); }
+.jx-nav__link {
+  font-family: var(--jx-mono); font-size: 12px; letter-spacing: 0.02em; color: var(--jx-ink-3);
+  transition: color .18s var(--jx-ease); white-space: nowrap;
+}
+.jx-nav__link:hover { color: var(--jx-ink); }
+.jx-nav__right { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+.jx-nav__signin { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-2); }
+.jx-nav__signin:hover { color: var(--jx-ink); }
+/* SECONDARY CTA — a dark "audit control": layer-2 surface, hairline border, a
+   cobalt signal rail on the left edge. Lower emphasis than the off-white primary
+   so the two CTAs don't fight. */
+.jx-nav__cta {
+  position: relative; overflow: hidden; display: inline-flex; align-items: center;
+  font-family: var(--jx-sans); font-size: 12.5px; font-weight: 500; color: var(--jx-ink);
+  background: var(--jx-layer-2); border: 1px solid var(--jx-line-2);
+  padding: 7px 14px 7px 16px; border-radius: 6px;
+  transition: background .16s var(--jx-ease), border-color .16s var(--jx-ease);
+}
+.jx-nav__cta::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--jx-accent); }
+.jx-nav__cta:hover { background: var(--jx-layer-3); border-color: rgba(154,170,205,0.24); }
+.jx-nav__cta:hover::before { background: var(--jx-accent-hi); }
+@media (max-width: 860px) {
+  .jx-nav__row { grid-template-columns: 1fr auto; }
+  .jx-nav__links { display: none; }
+  .jx-nav__signin { display: none; }
+}
+
+/* ============================================================================
+   Hero
+   ========================================================================== */
+.jx-hero { position: relative; min-height: 100svh; display: flex; flex-direction: column; padding: 96px 0 0; }
+.jx-hero__main { flex: 1; display: flex; align-items: center; padding-bottom: 36px; }
+.jx-hero__main > .jx-wrap { width: 100%; }
+.jx-hero__grid { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 48px; align-items: center; }
+.jx-hero__copy { max-width: 600px; }
+.jx-hero__eyebrow { margin-bottom: 30px; }
+/* longer editorial headline (per the design direction) → sized down from the
+   92px punch-line scale so it sets in ~2–3 balanced lines. */
+.jx-hero__title { font-size: clamp(40px, 5.4vw, 68px); letter-spacing: -0.038em; line-height: 1.0; text-wrap: balance; }
+.jx-hero__title .jx-hero__dot { color: var(--jx-accent); }
+/* parent-scoped so the .jx p{margin:0} reset can't override the intentional
+   subhead distance below the H1 (specificity 0,2,0 > 0,1,1). */
+.jx-hero__copy .jx-hero__lede { margin-top: 30px; max-width: 46ch; line-height: 1.55; text-wrap: pretty; }
+.jx-hero__cta { margin-top: 48px; }
+.jx-hero__meta {
+  margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--jx-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--jx-ink-3); text-transform: uppercase;
+}
+.jx-hero__meta b { color: var(--jx-ink); font-weight: 500; }
+.jx-hero__stage { position: relative; width: 100%; max-width: 620px; margin-left: auto; }
+
+/* ---- Hero canvas material: a calibrated dark instrument chamber -----------
+   Dimensional dark material (layered radials, no lines) — reads as a lit
+   measurement chamber, not flat black, and never a grid maze. */
+.jx-hero::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(54% 60% at 74% 44%, rgba(91,124,245,0.11), transparent 70%),     /* cobalt lift behind globe */
+    radial-gradient(34% 40% at 78% 46%, rgba(110,134,245,0.06), transparent 72%),    /* tighter inner core */
+    radial-gradient(48% 54% at 12% 32%, rgba(190,204,238,0.045), transparent 74%),   /* lift behind headline */
+    linear-gradient(180deg, rgba(140,160,210,0.020), transparent 28%),               /* top sheen */
+    radial-gradient(130% 150% at 50% 22%, transparent 44%, rgba(0,0,0,0.58) 100%);    /* deeper edge vignette */
+}
+.jx-hero__main { position: relative; z-index: 1; }
+.jx-hero .jx-ticker { position: relative; z-index: 1; }
+.jx-hero__wrap { position: relative; }
+.jx-hero__grid { position: relative; z-index: 1; }
+
+/* instrument frame — a single, clear idea: corner ticks that frame the hero
+   content as a measurement viewport. No grid, no axis lines, no maze. */
+.jx-hero__chrome { position: absolute; inset: -52px 0; z-index: 0; pointer-events: none; }
+.jx-hero__corner { position: absolute; width: 13px; height: 13px; }
+.jx-hero__corner::before, .jx-hero__corner::after { content: ""; position: absolute; background: rgba(154,170,205,0.3); }
+.jx-hero__corner::before { width: 100%; height: 1px; } .jx-hero__corner::after { width: 1px; height: 100%; }
+.jx-hero__corner.tl { top: 0; left: 0; } .jx-hero__corner.tr { top: 0; right: 0; } .jx-hero__corner.tr::after { right: 0; }
+.jx-hero__corner.bl { bottom: 0; left: 0; } .jx-hero__corner.bl::before { bottom: 0; }
+.jx-hero__corner.br { bottom: 0; right: 0; } .jx-hero__corner.br::before { bottom: 0; } .jx-hero__corner.br::after { right: 0; }
+
+@media (max-width: 940px) {
+  .jx-hero { min-height: auto; padding: 104px 0 56px; }
+  .jx-hero__grid { grid-template-columns: 1fr; gap: 36px; }
+  .jx-hero__stage { order: -1; max-width: 470px; margin: 0 auto; }
+  .jx-hero__chrome { display: none; }
+}
+
+/* ============================================================================
+   Problem — one statement
+   ========================================================================== */
+.jx-problem__statement {
+  font-weight: 540; letter-spacing: -0.03em; line-height: 1.06; color: var(--jx-ink);
+  font-size: clamp(34px, 5.2vw, 68px); max-width: 16ch;
+}
+.jx-problem__statement .jx-soft { color: var(--jx-ink-3); }
+.jx-problem__grid { margin-top: 48px; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 48px; align-items: end; }
+.jx-problem__body { max-width: 48ch; }
+@media (max-width: 860px) { .jx-problem__grid { grid-template-columns: 1fr; gap: 32px; } }
+
+/* ============================================================================
+   Generic two-column artifact section (mechanism / receipt / audit)
+   ========================================================================== */
+.jx-feature { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: clamp(32px, 5vw, 72px); align-items: center; margin-top: 56px; }
+.jx-feature--reverse .jx-feature__art { order: -1; }
+.jx-feature__art { min-width: 0; }
+.jx-feature__art .jx-ph { width: 100%; aspect-ratio: 16 / 11; }
+.jx-feature__copy { max-width: 44ch; }
+@media (max-width: 900px) {
+  .jx-feature, .jx-feature--reverse { grid-template-columns: 1fr; gap: 32px; }
+  .jx-feature--reverse .jx-feature__art { order: 0; }
+}
+
+/* receipt is the dominant centre — full-width artifact */
+.jx-receipt-stage { margin-top: 48px; }
+.jx-receipt-stage .jx-ph { width: 100%; aspect-ratio: 16 / 9; max-width: 920px; margin: 0 auto; }
+
+/* ============================================================================
+   Defensibility ledger — editorial 2-col list, horizontal rules (not cards)
+   ========================================================================== */
+.jx-ledger { margin-top: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 clamp(40px, 6vw, 80px); }
+.jx-ledger__item { display: grid; grid-template-columns: 28px 1fr; gap: 18px; padding: 26px 0; border-top: 1px solid var(--jx-line); align-items: start; }
+.jx-ledger__n { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-4); padding-top: 2px; }
+.jx-ledger__item h3 { font-size: 16px; font-weight: 540; letter-spacing: -0.01em; color: var(--jx-ink); }
+.jx-ledger__item p { margin-top: 8px; font-size: 14px; line-height: 1.6; color: var(--jx-ink-2); }
+@media (max-width: 760px) { .jx-ledger { grid-template-columns: 1fr; } }
+
+/* audience line */
+.jx-audience { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--jx-line); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.jx-audience__tag { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-2); }
+.jx-audience__sep { color: var(--jx-ink-4); }
+
+/* ============================================================================
+   ARTIFACT — Evidence Receipt (the signature; lives on the light .jx-invert band)
+   ========================================================================== */
+.jx-receipt {
+  max-width: 880px; margin: 0 auto; background: var(--jx-layer-1);
+  border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2);
+  box-shadow: 0 1px 0 rgba(20,22,28,0.04), 0 40px 80px -50px rgba(20,22,28,0.4);
+  font-family: var(--jx-mono); color: var(--jx-ink);
+  position: relative; overflow: hidden;
+}
+.jx-receipt::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--jx-accent); }
+.jx-receipt__pad { padding: clamp(22px, 3vw, 38px); }
+.jx-receipt__head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--jx-line-2); flex-wrap: wrap; }
+.jx-receipt__title { font-size: 13px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--jx-ink); }
+.jx-receipt__id { font-size: 11px; color: var(--jx-ink-3); letter-spacing: 0.06em; }
+.jx-receipt__meta { display: grid; grid-template-columns: 96px 1fr; gap: 6px 14px; padding: 16px 0; border-bottom: 1px solid var(--jx-line); font-size: 11.5px; }
+.jx-receipt__k { color: var(--jx-ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+.jx-receipt__v { color: var(--jx-ink); word-break: break-all; }
+.jx-receipt__table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 4px; }
+.jx-receipt__table th { text-align: left; font-weight: 500; color: var(--jx-ink-3); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; padding: 14px 10px 10px; border-bottom: 1px solid var(--jx-line-2); }
+.jx-receipt__table th.r, .jx-receipt__table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.jx-receipt__table td { padding: 11px 10px; border-bottom: 1px solid var(--jx-line); color: var(--jx-ink-2); }
+.jx-receipt__table td:first-child { color: var(--jx-ink-4); width: 26px; }
+.jx-receipt__table tr.dev td { color: var(--jx-ink); }
+.jx-receipt__v-tag { font-weight: 600; letter-spacing: 0.08em; }
+.jx-receipt__v-tag.clean { color: var(--jx-baseline); }
+.jx-receipt__v-tag.normal { color: var(--jx-ink-3); }
+.jx-receipt__v-tag.deviant { color: var(--jx-deviant); }
+.jx-receipt__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-top: 20px; flex-wrap: wrap; }
+.jx-receipt__stats { display: flex; gap: 32px; flex-wrap: wrap; }
+.jx-receipt__stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--jx-ink-3); }
+.jx-receipt__stat .v { font-size: 22px; color: var(--jx-ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.jx-receipt__stamp { font-size: 11px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--jx-deviant); border: 1.5px solid var(--jx-deviant); border-radius: 4px; padding: 8px 14px; transform: rotate(-3deg); background: rgba(255,93,107,0.05); }
+.jx-receipt__hash { padding: 14px clamp(22px, 3vw, 38px); border-top: 1px dashed var(--jx-line-2); background: var(--jx-layer-2); font-size: 10.5px; color: var(--jx-ink-3); word-break: break-all; }
+@media (max-width: 640px) {
+  .jx-receipt__table th:nth-child(3), .jx-receipt__table td:nth-child(3),
+  .jx-receipt__table th:nth-child(4), .jx-receipt__table td:nth-child(4) { display: none; }
+}
+
+/* ============================================================================
+   ARTIFACT — Buyer-Context Matrix (a precise instrument readout / data table,
+   NOT a dashboard template: mono, tabular, thin rules, cobalt only marks the
+   one varied row via a left tick — no filled rows, no pills, no rounded bars).
+   ========================================================================== */
+.jx-matrix { border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); background: var(--jx-layer-1); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); overflow: hidden; font-family: var(--jx-mono); }
+.jx-matrix__head { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; border-bottom: 1px solid var(--jx-line-2); }
+.jx-matrix__head .t { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--jx-ink-2); }
+.jx-matrix__head .m { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jx-ink-4); }
+.jx-matrix__cols, .jx-matrix__row { display: grid; grid-template-columns: 1fr 58px 124px; gap: 14px; align-items: center; }
+.jx-matrix__cols { padding: 9px 18px; border-bottom: 1px solid var(--jx-line); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--jx-ink-4); }
+.jx-matrix__cols .r { text-align: right; }
+.jx-matrix__row { padding: 13px 18px; border-bottom: 1px solid var(--jx-line); position: relative; }
+.jx-matrix__row:last-of-type { border-bottom: none; }
+.jx-matrix__row.is-varied::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--jx-accent); }
+.jx-matrix__name { font-family: var(--jx-sans); font-size: 14px; font-weight: 500; color: var(--jx-ink); letter-spacing: -0.01em; }
+.jx-matrix__tag { font-size: 10px; color: var(--jx-ink-3); margin-top: 2px; letter-spacing: 0.02em; }
+.jx-matrix__state { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jx-ink-4); text-align: right; }
+.jx-matrix__state.varied { color: var(--jx-accent-hi); }
+.jx-matrix__sens { display: flex; align-items: center; gap: 10px; }
+.jx-matrix__bar { flex: 1; height: 3px; background: var(--jx-layer-3); overflow: hidden; }
+.jx-matrix__fill { height: 100%; background: var(--jx-ink-4); transition: width .9s var(--jx-ease); }
+.jx-matrix__row.is-varied .jx-matrix__fill { background: var(--jx-accent); }
+.jx-matrix__pct { font-size: 11px; color: var(--jx-ink-2); width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.jx-matrix__foot { padding: 13px 18px; border-top: 1px solid var(--jx-line-2); font-size: 10.5px; color: var(--jx-ink-3); line-height: 1.6; }
+.jx-matrix__foot b { color: var(--jx-ink-2); font-weight: 500; }
+@media (max-width: 480px) { .jx-matrix__cols, .jx-matrix__row { grid-template-columns: 1fr 52px; } .jx-matrix__sens { display: none; } .jx-matrix__cols span:last-child { display: none; } }
+
+/* ============================================================================
+   ARTIFACT — Price-Delta proof (two buyers, one URL)
+   ========================================================================== */
+.jx-pd { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: stretch; }
+.jx-pd__buyer { border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); background: var(--jx-layer-1); padding: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+.jx-pd__who { font-family: var(--jx-mono); font-size: 10.5px; color: var(--jx-ink-3); letter-spacing: 0.04em; line-height: 1.5; }
+.jx-pd__price { margin-top: 12px; font-family: var(--jx-mono); font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.jx-pd__price.base { color: var(--jx-baseline); } .jx-pd__price.dev { color: var(--jx-deviant); }
+.jx-pd__native { margin-top: 4px; font-family: var(--jx-mono); font-size: 10.5px; color: var(--jx-ink-4); }
+.jx-pd__delta { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 4px; }
+.jx-pd__delta .d { font-family: var(--jx-mono); font-size: 18px; color: var(--jx-ink); font-variant-numeric: tabular-nums; }
+.jx-pd__delta .p { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-deviant); }
+.jx-pd__delta .x { font-family: var(--jx-mono); font-size: 10px; color: var(--jx-ink-4); }
+.jx-pd__cap { margin-top: 12px; font-family: var(--jx-mono); font-size: 10.5px; color: var(--jx-ink-4); letter-spacing: 0.04em; }
+@media (max-width: 420px) { .jx-pd { grid-template-columns: 1fr; } }
+
+/* ============================================================================
+   ARTIFACT — Audit Readout (dark dashboard + confidence module)
+   ========================================================================== */
+.jx-audit { border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-3); background: var(--jx-layer-1); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); overflow: hidden; margin-top: 48px; }
+.jx-audit__bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--jx-line); font-family: var(--jx-mono); font-size: 11.5px; flex-wrap: wrap; }
+.jx-audit__target { color: var(--jx-ink-2); }
+.jx-audit__status { display: flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jx-baseline); }
+.jx-audit__status .d { width: 6px; height: 6px; border-radius: 50%; background: var(--jx-baseline); }
+.jx-audit__grid { display: grid; grid-template-columns: 1.3fr 1fr; }
+.jx-audit__main { padding: clamp(22px, 3vw, 32px); border-right: 1px solid var(--jx-line); }
+.jx-audit__side { padding: clamp(22px, 3vw, 32px); background: var(--jx-layer-0); }
+.jx-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--jx-line); }
+.jx-kpi .l { font-family: var(--jx-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--jx-ink-3); }
+.jx-kpi .v { margin-top: 9px; font-size: clamp(22px, 2.6vw, 30px); font-weight: 500; letter-spacing: -0.02em; color: var(--jx-ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.jx-kpi .v.base { color: var(--jx-baseline); } .jx-kpi .v.dev { color: var(--jx-deviant); }
+.jx-dist { margin-top: 22px; display: flex; flex-direction: column; gap: 13px; }
+.jx-dist__row { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; }
+.jx-dist__top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.jx-dist__who { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-2); }
+.jx-dist__tag { font-family: var(--jx-mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.12em; padding: 2px 7px; border-radius: 100px; border: 1px solid; }
+.jx-dist__tag.top { color: var(--jx-deviant); border-color: rgba(255,93,107,0.4); }
+.jx-dist__tag.base { color: var(--jx-baseline); border-color: rgba(51,211,155,0.4); }
+.jx-dist__track { height: 5px; border-radius: 100px; background: var(--jx-layer-3); overflow: hidden; }
+.jx-dist__fill { height: 100%; border-radius: 100px; }
+.jx-dist__price { font-family: var(--jx-mono); font-size: 14px; color: var(--jx-ink); font-variant-numeric: tabular-nums; }
+.jx-side__badge { display: inline-flex; align-items: center; gap: 8px; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-caution); border: 1px solid rgba(255,176,83,0.34); background: rgba(255,176,83,0.08); padding: 6px 11px; border-radius: 100px; }
+.jx-side__big { margin-top: 20px; font-size: clamp(40px, 5vw, 54px); font-weight: 500; letter-spacing: -0.03em; color: var(--jx-ink); line-height: 1; font-variant-numeric: tabular-nums; }
+.jx-side__sub { margin-top: 8px; font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-3); }
+.jx-side__drivers { margin-top: 24px; display: flex; flex-direction: column; gap: 11px; }
+.jx-driver { display: grid; grid-template-columns: 72px 1fr 32px; gap: 11px; align-items: center; }
+.jx-driver .n { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-2); }
+.jx-driver .t { height: 4px; border-radius: 100px; background: var(--jx-layer-3); overflow: hidden; }
+.jx-driver .f { height: 100%; border-radius: 100px; background: var(--jx-accent); }
+.jx-driver .p { font-family: var(--jx-mono); font-size: 11px; color: var(--jx-ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+.jx-conf { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--jx-line); }
+.jx-conf__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; font-family: var(--jx-mono); font-size: 11.5px; }
+.jx-conf__k { color: var(--jx-ink-3); } .jx-conf__v { color: var(--jx-ink); font-variant-numeric: tabular-nums; }
+.jx-conf__verdict { color: var(--jx-baseline); font-weight: 500; letter-spacing: 0.06em; }
+@media (max-width: 820px) {
+  .jx-audit__grid { grid-template-columns: 1fr; }
+  .jx-audit__main { border-right: none; border-bottom: 1px solid var(--jx-line); }
+  .jx-kpis { grid-template-columns: 1fr 1fr; gap: 18px; }
+}
+
+/* ============================================================================
+   Final CTA
+   ========================================================================== */
+.jx-cta { text-align: center; }
+.jx-cta__inner { max-width: 760px; margin: 0 auto; }
+.jx-cta__title { font-size: clamp(38px, 5.2vw, 68px); line-height: 1.0; }
+/* parent-scoped (0,2,0) so the `.jx p{margin:0}` reset (0,1,1) can't collapse the
+   intentional rhythm: title → sub → form. */
+.jx-cta__inner .jx-cta__sub { margin: 28px auto 38px; font-family: var(--jx-mono); font-size: 13px; letter-spacing: 0.02em; color: var(--jx-ink-3); }
+.jx-cta__form { display: flex; justify-content: center; }
+
+/* ============================================================================
+   Footer
+   ========================================================================== */
+.jx-footer { border-top: 1px solid var(--jx-line); padding: 64px 0 40px; }
+.jx-footer__grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; }
+.jx-footer__desc { margin-top: 18px; max-width: 320px; font-size: 14px; line-height: 1.6; color: var(--jx-ink-2); }
+.jx-footer__col { display: flex; flex-direction: column; gap: 13px; }
+.jx-footer__col a { font-family: var(--jx-mono); font-size: 13px; color: var(--jx-ink-3); }
+.jx-footer__col a:hover { color: var(--jx-ink); }
+.jx-footer__bottom { margin-top: 52px; padding-top: 28px; border-top: 1px solid var(--jx-line); display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.jx-footer__tag { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-3); letter-spacing: 0.02em; }
+@media (max-width: 720px) { .jx-footer__grid { grid-template-columns: 1fr; gap: 32px; } .jx-footer__bottom { flex-direction: column; align-items: flex-start; } }

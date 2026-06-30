@@ -12,26 +12,26 @@
  * ========================================================================== */
 
 :root {
-  /* mirror tailwind tokens for vanilla-CSS access */
-  --ink: #07080b;
-  --surface: #0c0f15;
-  --line: #1a1f2a;
-  --line-2: #262c39;
-  --text: #eceef3;
-  --text-2: #97a0b1;
-  --text-3: #5b6473;
-  --cobalt: #3d6bff;
-  --cobalt-bright: #6e92ff;
-  --cobalt-soft: rgba(61, 107, 255, 0.12);
-  --cobalt-line: rgba(61, 107, 255, 0.30);
-  --cobalt-glow: rgba(61, 107, 255, 0.45);
-  --over: #ff5468;
-  --good: #34d39b;
+  /* mirror tailwind tokens for vanilla-CSS access — Jacobi Design Direction */
+  --ink: #070809;
+  --surface: #10131b;
+  --line: rgba(255,255,255,0.06);
+  --line-2: rgba(255,255,255,0.11);
+  --text: #eef0f5;
+  --text-2: #9aa3b4;
+  --text-3: #5e6675;
+  --cobalt: #5b7cf5;
+  --cobalt-bright: #92a6ff;
+  --cobalt-soft: rgba(91, 124, 245, 0.12);
+  --cobalt-line: rgba(91, 124, 245, 0.30);
+  --cobalt-glow: rgba(91, 124, 245, 0.45);
+  --over: #ff5d6b;
+  --good: #33d39b;
   --gold: #d8b06a;
 
-  --serif: 'Instrument Serif', Georgia, serif;
-  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
-          'Helvetica Neue', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --serif: var(--font-schibsted), 'Segoe UI', system-ui, sans-serif;
+  --sans: var(--font-schibsted), -apple-system, BlinkMacSystemFont, 'Segoe UI',
+          system-ui, Roboto, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -40,7 +40,7 @@
 
 body {
   margin: 0;
-  background: #06070c;
+  background: #070809;
   color: var(--text);
   font-family: var(--sans);
   font-feature-settings: "ss01", "cv01";
@@ -142,11 +142,11 @@ body::after {
   width: 8px !important;
   height: 8px !important;
   background: #ffffff !important;
-  box-shadow: 0 0 6px rgba(110, 146, 255, 0.55);
+  box-shadow: 0 0 6px rgba(146, 166, 255,0.55);
 }
 .jx-cursor-ring {
   border-color: rgba(230, 234, 242, 0.55) !important;
 }
 .jx-cursor.snap .jx-cursor-ring {
-  border-color: rgba(110, 146, 255, 0.7) !important;
+  border-color: rgba(146, 166, 255,0.7) !important;
 }

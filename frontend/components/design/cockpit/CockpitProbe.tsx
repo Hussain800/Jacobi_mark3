@@ -231,10 +231,10 @@ const VECTOR_INFO: Record<string, { label: string; what: string }> = {
 };
 
 const TOPO: Record<string, [string, string, string]> = {
-  uniform:     ["#3ad79f", "Uniform",     "Prices are roughly the same across every buyer profile tested. No material variation detected."],
+  uniform:     ["#33d39b", "Uniform",     "Prices are roughly the same across every buyer profile tested. No material variation detected."],
   selective:   ["#d8b06a", "Selective",   "One buyer-context variable is driving most of the observed price difference."],
-  progressive: ["#ff9d52", "Progressive", "Several buyer-context variables stack together; premium-looking profiles were shown higher prices."],
-  aggressive:  ["#ff5468", "Aggressive",  "Multiple strong buyer-context signals correlate with materially higher observed prices."],
+  progressive: ["#ffb053", "Progressive", "Several buyer-context variables stack together; premium-looking profiles were shown higher prices."],
+  aggressive:  ["#ff5d6b", "Aggressive",  "Multiple strong buyer-context signals correlate with materially higher observed prices."],
   insufficient_data: ["#94a3b8", "Limited coverage", "Too few profiles returned a comparable price on this site to assert buyer-context pricing variation. We have shown the prices captured; try a product page or a specific listing for a full audit."],
   indeterminate: ["#94a3b8", "Indeterminate", "Prices varied across profiles, but no buyer-context signal (location, device, cookies, referrer) significantly moved the price — so the spread isn't attributable to discrimination. On travel sites it usually reflects different rooms or availability across profiles, not the same product priced differently."],
 };

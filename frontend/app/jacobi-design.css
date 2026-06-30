@@ -24,41 +24,44 @@
 
 /* ---- Tokens --------------------------------------------------------------- */
 :root {
-  /* surfaces — cool near-black, never pure #000 */
-  --ink:        #07080b;
-  --ink-2:      #090b10;
-  --surface:    #0c0f15;
-  --surface-2:  #11151d;
-  --surface-3:  #161b25;
-  --line:       #1a1f2a;
-  --line-2:     #262c39;
-  --line-bright:#36405230;
+  /* surfaces — Jacobi Design Direction ladder (canvas → bands → cards → cells → floats) */
+  --ink:        #070809;
+  --ink-2:      #0b0d12;
+  --surface:    #10131b;
+  --surface-2:  #161a24;
+  --surface-3:  #1e2330;
+  /* hairlines — white-translucent so an edge always reads lighter than its surface */
+  --line:       rgba(255,255,255,0.06);
+  --line-2:     rgba(255,255,255,0.11);
+  --line-bright:rgba(255,255,255,0.16);
 
-  /* text */
-  --text:    #eceef3;
-  --text-2:  #97a0b1;
-  --text-3:  #5b6473;
-  --text-4:  #3d4452;
+  /* text — Jacobi Design Direction ink ramp */
+  --text:    #eef0f5;
+  --text-2:  #9aa3b4;
+  --text-3:  #5e6675;
+  --text-4:  #3b4250;
 
-  /* accent — electric cobalt, the one color that "lights up" */
-  --cobalt:        #3d6bff;
-  --cobalt-bright: #6e92ff;
-  --cobalt-deep:   #2a4fd6;
-  --cobalt-soft:   rgba(61,107,255,0.12);
-  --cobalt-line:   rgba(61,107,255,0.30);
-  --cobalt-glow:   rgba(61,107,255,0.45);
+  /* accent — Jacobi cobalt, the one color that "lights up" */
+  --cobalt:        #5b7cf5;
+  --cobalt-bright: #92a6ff;
+  --cobalt-deep:   #3a4fc4;
+  --cobalt-soft:   rgba(91,124,245,0.12);
+  --cobalt-line:   rgba(91,124,245,0.30);
+  --cobalt-glow:   rgba(91,124,245,0.45);
 
   /* semantic */
-  --over:      #ff5468;   /* overcharge / exposed premium — used sparingly */
-  --over-soft: rgba(255,84,104,0.12);
-  --over-line: rgba(255,84,104,0.32);
-  --good:      #34d39b;   /* baseline / cheapest / safe */
+  --over:      #ff5d6b;   /* overcharge / exposed premium — used sparingly */
+  --over-soft: rgba(255,93,107,0.12);
+  --over-line: rgba(255,93,107,0.32);
+  --good:      #33d39b;   /* baseline / cheapest / safe */
   --gold:      #d8b06a;   /* premium / Pro, very sparing */
 
-  /* type */
-  --serif: 'Instrument Serif', Georgia, serif;
-  --sans:  -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
-           'Helvetica Neue', system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* type — Jacobi Design Direction: one grotesk (display + UI) + one mono (data).
+     --serif is retained as a token name but now resolves to the grotesk too, so
+     legacy `.serif` headings convert to Schibsted Grotesk instead of Instrument Serif. */
+  --serif: var(--font-schibsted), 'Segoe UI', system-ui, sans-serif;
+  --sans:  var(--font-schibsted), -apple-system, BlinkMacSystemFont, 'Segoe UI',
+           system-ui, Roboto, sans-serif;
   --mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   /* radii — tight, instrument-grade */
@@ -87,7 +90,7 @@
 .jacobi-design { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 
 .jacobi-design {
-  background: #06070c;
+  background: #070809;
   color: var(--text);
   font-family: var(--sans);
   font-size: 16px;
@@ -129,8 +132,10 @@
 ::-webkit-scrollbar-thumb:hover { background: #3a4254; }
 
 /* ---- Type utilities ------------------------------------------------------- */
-.jacobi-design .serif { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; }
-.jacobi-design .serif-i { font-family: var(--serif); font-style: italic; }
+.jacobi-design .serif { font-family: var(--serif); font-weight: 500; letter-spacing: -0.02em; }
+/* Jacobi Design Direction bans italic accent words — emphasis is weight/size/colour,
+   not a font-style switch. `.serif-i` is kept as a hook but rendered upright. */
+.jacobi-design .serif-i { font-family: var(--serif); font-style: normal; }
 .jacobi-design .mono { font-family: var(--mono); }
 
 .jacobi-design .eyebrow {
@@ -363,7 +368,7 @@
 }
 .jacobi-design .hero::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: radial-gradient(46% 52% at 77% 44%, rgba(61,107,255,0.07), transparent 70%);
+  background: radial-gradient(46% 52% at 77% 44%, rgba(91,124,245,0.07), transparent 70%);
 }
 .jacobi-design .hero-grid {
   position: relative; z-index: 2; width: 100%;
@@ -441,7 +446,7 @@
 .jacobi-design .globe-stage { position: relative; width: 100%; max-width: 660px; margin-left: auto; aspect-ratio: 1 / 1; }
 .jacobi-design .globe-stage::before {
   content: ""; position: absolute; inset: -4%; z-index: 0; pointer-events: none;
-  background: radial-gradient(circle at 50% 49%, rgba(61,107,255,0.13), rgba(61,107,255,0.04) 40%, transparent 66%);
+  background: radial-gradient(circle at 50% 49%, rgba(91,124,245,0.13), rgba(91,124,245,0.04) 40%, transparent 66%);
   filter: blur(6px);
 }
 .jacobi-design .globe-canvas { position: relative; z-index: 1; width: 100%; height: 100%; cursor: grab; }
@@ -496,7 +501,7 @@
 .jacobi-design .ev-profile { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); transition: color .3s; }
 .jacobi-design .ev-row:hover .ev-profile { color: var(--text); }
 .jacobi-design .ev-tag { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; padding: 2px 7px; border-radius: 100px; border: 1px solid; }
-.jacobi-design .ev-tag.baseline { color: var(--good); border-color: rgba(52,211,155,0.4); }
+.jacobi-design .ev-tag.baseline { color: var(--good); border-color: rgba(51,211,155,0.4); }
 .jacobi-design .ev-tag.top { color: var(--over); border-color: var(--over-line); }
 .jacobi-design .ev-bar { height: 6px; border-radius: 100px; background: var(--surface-3); overflow: hidden; }
 .jacobi-design .ev-bar-fill { height: 100%; border-radius: 100px; transform-origin: left; }
@@ -527,7 +532,7 @@
 /* ---- CTA ------------------------------------------------------------------ */
 .jacobi-design .cta-section { text-align: center; position: relative; overflow: hidden; }
 .jacobi-design .cta-wrap { max-width: 780px; margin: 0 auto; position: relative; z-index: 1; }
-.jacobi-design .cta-aura { position: absolute; top: 30%; left: 50%; width: 700px; height: 360px; transform: translate(-50%,-30%); background: radial-gradient(ellipse, rgba(61,107,255,0.16), transparent 65%); pointer-events: none; filter: blur(20px); z-index: 0; }
+.jacobi-design .cta-aura { position: absolute; top: 30%; left: 50%; width: 700px; height: 360px; transform: translate(-50%,-30%); background: radial-gradient(ellipse, rgba(91,124,245,0.16), transparent 65%); pointer-events: none; filter: blur(20px); z-index: 0; }
 .jacobi-design .cta-title { font-size: clamp(34px, 5.5vw, 68px); letter-spacing: -0.035em; }
 .jacobi-design .cta-sub { margin: 22px 0 34px; font-size: 14px; }
 .jacobi-design .cta-bar { margin-left: auto; margin-right: auto; }
@@ -748,7 +753,7 @@
 .jacobi-design .cockpit.active { display: flex; }
 .jacobi-design .cockpit::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: radial-gradient(50% 40% at 50% 18%, rgba(61,107,255,0.06), transparent 70%);
+  background: radial-gradient(50% 40% at 50% 18%, rgba(91,124,245,0.06), transparent 70%);
 }
 .jacobi-design .cockpit-wrap { max-width: 880px; margin: 0 auto; text-align: center; position: relative; z-index: 1; }
 .jacobi-design .cockpit-eyebrow { display: inline-block; margin-bottom: 26px; }
@@ -1034,7 +1039,7 @@
 
 .jacobi-design .fx-verdict-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; margin-bottom: 30px; }
 .jacobi-design .fx-vg-cell { display: flex; flex-direction: column; gap: 10px; }
-.jacobi-design .fx-stamp { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border: 1.5px solid var(--over); border-radius: 4px; color: var(--over); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 600; transform: rotate(-2deg); background: rgba(255,84,104,0.05); width: fit-content; }
+.jacobi-design .fx-stamp { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border: 1.5px solid var(--over); border-radius: 4px; color: var(--over); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 600; transform: rotate(-2deg); background: rgba(255,93,107,0.05); width: fit-content; }
 .jacobi-design .fx-stamp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--over); }
 .jacobi-design .fx-stat { font-size: clamp(28px, 3.6vw, 42px); color: var(--text); line-height: 1; letter-spacing: -0.02em; }
 .jacobi-design .fx-stat-sub { font-size: 11px; }
@@ -1219,7 +1224,7 @@
 .jacobi-design .doc-article a:not(.doc-action) {
   color: var(--cobalt-bright);
   text-decoration: underline;
-  text-decoration-color: rgba(110,146,255,.42);
+  text-decoration-color: rgba(146,166,255,.42);
   text-underline-offset: 3px;
 }
 .jacobi-design .doc-article a:not(.doc-action):hover { color: var(--text); }

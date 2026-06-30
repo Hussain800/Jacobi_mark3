@@ -702,7 +702,7 @@
    Document layout — sticky mono TOC rail + article column (Method / Extension /
    Privacy / Terms). Editorial long-form, instrument-grade.
    -------------------------------------------------------------------------- */
-.jx-doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: clamp(32px, 6vw, 88px); padding-bottom: clamp(72px, 12vh, 140px); }
+.jx-doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: clamp(32px, 6vw, 88px); padding: clamp(36px, 5vh, 60px) 0 clamp(72px, 12vh, 140px); }
 .jx-doc__rail { position: relative; }
 .jx-doc__toc { position: sticky; top: 92px; display: flex; flex-direction: column; gap: 2px; }
 .jx-doc__toc-label { margin-bottom: 12px; }

@@ -98,7 +98,7 @@ function pill(label: string, color: string, opts?: { solid?: boolean }) {
         padding: "3px 9px", borderRadius: 999,
         fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600,
         letterSpacing: "0.1em", textTransform: "uppercase",
-        color: opts?.solid ? "#07080b" : color,
+        color: opts?.solid ? "#070809" : color,
         background: opts?.solid ? color : "color-mix(in srgb, " + color + " 14%, transparent)",
         border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`,
         whiteSpace: "nowrap",

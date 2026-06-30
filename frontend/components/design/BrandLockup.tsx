@@ -41,8 +41,8 @@ export default function BrandLockup({ size = 18, noLink = false, className }: Pr
   // Brand tokens via CSS vars so the wordmark theme-responds with the
   // rest of the design system. Fallback literals are the actual brand
   // colors so nothing breaks if variable resolution fails.
-  const txt = "var(--text, #eceef3)";
-  const cobalt = "var(--cobalt-bright, #6e92ff)";
+  const txt = "var(--text, #eef0f5)";
+  const cobalt = "var(--cobalt-bright, #92a6ff)";
   const sw = 3;
 
   const inner = (

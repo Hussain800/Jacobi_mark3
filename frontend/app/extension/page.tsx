@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Check, MonitorSmartphone, ShieldCheck, Store } from "lucide-react";
-import DocumentShell, { DocumentArticle, DocumentToc } from "../../components/documents/DocumentShell";
-import "../jacobi-design.css";
+import { ShieldCheck } from "lucide-react";
+import MarketingShell from "../../components/marketing/MarketingShell";
+import { PageHeader, SectionMarker, DocShell, DocSection } from "../../components/marketing/parts";
 
 export const metadata: Metadata = {
   title: "Browser extension | JACOBI",
@@ -17,73 +17,73 @@ const toc = [
   { href: "#data", label: "Data and permissions" },
 ];
 
+const FLOW: [string, string][] = [
+  ["Identify a page", "From a product or offer page, the extension would let a user choose the URL they are already reviewing."],
+  ["Hand off the URL", "The URL would open in Jacobi's audit workflow. The extension would not make an evidence claim on the page itself."],
+  ["Run an explicit audit", "The user would still review the target and deliberately start the audit in Jacobi. No background live scan begins from passive browsing."],
+  ["Review the evidence", "Results, coverage, exports, and any share controls remain in the authenticated Jacobi workspace."],
+];
+
+const RELEASE: [string, string][] = [
+  ["Production handoff", "The prototype must point to the supported production app rather than a local development address."],
+  ["Least privilege", "Every browser permission and host pattern must be reduced to the minimum needed for a specific user-facing feature."],
+  ["Clear disclosure", "The store listing, permissions explanation, privacy notice, and in-product controls must describe the same behavior."],
+  ["Independent review", "The extension needs functional, privacy, security, and Chrome Web Store policy review before release."],
+];
+
 export default function ExtensionPage() {
   return (
-    <DocumentShell
-      section="Browser extension"
-      title="A faster handoff from the page you are reviewing"
-      summary="The JACOBI extension is a development prototype, not a published browser product. This page explains its intended workflow and the safeguards required before anyone should install it."
-      meta="Prototype status · No public install or Chrome Web Store listing"
-      aside={
-        <div className="extension-status-card">
-          <Store aria-hidden="true" />
-          <div><span>Availability</span><strong>Not shipped</strong></div>
-          <p>No installer. No store listing. No supported production configuration.</p>
-        </div>
-      }
-    >
-      <DocumentToc items={toc} />
-      <DocumentArticle>
-        <section id="status" className="doc-section doc-intro">
-          <p className="doc-overline">Current status</p>
-          <h2>There is no JACOBI extension for customers to install today.</h2>
-          <div className="doc-split-copy">
-            <p>
-              The repository includes a Chrome extension prototype with a popup, a context-menu action, local recent-item storage, and a lightweight on-page price cue. It is unfinished, uses development configuration, and is not published through the Chrome Web Store.
-            </p>
-            <p>
-              That distinction matters. This is a roadmap page, not a download page. The web app remains the supported way to submit an audit URL today.
-            </p>
-          </div>
-          <Link href="/chat" className="doc-action">Open the supported audit workflow <span aria-hidden="true">→</span></Link>
-        </section>
+    <MarketingShell>
+      <PageHeader
+        eyebrow="Browser extension"
+        title="A faster handoff from the page you are reviewing."
+        lede="The Jacobi extension is a development prototype, not a published browser product. This page explains its intended workflow and the safeguards required before anyone should install it."
+        meta={<><span>Prototype status</span><span>No public install or store listing</span></>}
+      />
 
-        <section id="workflow" className="doc-section">
-          <p className="doc-overline">Intended workflow</p>
-          <h2>Keep the decision in the web app, remove the copy-and-paste.</h2>
-          <div className="extension-flow">
-            <div><MonitorSmartphone aria-hidden="true" /><span>01</span><h3>Identify a page</h3><p>From a product or offer page, the extension would let a user choose the URL they are already reviewing.</p></div>
-            <div><span>02</span><h3>Hand off the URL</h3><p>The URL would open in Jacobi&apos;s audit workflow. The extension would not make an evidence claim on the page itself.</p></div>
-            <div><span>03</span><h3>Run an explicit audit</h3><p>The user would still review the target and deliberately start the audit in Jacobi. No background live scan should begin from passive browsing.</p></div>
-            <div><span>04</span><h3>Review the evidence</h3><p>Results, coverage, exports, and any share controls remain in the authenticated Jacobi workspace.</p></div>
+      <SectionMarker id="01" name="The extension" meta="roadmap, not a download" />
+      <DocShell
+        toc={toc}
+        aside={<><span className="l">Availability</span><strong>Not shipped</strong><p>No installer. No store listing. No supported production configuration.</p></>}
+      >
+        <DocSection id="status" overline="Current status" title="There is no Jacobi extension for customers to install today." tone="intro">
+          <div className="jx-splitcopy">
+            <p>The repository includes a Chrome extension prototype with a popup, a context-menu action, local recent-item storage, and a lightweight on-page price cue. It is unfinished, uses development configuration, and is not published through the Chrome Web Store.</p>
+            <p>That distinction matters. This is a roadmap page, not a download page. The web app remains the supported way to submit an audit URL today.</p>
           </div>
-        </section>
+          <Link href="/chat" className="jx-doc__action">Open the supported audit workflow <span aria-hidden="true">→</span></Link>
+        </DocSection>
 
-        <section id="release-bar" className="doc-section">
-          <p className="doc-overline">Release bar</p>
-          <h2>What must be true before this can be a product</h2>
-          <div className="release-grid">
-            {[
-              ["Production handoff", "The prototype must point to the supported production app rather than a local development address."],
-              ["Least privilege", "Every browser permission and host pattern must be reduced to the minimum needed for a specific user-facing feature."],
-              ["Clear disclosure", "The store listing, permissions explanation, privacy notice, and in-product controls must describe the same behavior."],
-              ["Independent review", "The extension needs functional, privacy, security, and Chrome Web Store policy review before release."],
-            ].map(([title, detail]) => <div key={title}><Check aria-hidden="true" /><h3>{title}</h3><p>{detail}</p></div>)}
+        <DocSection id="workflow" overline="Intended workflow" title="Keep the decision in the web app, remove the copy-and-paste.">
+          <div className="jx-steps">
+            {FLOW.map(([h, p], i) => (
+              <div className="jx-steps__item" key={h}>
+                <span className="jx-steps__n">{String(i + 1).padStart(2, "0")}</span>
+                <div><h3>{h}</h3><p>{p}</p></div>
+              </div>
+            ))}
           </div>
-        </section>
+        </DocSection>
 
-        <section id="data" className="doc-section doc-limitations">
-          <p className="doc-overline">Data and permissions</p>
-          <h2>Nothing should be implicit.</h2>
-          <p className="doc-copy">
-            A released extension would explain each requested browser permission in plain language: what it enables, when it runs, what data it can reach, whether data leaves the browser, and how the user can remove access. That disclosure does not exist for a released JACOBI extension because there is no released JACOBI extension.
-          </p>
-          <div className="doc-callout">
+        <DocSection id="release-bar" overline="Release bar" title="What must be true before this can be a product.">
+          <div className="jx-deftable">
+            <div className="jx-deftable__head"><span>Requirement</span><span>What it means</span><span>&nbsp;</span></div>
+            {RELEASE.map(([h, p]) => (
+              <div className="jx-deftable__row" key={h} style={{ gridTemplateColumns: "1fr 2fr" }}>
+                <strong>{h}</strong><span>{p}</span>
+              </div>
+            ))}
+          </div>
+        </DocSection>
+
+        <DocSection id="data" overline="Data and permissions" title="Nothing should be implicit." tone="limits">
+          <p>A released extension would explain each requested browser permission in plain language: what it enables, when it runs, what data it can reach, whether data leaves the browser, and how the user can remove access. That disclosure does not exist for a released Jacobi extension because there is no released Jacobi extension.</p>
+          <div className="jx-callout">
             <ShieldCheck aria-hidden="true" />
             <p><strong>For now:</strong> use the web application for audits and see the <Link href="/privacy">Privacy Policy</Link> for the current service data-handling overview.</p>
           </div>
-        </section>
-      </DocumentArticle>
-    </DocumentShell>
+        </DocSection>
+      </DocShell>
+    </MarketingShell>
   );
 }

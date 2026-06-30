@@ -52,10 +52,10 @@ interface BoardResponse {
 }
 
 const TOPO_COLOR: Record<string, string> = {
-  uniform:     "#3ad79f",
+  uniform:     "#33d39b",
   selective:   "#d8b06a",
-  progressive: "#ff9d52",
-  aggressive:  "#ff5468",
+  progressive: "#ffb053",
+  aggressive:  "#ff5d6b",
 };
 
 function host(url: string | undefined): string {

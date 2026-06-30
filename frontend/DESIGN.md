@@ -1,13 +1,18 @@
-# DESIGN.md — Jacobi Landing · "The Forensic Instrument"
+# DESIGN.md — Jacobi · "The Forensic Instrument"
 
-> **This file is the visual contract.** Every styling/layout decision for the marketing landing page
+> **This file is the visual contract.** Every styling/layout decision for the public marketing surface
 > references it. No hard-coded hex in components — use the tokens below. If a choice isn't covered here,
 > it must be derivable from these rules; if it can't, stop and ask.
 >
-> **Scope:** the marketing landing only (`/`). It is a **fully isolated system** under the `.jx`
-> namespace with its own tokens/CSS. It must **never** import or mutate `app/jacobi-design.css`, which
-> powers 17 app routes (chat/dashboard/history/board/pricing/docs). Those routes must stay
-> pixel-for-pixel unchanged.
+> **Scope:** the whole **public marketing/content surface** — the landing (`/`) AND the content pages
+> (Method · Pricing · History · Board · About · Extension · Privacy · Terms). All wear the **fully
+> isolated `.jx` system** (tokens/CSS in `app/landing.css`) via `components/marketing/MarketingShell`
+> (shared LandingNav + LandingFooter). The landing-only IA (§9) governs `/`; sub-pages compose the same
+> parts — page header, section markers, signature artifacts, the doc layout, instrument tables.
+>
+> The `.jx` system must **never** import or mutate `app/jacobi-design.css`, which powers the
+> **authenticated product app** (`/chat`, `/dashboard`, `/billing`, `/share`). Those app routes keep
+> their own functional chrome and must stay pixel-for-pixel unchanged.
 
 ---
 

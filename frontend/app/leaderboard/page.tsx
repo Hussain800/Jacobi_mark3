@@ -1,33 +1,22 @@
 "use client";
 
 /**
- * Leaderboard / Board — Claude Design port.
+ * Leaderboard / Board — rebuilt on the .jx forensic system.
  *
- * Decision note (per CEO question "do we even need this?"):
- *   YES. JACOBI's whole pitch is "expose hidden pricing discrimination."
- *   A public board makes the exposure shareable and journalism-friendly.
- *   It's also a free distribution / SEO surface (every probe is a
- *   shareable record). We do not show the user's URL unless they opted
- *   to publish (default is public per /api/leaderboard).
+ * A public board makes pricing exposure shareable and journalism-friendly, and
+ * is a free distribution / SEO surface. We never show a user's URL unless they
+ * opted to publish (default is public per /api/leaderboard).
  *
- * Data flow:
- *   - Fetch `${apiBase}/api/leaderboard`
- *   - Show real rows when present
- *   - Show an honest empty state ("No probes have been published yet.
- *     Run one to be the first on the board.") when none
- *
- * The fake "demo" rows from the static Claude Design prototype are
- * NOT shipped here — we don't fabricate numbers.
+ * Data flow is UNCHANGED: fetch `${apiBase}/api/leaderboard`, show real rows
+ * when present, an honest empty state when none. No fabricated demo rows. Only
+ * the presentation moves to the .jx table + stat strip.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Script from "next/script";
-import DesignNav from "../../components/design/DesignNav";
-import DesignFooter from "../../components/design/DesignFooter";
-import { useReveals } from "../../components/design/landing-interactions";
+import MarketingShell from "../../components/marketing/MarketingShell";
+import { PageHeader, SectionMarker } from "../../components/marketing/parts";
 import { getClientApiBase } from "../../lib/api-base";
-import "../jacobi-design.css";
 
 interface BoardEntry {
   target_url?: string;
@@ -53,7 +42,7 @@ interface BoardResponse {
 
 const TOPO_COLOR: Record<string, string> = {
   uniform:     "#33d39b",
-  selective:   "#d8b06a",
+  selective:   "#92a6ff",
   progressive: "#ffb053",
   aggressive:  "#ff5d6b",
 };
@@ -99,9 +88,6 @@ export default function LeaderboardPage() {
   const [error, setError] = useState(false);
   const apiBase = getClientApiBase();
 
-  // Without this, [data-reveal] elements stay opacity:0 → page reads as blank.
-  useReveals();
-
   useEffect(() => {
     let active = true;
     fetch(`${apiBase}/api/leaderboard?limit=30`)
@@ -138,144 +124,100 @@ export default function LeaderboardPage() {
   }, [rows, data?.total_probes]);
 
   return (
-    <div className="jacobi-design">
-      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
-      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+    <MarketingShell>
+      <PageHeader
+        eyebrow="Global board"
+        title={<>The <span className="jx-soft">leaderboard</span>.</>}
+        lede="Every public audit, ranked by how strongly the target varies price by buyer context. Updated as the network reports in."
+      />
 
-      <DesignNav />
-
-      <main className="page">
-        <section className="section page-top">
-          <div className="wrap">
-            <div className="sec-head" data-reveal>
-              <span className="eyebrow">
-                <span className="dot">●</span> Global board
-              </span>
-              <h1 className="display sec-title">
-                The{" "}
-                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  leaderboard
-                </span>
-              </h1>
-              <p className="sec-lede sec">
-                Every public audit, ranked by how strongly the target varies
-                price by buyer context. Updated as the network reports&nbsp;in.
-              </p>
+      <SectionMarker id="01" name="The board" meta="ranked by discrimination index" />
+      <section className="jx-section jx-section--tight">
+        <div className="jx-wrap jx-wrap--wide">
+          {/* Stats — only shown when there is real data */}
+          {!loading && rows.length > 0 && (
+            <div className="jx-stats" data-reveal>
+              <div className="jx-stat">
+                <div className="jx-stat__num jx-tnum">{stats.total.toLocaleString()}</div>
+                <div className="jx-stat__label">Audits logged</div>
+              </div>
+              <div className="jx-stat">
+                <div className="jx-stat__num jx-tnum">{stats.median > 0 ? `+$${stats.median}` : "—"}</div>
+                <div className="jx-stat__label">Median spread</div>
+              </div>
+              <div className="jx-stat">
+                <div className="jx-stat__num jx-tnum">{stats.aggressivePct}%</div>
+                <div className="jx-stat__label">Aggressive topology</div>
+              </div>
+              <div className="jx-stat">
+                <div className="jx-stat__num" style={{ color: stats.worst ? TOPO_COLOR[stats.worst] : "var(--jx-ink-3)" }}>
+                  {stats.worst ? stats.worst.charAt(0).toUpperCase() + stats.worst.slice(1) : "—"}
+                </div>
+                <div className="jx-stat__label">Worst topology</div>
+              </div>
             </div>
+          )}
 
-            {/* Stats — only shown when there is real data */}
-            {!loading && rows.length > 0 && (
-              <div className="board-stats" data-reveal>
-                <div className="bstat">
-                  <div className="bstat-num serif tnum">{stats.total.toLocaleString()}</div>
-                  <div className="label-mono">audits logged</div>
-                </div>
-                <div className="bstat">
-                  <div className="bstat-num serif tnum">
-                    {stats.median > 0 ? `+$${stats.median}` : "—"}
-                  </div>
-                  <div className="label-mono">median spread</div>
-                </div>
-                <div className="bstat">
-                  <div className="bstat-num serif tnum">{stats.aggressivePct}%</div>
-                  <div className="label-mono">aggressive topology</div>
-                </div>
-                <div className="bstat">
-                  <div
-                    className="bstat-num serif"
-                    style={{ color: stats.worst ? TOPO_COLOR[stats.worst] : "var(--text-3)" }}
-                  >
-                    {stats.worst ? stats.worst.charAt(0).toUpperCase() + stats.worst.slice(1) : "—"}
-                  </div>
-                  <div className="label-mono">worst topology</div>
-                </div>
+          {/* Loading */}
+          {loading && (
+            <div className="jx-state jx-state--quiet" data-reveal>
+              <div className="jx-state__label">Loading board…</div>
+            </div>
+          )}
+
+          {/* Empty state — honest */}
+          {!loading && rows.length === 0 && (
+            <div className="jx-state" data-reveal>
+              <div className="jx-state__label">No published probes yet</div>
+              <p className="jx-state__body">
+                {error
+                  ? "The leaderboard service didn't respond. If you have backend access, check /api/leaderboard."
+                  : "The board fills as people publish their audits. Run one to be the first on the board."}
+              </p>
+              <div className="jx-state__cta">
+                <Link href="/chat" className="jx-btn jx-btn--primary">Run an audit →</Link>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Loading */}
-            {loading && (
-              <div style={{ padding: "80px 0", textAlign: "center", color: "var(--text-3)", fontFamily: "var(--mono)", fontSize: 12 }}>
-                Loading board…
-              </div>
-            )}
-
-            {/* Empty state — honest */}
-            {!loading && rows.length === 0 && (
-              <div
-                data-reveal
-                style={{
-                  padding: "80px 24px",
-                  textAlign: "center",
-                  border: "1px dashed var(--line-2)",
-                  borderRadius: "var(--r)",
-                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
-                }}
-              >
-                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
-                  No published probes yet
+          {/* Table */}
+          {!loading && rows.length > 0 && (
+            <div className="jx-table-stage" data-reveal>
+              <div className="jx-table jx-table--board">
+                <div className="jx-table__head">
+                  <span>#</span><span>Target</span><span>Topology</span>
+                  <span>Discrimination index</span><span className="r">Spread</span>
+                  <span className="r">Agents</span><span className="r">Probed</span>
                 </div>
-                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
-                  {error
-                    ? "The leaderboard service didn't respond. If you have backend access, check /api/leaderboard."
-                    : "The board fills as people publish their audits. Run one to be the first on the board."}
-                </p>
-                <Link href="/chat" className="btn btn-primary">
-                  Run an audit →
-                </Link>
+                {rows.map((r, i) => {
+                  const c = TOPO_COLOR[r.topology] || "var(--jx-ink-3)";
+                  return (
+                    <div key={i} className="jx-table__row">
+                      <span className="jx-table__rank">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="jx-table__target">
+                        <span className="jx-table__name">{r.name}</span>
+                        <span className="jx-table__host">{r.host}</span>
+                      </span>
+                      <span className="jx-topo" style={{ color: c, borderColor: `${c}55`, background: `${c}14` }}>
+                        <span className="d" style={{ background: c }} />{r.topology}
+                      </span>
+                      <span className="jx-table__index">
+                        <span className="jx-table__index-bar"><span className="jx-table__index-fill" style={{ width: `${r.index}%` }} /></span>
+                        <span className="jx-table__index-val">{r.index}</span>
+                      </span>
+                      <span className={`jx-table__spread r${r.spread === 0 ? " zero" : ""}`}>
+                        {r.spread === 0 ? "—" : `+$${r.spread}`}
+                      </span>
+                      <span className="jx-table__agents r">{r.agents}</span>
+                      <span className="jx-table__time r">{r.time}</span>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-
-            {/* Table */}
-            {!loading && rows.length > 0 && (
-              <div className="board-scroll" data-reveal>
-                <div className="board-table">
-                  <div className="bt-head">
-                    <span>#</span>
-                    <span>Target</span>
-                    <span>Topology</span>
-                    <span>Discrimination index</span>
-                    <span>Spread</span>
-                    <span>Agents</span>
-                    <span>Probed</span>
-                  </div>
-                  {rows.map((r, i) => {
-                    const c = TOPO_COLOR[r.topology] || "var(--text-3)";
-                    return (
-                      <div key={i} className="bt-row" data-reveal>
-                        <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
-                        <span className="bt-target">
-                          <span className="bt-name">{r.name}</span>
-                          <span className="bt-host">{r.host}</span>
-                        </span>
-                        <span
-                          className="topo-pill"
-                          style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
-                        >
-                          <span className="d" style={{ background: c }} />
-                          {r.topology}
-                        </span>
-                        <span className="bt-index">
-                          <span className="bt-index-bar">
-                            <span className="bt-index-fill" style={{ width: `${r.index}%` }} />
-                          </span>
-                          <span className="bt-index-val">{r.index}</span>
-                        </span>
-                        <span className={`bt-spread ${r.spread === 0 ? "zero" : ""}`}>
-                          {r.spread === 0 ? "—" : `+$${r.spread}`}
-                        </span>
-                        <span className="bt-agents">{r.agents}</span>
-                        <span className="bt-time">{r.time}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
-
-      <DesignFooter />
-    </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </MarketingShell>
   );
 }

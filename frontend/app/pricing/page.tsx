@@ -1,38 +1,29 @@
 "use client";
 
 /**
- * Pricing — Claude Design port + new Enterprise tier.
+ * Pricing — rebuilt on the .jx forensic instrument system.
  *
  * Three plans:
- *   - Free       — 24 probes/month, 24 identities per probe, basic report,
- *                  shareable link, limited history
- *   - Pro $29/mo — 50 probes/month, 24 identities per probe, full forensic
- *                  PDF, probe history, private share links, priority
- *                  processing, board opt-in control
- *   - Enterprise — custom volume, contact wearejacobi@outlook.com
+ *   - Pilot       — design-partner pilot, Smart 24 audit, evidence locker
+ *   - Pro $29/mo  — org workspace, scheduled scans, Pro 50 (private beta)
+ *   - Enterprise  — custom volume, contact wearejacobi@outlook.com
  *
- * Pro keeps the existing Supabase + Stripe checkout flow (`startCheckout` /
- * `startPortal` / `fetchPlan` from lib/billing.ts) so nothing about the
- * paid path changes. Enterprise is a plain mailto.
- *
- * Wrapped in <div className="jacobi-design"> so jacobi-design.css's .plan
- * card styles apply.
+ * The billing logic is UNCHANGED: the Supabase + Stripe checkout flow
+ * (`startCheckout` / `startPortal` / `fetchPlan` / `syncSubscription` from
+ * lib/billing.ts) and the cold-start pre-warm are preserved verbatim. Only the
+ * presentation moves from the old jacobi-design template to the .jx panels.
+ * Per the design direction there is NO gold tier accent — the recommended plan
+ * carries the single cobalt rail.
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Script from "next/script";
 import { createClient } from "../../lib/supabase/client";
 import { fetchPlan, startCheckout, startPortal, syncSubscription, type Plan } from "../../lib/billing";
-import DesignNav from "../../components/design/DesignNav";
-import DesignFooter from "../../components/design/DesignFooter";
-import { useReveals } from "../../components/design/landing-interactions";
-import "../jacobi-design.css";
+import MarketingShell from "../../components/marketing/MarketingShell";
+import { PageHeader, SectionMarker } from "../../components/marketing/parts";
 
 const ENTERPRISE_EMAIL = "wearejacobi@outlook.com";
-
-const STRIPE_TEST_MODE =
-  (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "").startsWith("pk_test_");
 
 // Backend pre-warm helper. Render's free tier spins down after 15 min
 // idle, costing 30–60 s of cold-start latency on the next request. We
@@ -54,10 +45,6 @@ export default function PricingPage() {
   const [busyLabel, setBusyLabel] = useState<"loading" | "waking">("loading");
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
-
-  // Without this, every [data-reveal] element stays at opacity:0 and the
-  // page renders blank. (The landing page calls this; pricing did not.)
-  useReveals();
 
   useEffect(() => {
     const sb = createClient();
@@ -136,206 +123,133 @@ export default function PricingPage() {
   const pro50BetaEnabled = process.env.NEXT_PUBLIC_PRO50_BETA === "1";
 
   return (
-    <div className="jacobi-design">
-      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
-      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+    <MarketingShell>
+      <PageHeader
+        eyebrow="Pricing"
+        title={<>Launch a price-integrity pilot, <span className="jx-soft">fast</span>.</>}
+        lede="Choose a package for MAP monitoring, synthetic-buyer evidence capture, redacted external sharing, and compliance-ready reporting. Smart 24 is live today; Pro 50 remains gated for approved workspaces."
+        meta={<><span>Cancel anytime</span><span>USD</span><span>billed via Stripe</span></>}
+      />
 
-      <DesignNav />
-
-      <main className="page">
-        <section className="section page-top">
-          <div className="wrap">
-            <div className="sec-head pricing-head" data-reveal>
-              <span className="eyebrow">
-                <span className="dot">●</span> Pricing
-              </span>
-              <h1 className="display sec-title">
-                Launch a price-integrity pilot,{" "}
-                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  fast
-                </span>
-                .
-              </h1>
-              <p className="sec-lede sec">
-                Choose a pilot package for MAP monitoring, synthetic-buyer
-                evidence capture, redacted external sharing, and compliance-ready
-                reporting. Smart 24 is live today; Pro 50 remains gated for
-                approved workspaces.
+      <SectionMarker id="01" name="Plans" meta="pilot · professional · enterprise" />
+      <section className="jx-section jx-section--tight">
+        <div className="jx-wrap jx-wrap--wide">
+          <div className="jx-plans">
+            {/* ── Pilot ─────────────────────────────────────────── */}
+            <div className="jx-plan" data-reveal>
+              <div className="jx-plan__name">
+                Pilot
+                {plan?.tier === "free" && <span className="jx-plan__badge current">Current</span>}
+              </div>
+              <div className="jx-plan__price">
+                <span className="jx-plan__amt">Free</span>
+                <span className="jx-plan__per">/ pilot partner</span>
+              </div>
+              <p className="jx-plan__tag">
+                Best for proving value on a focused MAP watchlist before a paid rollout.
               </p>
-              {/* The Stripe test-mode banner that used to live here was
-                  removed per product direction: customer-facing UI should
-                  read as a real SaaS, not a sandbox. Test-mode is still
-                  enforced at the key level via STRIPE_TEST_MODE in code. */}
+              <Link className="jx-btn jx-btn--ghost jx-btn--block jx-plan__cta" href="/chat">
+                Start pilot
+              </Link>
+              <ul className="jx-plan__feats">
+                <li><span className="jx-feat-mark on">✓</span> Focused MAP watchlist import</li>
+                <li><span className="jx-feat-mark on">✓</span> <strong>Smart 24 audit</strong> — 24-agent matrix</li>
+                <li><span className="jx-feat-mark on">✓</span> Evidence locker and finding review</li>
+                <li><span className="jx-feat-mark on">✓</span> Native-currency price display</li>
+                <li><span className="jx-feat-mark on">✓</span> MAP PDF and JSON report export</li>
+                <li><span className="jx-feat-mark on">✓</span> Redacted external share links</li>
+                <li className="is-muted"><span className="jx-feat-mark">–</span> Pro 50 advanced matrix</li>
+                <li className="is-muted"><span className="jx-feat-mark">–</span> Dedicated SLA</li>
+              </ul>
             </div>
 
-            <div className="plans">
-              {/* ── Free ─────────────────────────────────────────── */}
-              <div className="plan card" data-reveal>
-                <div className="plan-head">
-                  <span className="plan-name mono">
-                    Pilot
-                    {plan?.tier === "free" && (
-                      <span style={{
-                        marginLeft: 10, fontSize: 9, color: "var(--good)",
-                        border: "1px solid rgba(58,215,159,0.4)",
-                        borderRadius: 999, padding: "2px 7px",
-                        letterSpacing: "0.12em",
-                      }}>
-                        CURRENT
-                      </span>
-                    )}
-                  </span>
-                  <div className="plan-price">
-                    <span className="serif plan-amt">Design</span>
-                    <span className="plan-per mono">/ partner</span>
-                  </div>
-                  <p className="plan-tag sec">
-                    Best for proving value on a focused MAP watchlist before a paid rollout.
-                  </p>
-                </div>
-                <Link className="btn btn-ghost plan-cta" href="/chat">
-                  Start pilot
-                </Link>
-                <ul className="plan-feats">
-                  <li><span className="pf-check">&#10003;</span> Focused MAP watchlist import</li>
-                  <li><span className="pf-check">&#10003;</span> <strong>Smart 24 audit</strong> - 24-agent matrix</li>
-                  <li><span className="pf-check">&#10003;</span> Evidence locker and finding review</li>
-                  <li><span className="pf-check">&#10003;</span> Native-currency price display</li>
-                  <li><span className="pf-check">&#10003;</span> MAP PDF and JSON report export</li>
-                  <li><span className="pf-check">&#10003;</span> Redacted external share links</li>
-                  <li className="muted-feat"><span className="pf-dash">-</span> Pro 50 advanced matrix</li>
-                  <li className="muted-feat"><span className="pf-dash">-</span> Dedicated SLA</li>
-                </ul>
+            {/* ── Professional ──────────────────────────────────── */}
+            <div className="jx-plan jx-plan--featured" data-reveal>
+              <div className="jx-plan__flag">Most popular</div>
+              <div className="jx-plan__name">
+                Professional
+                {!pro50BetaEnabled && <span className="jx-plan__badge beta">Private beta</span>}
+                {isPro && <span className="jx-plan__badge active">Active</span>}
               </div>
-
-              {/* ── Pro ──────────────────────────────────────────── */}
-              <div className="plan card plan-pro" data-reveal>
-                <div className="plan-flag mono">Most popular</div>
-                <div className="plan-head">
-                  <span className="plan-name mono" style={{ color: "var(--cobalt-bright)" }}>
-                    Professional
-                    {!pro50BetaEnabled && (
-                      <span style={{
-                        marginLeft: 10, fontSize: 9, color: "var(--gold)",
-                        border: "1px solid rgba(214,178,94,0.45)",
-                        borderRadius: 999, padding: "2px 7px",
-                        letterSpacing: "0.12em",
-                      }}>
-                        PRIVATE BETA
-                      </span>
-                    )}
-                    {isPro && (
-                      <span style={{
-                        marginLeft: 8, fontSize: 9, color: "var(--good)",
-                        border: "1px solid rgba(58,215,159,0.4)",
-                        borderRadius: 999, padding: "2px 7px",
-                        letterSpacing: "0.12em",
-                      }}>
-                        ACTIVE
-                      </span>
-                    )}
-                  </span>
-                  <div className="plan-price">
-                    <span className="serif plan-amt">$29</span>
-                    <span className="plan-per mono">/ month</span>
-                  </div>
-                  <p className="plan-tag sec">
-                    Team workspace for compliance, brand-protection, and channel
-                    operations teams running recurring MAP monitoring.
-                  </p>
-                </div>
-                {isPro ? (
-                  <button
-                    className="btn btn-primary plan-cta"
-                    onClick={onManage}
-                    onMouseEnter={warmBackend}
-                    disabled={busy}
-                  >
-                    {busy
-                      ? busyLabel === "waking" ? "Waking server…" : "Opening…"
-                      : "Manage billing"}
-                  </button>
-                ) : pro50BetaEnabled ? (
-                  <button
-                    className="btn btn-primary plan-cta"
-                    onClick={onSubscribe}
-                    onMouseEnter={warmBackend}
-                    disabled={busy}
-                  >
-                    {busy
-                      ? busyLabel === "waking" ? "Waking server…" : "Loading…"
-                      : signedIn ? "Go Professional" : "Sign in to subscribe"}
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn-ghost plan-cta"
-                    disabled
-                    title="Pro 50 is in private beta. Smart 24 is live today."
-                  >
-                    Private beta — coming soon
-                  </button>
-                )}
-                {error && (
-                  <p style={{
-                    color: "var(--over)", fontSize: 11, marginTop: 8,
-                    textAlign: "center", fontFamily: "var(--mono)",
-                  }}>
-                    {error}
-                  </p>
-                )}
-                <ul className="plan-feats">
-                  <li><span className="pf-check pro">&#10003;</span> Organization workspace and roles</li>
-                  <li><span className="pf-check pro">&#10003;</span> Scheduled live watchlist scans</li>
-                  <li><span className="pf-check pro">&#10003;</span> Evidence-grade PDF and JSON exports</li>
-                  <li><span className="pf-check pro">&#10003;</span> Revocable redacted share links</li>
-                  <li><span className="pf-check pro">&#10003;</span> Rate and cost guardrails</li>
-                  <li><span className="pf-check pro">&#10003;</span> Pro 50 advanced matrix for approved workspaces</li>
-                  <li><span className="pf-check pro">&#10003;</span> Everything in Pilot</li>
-                </ul>
+              <div className="jx-plan__price">
+                <span className="jx-plan__amt jx-tnum">$29</span>
+                <span className="jx-plan__per">/ month</span>
               </div>
-
-              {/* ── Enterprise ───────────────────────────────────── */}
-              <div className="plan card" data-reveal>
-                <div className="plan-head">
-                  <span className="plan-name mono" style={{ color: "var(--gold)" }}>
-                    Enterprise
-                  </span>
-                  <div className="plan-price">
-                    <span className="serif plan-amt" style={{ fontSize: 40 }}>Contact</span>
-                    <span className="plan-per mono">/ custom</span>
-                  </div>
-                  <p className="plan-tag sec">
-                    For brands and compliance teams that need bulk watchlists,
-                    custom buyer contexts, procurement terms, and SLAs.
-                  </p>
-                </div>
-                <a
-                  className="btn btn-ghost plan-cta"
-                  href={`mailto:${ENTERPRISE_EMAIL}?subject=JACOBI%20Enterprise%20inquiry`}
-                  style={{ borderColor: "rgba(216,176,106,0.4)", color: "var(--gold)" }}
+              <p className="jx-plan__tag">
+                Team workspace for compliance, brand-protection, and channel operations teams running recurring MAP monitoring.
+              </p>
+              {isPro ? (
+                <button
+                  className="jx-btn jx-btn--primary jx-btn--block jx-plan__cta"
+                  onClick={onManage}
+                  onMouseEnter={warmBackend}
+                  disabled={busy}
                 >
-                  Contact us →
-                </a>
-                <ul className="plan-feats">
-                  <li><span className="pf-check pro">&#10003;</span> Everything in Professional</li>
-                  <li><span className="pf-check pro">&#10003;</span> <strong>Custom audit volume</strong></li>
-                  <li><span className="pf-check pro">&#10003;</span> Custom buyer-context sets</li>
-                  <li><span className="pf-check pro">&#10003;</span> API access and custom integrations</li>
-                  <li><span className="pf-check pro">&#10003;</span> Custom reporting</li>
-                  <li><span className="pf-check pro">&#10003;</span> Dedicated support</li>
-                  <li><span className="pf-check pro">&#10003;</span> SLA and custom terms</li>
-                </ul>
-              </div>
+                  {busy ? (busyLabel === "waking" ? "Waking server…" : "Opening…") : "Manage billing"}
+                </button>
+              ) : pro50BetaEnabled ? (
+                <button
+                  className="jx-btn jx-btn--primary jx-btn--block jx-plan__cta"
+                  onClick={onSubscribe}
+                  onMouseEnter={warmBackend}
+                  disabled={busy}
+                >
+                  {busy ? (busyLabel === "waking" ? "Waking server…" : "Loading…") : signedIn ? "Go Professional" : "Sign in to subscribe"}
+                </button>
+              ) : (
+                <button
+                  className="jx-btn jx-btn--ghost jx-btn--block jx-plan__cta"
+                  disabled
+                  title="Pro 50 is in private beta. Smart 24 is live today."
+                >
+                  Private beta — coming soon
+                </button>
+              )}
+              {error && <p className="jx-plan__err">{error}</p>}
+              <ul className="jx-plan__feats">
+                <li><span className="jx-feat-mark on">✓</span> Organization workspace and roles</li>
+                <li><span className="jx-feat-mark on">✓</span> Scheduled live watchlist scans</li>
+                <li><span className="jx-feat-mark on">✓</span> Evidence-grade PDF and JSON exports</li>
+                <li><span className="jx-feat-mark on">✓</span> Revocable redacted share links</li>
+                <li><span className="jx-feat-mark on">✓</span> Rate and cost guardrails</li>
+                <li><span className="jx-feat-mark on">✓</span> Pro 50 advanced matrix for approved workspaces</li>
+                <li><span className="jx-feat-mark on">✓</span> Everything in Pilot</li>
+              </ul>
             </div>
 
-            <p className="pricing-foot label-mono" data-reveal>
-              Cancel anytime · prices in USD · billed via Stripe
-            </p>
+            {/* ── Enterprise ────────────────────────────────────── */}
+            <div className="jx-plan" data-reveal>
+              <div className="jx-plan__name">Enterprise</div>
+              <div className="jx-plan__price">
+                <span className="jx-plan__amt" style={{ fontSize: 30 }}>Contact</span>
+                <span className="jx-plan__per">/ custom</span>
+              </div>
+              <p className="jx-plan__tag">
+                For brands and compliance teams that need bulk watchlists, custom buyer contexts, procurement terms, and SLAs.
+              </p>
+              <a
+                className="jx-btn jx-btn--ghost jx-btn--block jx-plan__cta"
+                href={`mailto:${ENTERPRISE_EMAIL}?subject=JACOBI%20Enterprise%20inquiry`}
+              >
+                Contact us →
+              </a>
+              <ul className="jx-plan__feats">
+                <li><span className="jx-feat-mark on">✓</span> Everything in Professional</li>
+                <li><span className="jx-feat-mark on">✓</span> <strong>Custom audit volume</strong></li>
+                <li><span className="jx-feat-mark on">✓</span> Custom buyer-context sets</li>
+                <li><span className="jx-feat-mark on">✓</span> API access and custom integrations</li>
+                <li><span className="jx-feat-mark on">✓</span> Custom reporting</li>
+                <li><span className="jx-feat-mark on">✓</span> Dedicated support</li>
+                <li><span className="jx-feat-mark on">✓</span> SLA and custom terms</li>
+              </ul>
+            </div>
           </div>
-        </section>
-      </main>
 
-      <DesignFooter />
-    </div>
+          <p className="jx-pricing-foot" data-reveal>
+            Cancel anytime · prices in USD · billed via Stripe
+          </p>
+        </div>
+      </section>
+    </MarketingShell>
   );
 }

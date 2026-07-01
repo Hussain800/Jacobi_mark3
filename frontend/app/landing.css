@@ -1,12 +1,15 @@
 /* ============================================================================
-   Jacobi landing — "The Forensic Instrument"
-   Isolated design system. ALL selectors scoped under `.jx`. This file must
-   never be imported by, and never affect, the shared jacobi-design.css that the
-   app routes depend on. Token contract: frontend/DESIGN.md.
+   Jacobi — "The Forensic Instrument" design system
+   Isolated, self-contained system. ALL selectors scoped under `.jx`. This file
+   never imports, and never affects, the shared jacobi-design.css that the
+   AUTHENTICATED PRODUCT app (/chat, /dashboard, /billing, /share) depends on.
+   Token contract: frontend/DESIGN.md.
 
-   PHASE 2 = structure only. Tokens + layout + type + surfaces (luminance ladder
-   for depth) + buttons + nav/footer + section skeletons + artifact placeholders.
-   No globe, no motion, no gradients/glows/shadows. Those arrive in later phases.
+   Scope: the whole PUBLIC marketing/content surface — the landing (/) AND the
+   content pages (Method · Pricing · History · Board · About · Extension · legal),
+   which all wear this system via components/marketing/MarketingShell. The
+   landing-only sections live above; shared marketing sub-page components are in
+   the "MARKETING SUB-PAGES" block at the foot of this file.
    ========================================================================== */
 
 .jx {
@@ -649,3 +652,262 @@
 .jx-footer__bottom { margin-top: 52px; padding-top: 28px; border-top: 1px solid var(--jx-line); display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
 .jx-footer__tag { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-3); letter-spacing: 0.02em; }
 @media (max-width: 720px) { .jx-footer__grid { grid-template-columns: 1fr; gap: 32px; } .jx-footer__bottom { flex-direction: column; align-items: flex-start; } }
+
+/* ============================================================================
+   ════════════════════════  MARKETING SUB-PAGES  ════════════════════════
+   The public content pages (Method · Pricing · History · Board · About ·
+   Extension · Privacy · Terms) assembled from the same forensic parts as the
+   landing. Shared chrome = LandingNav + LandingFooter (components/marketing).
+   ========================================================================== */
+
+/* active nav item — the page you're on reads as held, with a cobalt signal */
+.jx-nav__link.is-active { color: var(--jx-ink); }
+.jx-nav__link.is-active::after {
+  content: ""; display: block; height: 1px; margin-top: 5px;
+  background: var(--jx-accent);
+}
+
+.jx-page { position: relative; z-index: 0; min-height: 62vh; }
+
+/* ----------------------------------------------------------------------------
+   Page header — the sub-page hero: eyebrow + carved display title + lede + a
+   mono meta line, framed by the same corner-tick viewport marks as the landing
+   hero. ONE calibrated radial lift behind it (no glow blob).
+   -------------------------------------------------------------------------- */
+.jx-pagehead { position: relative; padding: clamp(128px, 17vh, 196px) 0 clamp(40px, 6vh, 72px); overflow: hidden; }
+.jx-pagehead::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 70% at 50% 0%, rgba(91,124,245,0.07), transparent 70%),
+    radial-gradient(80% 60% at 50% -10%, rgba(190,204,238,0.03), transparent 72%),
+    linear-gradient(180deg, rgba(140,160,210,0.02), transparent 24%);
+}
+.jx-pagehead__wrap { position: relative; z-index: 1; max-width: 860px; }
+.jx-pagehead__chrome { position: absolute; inset: -28px calc(var(--jx-gutter) * -0.4); z-index: 0; pointer-events: none; }
+@media (max-width: 900px) { .jx-pagehead__chrome { display: none; } }
+.jx-pagehead__eyebrow { margin-bottom: 26px; }
+.jx-pagehead__title { font-size: clamp(40px, 5.6vw, 76px); letter-spacing: -0.038em; line-height: 0.98; text-wrap: balance; max-width: 18ch; }
+.jx-pagehead__title .jx-soft { color: var(--jx-ink-3); }
+.jx-pagehead__title .jx-dot { color: var(--jx-accent); }
+.jx-pagehead__wrap .jx-pagehead__lede { margin-top: 26px; max-width: 60ch; }
+.jx-pagehead__meta {
+  margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--jx-mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--jx-ink-3);
+}
+.jx-pagehead__meta b { color: var(--jx-ink-2); font-weight: 500; }
+.jx-pagehead__extra { margin-top: 30px; }
+
+/* ----------------------------------------------------------------------------
+   Document layout — sticky mono TOC rail + article column (Method / Extension /
+   Privacy / Terms). Editorial long-form, instrument-grade.
+   -------------------------------------------------------------------------- */
+.jx-doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: clamp(32px, 6vw, 88px); padding: clamp(36px, 5vh, 60px) 0 clamp(72px, 12vh, 140px); }
+.jx-doc__rail { position: relative; }
+.jx-doc__toc { position: sticky; top: 92px; display: flex; flex-direction: column; gap: 2px; }
+.jx-doc__toc-label { margin-bottom: 12px; }
+.jx-doc__toc-link {
+  font-family: var(--jx-mono); font-size: 12px; letter-spacing: 0.01em; color: var(--jx-ink-3);
+  padding: 7px 0 7px 14px; border-left: 1px solid var(--jx-line); transition: color .18s var(--jx-ease), border-color .18s var(--jx-ease);
+}
+.jx-doc__toc-link:hover { color: var(--jx-ink); border-left-color: var(--jx-accent); }
+.jx-doc__aside { margin-top: 26px; padding: 16px; border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); background: var(--jx-layer-1); }
+.jx-doc__aside .l { display: block; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--jx-ink-3); }
+.jx-doc__aside strong { display: block; margin-top: 8px; font-size: 13.5px; font-weight: 500; color: var(--jx-ink); line-height: 1.45; letter-spacing: -0.01em; }
+.jx-doc__aside p { margin-top: 10px; font-size: 12px; line-height: 1.55; color: var(--jx-ink-3); }
+
+.jx-doc__article { min-width: 0; }
+.jx-doc__section { padding: clamp(34px, 5vh, 52px) 0; border-top: 1px solid var(--jx-line); }
+.jx-doc__section:first-child { border-top: none; padding-top: 0; }
+.jx-doc__overline { display: block; font-family: var(--jx-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--jx-accent-hi); margin-bottom: 16px; }
+.jx-doc__h2 { font-size: clamp(24px, 3vw, 34px); letter-spacing: -0.026em; line-height: 1.1; max-width: 22ch; }
+.jx-doc__section.is-intro .jx-doc__h2 { max-width: 24ch; }
+.jx-doc__article p { margin-top: 18px; font-size: clamp(14.5px, 1.4vw, 16px); line-height: 1.68; color: var(--jx-ink-2); max-width: 68ch; }
+.jx-doc__article p a, .jx-doc__article li a { color: var(--jx-ink); border-bottom: 1px solid var(--jx-accent-line); padding-bottom: 1px; transition: border-color .18s var(--jx-ease); }
+.jx-doc__article p a:hover, .jx-doc__article li a:hover { border-bottom-color: var(--jx-accent); }
+.jx-doc__article strong { color: var(--jx-ink); font-weight: 600; }
+.jx-doc__lead { margin-top: 0; }
+.jx-doc__lead p { font-size: clamp(15px, 1.5vw, 17px); color: var(--jx-ink-2); }
+
+/* split copy — two editorial columns */
+.jx-splitcopy { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px clamp(28px, 4vw, 56px); }
+.jx-splitcopy p { margin-top: 0; }
+@media (max-width: 680px) { .jx-splitcopy { grid-template-columns: 1fr; gap: 18px; } }
+
+/* callout — a hairline-framed instrument note */
+.jx-callout { margin-top: 28px; display: flex; gap: 14px; padding: 18px 20px; border: 1px solid var(--jx-line-2); border-left: 2px solid var(--jx-accent); border-radius: var(--jx-r-2); background: var(--jx-layer-1); }
+.jx-callout svg { width: 18px; height: 18px; color: var(--jx-accent-hi); flex-shrink: 0; margin-top: 1px; }
+.jx-callout p { margin-top: 0; font-size: 13.5px; line-height: 1.6; color: var(--jx-ink-2); }
+
+/* numbered decision rules / step ledger (Method findings, Extension flow) */
+.jx-steps { margin-top: 30px; display: grid; gap: 0; }
+.jx-steps__item { display: grid; grid-template-columns: 44px 1fr; gap: 18px; padding: 24px 0; border-top: 1px solid var(--jx-line); align-items: start; }
+.jx-steps__item:first-child { border-top: none; }
+.jx-steps__n { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-accent-hi); padding-top: 3px; letter-spacing: 0.04em; }
+.jx-steps__item h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--jx-ink); }
+.jx-steps__item p { margin-top: 8px; font-size: 14px; line-height: 1.6; color: var(--jx-ink-2); max-width: 60ch; }
+
+/* definition table (Method profiles, Privacy data ledger) — mono instrument grid */
+.jx-deftable { margin-top: 26px; border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); overflow: hidden; background: var(--jx-layer-1); }
+.jx-deftable__head, .jx-deftable__row { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr; gap: 18px; padding: 14px 18px; }
+.jx-deftable__head { border-bottom: 1px solid var(--jx-line-2); font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-ink-3); }
+.jx-deftable__row { border-top: 1px solid var(--jx-line); align-items: start; }
+.jx-deftable__row strong { font-size: 13.5px; font-weight: 600; color: var(--jx-ink); letter-spacing: -0.01em; }
+.jx-deftable__row span { font-size: 13px; line-height: 1.55; color: var(--jx-ink-2); }
+.jx-deftable__row span.muted { color: var(--jx-ink-3); }
+@media (max-width: 720px) { .jx-deftable__head { display: none; } .jx-deftable__row { grid-template-columns: 1fr; gap: 7px; } .jx-deftable__row strong { margin-bottom: 2px; } }
+
+/* evidence-chain row (Method lifecycle) */
+.jx-chain { margin-top: 26px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--jx-line); border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); overflow: hidden; }
+.jx-chain__cell { background: var(--jx-layer-1); padding: 18px 16px; }
+.jx-chain__cell span { font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jx-accent-hi); }
+.jx-chain__cell p { margin-top: 10px; font-size: 12.5px; line-height: 1.5; color: var(--jx-ink-2); }
+@media (max-width: 820px) { .jx-chain { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 460px) { .jx-chain { grid-template-columns: 1fr; } }
+
+/* allowed / not-allowed two-column (Terms acceptable use) */
+.jx-twocol { margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.jx-twocol__col { border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); background: var(--jx-layer-1); padding: 22px; }
+.jx-twocol__col > span { font-family: var(--jx-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; }
+.jx-twocol__col.ok > span { color: var(--jx-baseline); }
+.jx-twocol__col.no > span { color: var(--jx-deviant); }
+.jx-twocol__col ul { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.jx-twocol__col li { position: relative; padding-left: 18px; font-size: 13.5px; line-height: 1.55; color: var(--jx-ink-2); }
+.jx-twocol__col li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 1px; }
+.jx-twocol__col.ok li::before { background: var(--jx-baseline); }
+.jx-twocol__col.no li::before { background: var(--jx-deviant); }
+@media (max-width: 680px) { .jx-twocol { grid-template-columns: 1fr; } }
+
+/* plain checklist (Privacy controls, Method limits) */
+.jx-checklist { margin-top: 22px; display: flex; flex-direction: column; gap: 0; }
+.jx-checklist li { position: relative; padding: 16px 0 16px 30px; border-top: 1px solid var(--jx-line); font-size: 14px; line-height: 1.6; color: var(--jx-ink-2); }
+.jx-checklist li:first-child { border-top: none; }
+.jx-checklist li::before { content: ""; position: absolute; left: 4px; top: 21px; width: 8px; height: 8px; border: 1px solid var(--jx-accent-line); border-left: 2px solid var(--jx-accent); border-radius: 2px; }
+
+/* glance row (Privacy at a glance) — three hairline cells */
+.jx-glance { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--jx-line); border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); overflow: hidden; }
+.jx-glance__cell { background: var(--jx-layer-1); padding: 22px 20px; }
+.jx-glance__cell svg { width: 20px; height: 20px; color: var(--jx-accent-hi); }
+.jx-glance__cell h3 { margin-top: 14px; font-size: 14.5px; font-weight: 600; color: var(--jx-ink); letter-spacing: -0.01em; }
+.jx-glance__cell p { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--jx-ink-2); }
+@media (max-width: 760px) { .jx-glance { grid-template-columns: 1fr; } }
+
+/* doc action link */
+.jx-doc__action { margin-top: 26px; display: inline-flex; align-items: center; gap: 9px; font-family: var(--jx-mono); font-size: 12.5px; font-weight: 500; color: var(--jx-ink); border-bottom: 1px solid var(--jx-line-2); padding-bottom: 3px; transition: color .18s var(--jx-ease), border-color .18s var(--jx-ease); }
+.jx-doc__action:hover { color: var(--jx-accent-hi); border-bottom-color: var(--jx-accent); }
+
+@media (max-width: 900px) {
+  .jx-doc { grid-template-columns: 1fr; gap: 8px; }
+  .jx-doc__rail { display: none; }
+}
+
+/* ----------------------------------------------------------------------------
+   Pricing — three instrument panels, NO gold (per the design direction). The
+   recommended tier carries the single cobalt rail + flag; others stay neutral.
+   -------------------------------------------------------------------------- */
+.jx-plans { margin-top: clamp(40px, 6vh, 64px); display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: start; }
+.jx-plan { position: relative; display: flex; flex-direction: column; border: 1px solid var(--jx-line); border-radius: var(--jx-r-3); background: var(--jx-layer-1); padding: 28px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+.jx-plan--featured { border-color: var(--jx-accent-line); background: var(--jx-layer-2); }
+.jx-plan--featured::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--jx-accent); border-radius: var(--jx-r-3) var(--jx-r-3) 0 0; }
+.jx-plan__flag { position: absolute; top: -1px; right: 22px; transform: translateY(-50%); font-family: var(--jx-mono); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #fff; background: var(--jx-accent); border: 1px solid var(--jx-accent-deep); border-radius: 100px; padding: 4px 11px; }
+.jx-plan__name { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font-family: var(--jx-mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-ink-2); }
+.jx-plan--featured .jx-plan__name { color: var(--jx-accent-hi); }
+.jx-plan__badge { font-family: var(--jx-mono); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 7px; border-radius: 100px; border: 1px solid; }
+.jx-plan__badge.beta { color: var(--jx-caution); border-color: rgba(255,176,83,0.4); }
+.jx-plan__badge.active { color: var(--jx-baseline); border-color: rgba(51,211,155,0.4); }
+.jx-plan__badge.current { color: var(--jx-ink-2); border-color: var(--jx-line-2); }
+.jx-plan__price { margin-top: 20px; display: flex; align-items: baseline; gap: 8px; }
+.jx-plan__amt { font-family: var(--jx-mono); font-size: 40px; font-weight: 500; letter-spacing: -0.03em; color: var(--jx-ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.jx-plan__per { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-ink-3); }
+.jx-plan__tag { margin-top: 14px; font-size: 13.5px; line-height: 1.55; color: var(--jx-ink-2); min-height: 60px; }
+.jx-plan__cta { margin-top: 22px; width: 100%; }
+.jx-plan__err { margin-top: 8px; font-family: var(--jx-mono); font-size: 11px; color: var(--jx-deviant); text-align: center; }
+.jx-plan__feats { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--jx-line); display: flex; flex-direction: column; gap: 13px; }
+.jx-plan__feats li { display: grid; grid-template-columns: 16px 1fr; gap: 11px; font-size: 13px; line-height: 1.5; color: var(--jx-ink-2); }
+.jx-plan__feats li.is-muted { color: var(--jx-ink-4); }
+.jx-plan__feats li strong { color: var(--jx-ink); font-weight: 600; }
+.jx-feat-mark { font-family: var(--jx-mono); font-size: 12px; line-height: 1.4; color: var(--jx-ink-4); }
+.jx-feat-mark.on { color: var(--jx-accent-hi); }
+.jx-plan--featured .jx-feat-mark.on { color: var(--jx-accent-hi); }
+.jx-pricing-foot { margin-top: 30px; text-align: center; font-family: var(--jx-mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--jx-ink-3); }
+@media (max-width: 880px) { .jx-plans { grid-template-columns: 1fr; max-width: 460px; margin-left: auto; margin-right: auto; } .jx-plan__tag { min-height: 0; } }
+
+/* primary/ghost buttons already exist (.jx-btn). A full-width disabled variant: */
+.jx-btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.jx-btn--block { width: 100%; }
+
+/* ----------------------------------------------------------------------------
+   Data tables — History logbook + Board leaderboard. Mono, tabular, hairline
+   rows; topology/verdict color lives ONLY in a small pill. Instrument, not grid.
+   -------------------------------------------------------------------------- */
+.jx-stats { margin-top: clamp(36px, 5vh, 56px); display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--jx-line); border: 1px solid var(--jx-line); border-radius: var(--jx-r-2); overflow: hidden; }
+.jx-stat { background: var(--jx-layer-1); padding: 22px 20px; }
+.jx-stat__num { font-family: var(--jx-mono); font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -0.02em; color: var(--jx-ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.jx-stat__label { margin-top: 10px; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jx-ink-3); }
+@media (max-width: 720px) { .jx-stats { grid-template-columns: 1fr 1fr; } }
+
+.jx-tablebar { margin-top: clamp(28px, 4vh, 44px); display: flex; align-items: center; justify-content: space-between; gap: 16px; font-family: var(--jx-mono); font-size: 11.5px; color: var(--jx-ink-3); }
+.jx-table-stage { margin-top: 16px; overflow-x: auto; border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); background: var(--jx-layer-1); }
+.jx-table { min-width: 720px; font-family: var(--jx-mono); }
+.jx-table__head, .jx-table__row { display: grid; align-items: center; gap: 14px; padding: 13px 20px; }
+.jx-table__head { border-bottom: 1px solid var(--jx-line-2); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jx-ink-4); }
+.jx-table__head .r, .jx-table__row .r { text-align: right; }
+.jx-table__row { border-top: 1px solid var(--jx-line); transition: background .16s var(--jx-ease); }
+.jx-table__row:first-of-type { border-top: none; }
+.jx-table__row:hover { background: var(--jx-layer-2); }
+.jx-table--board .jx-table__head, .jx-table--board .jx-table__row { grid-template-columns: 38px minmax(150px, 1.5fr) 132px 1.2fr 86px 64px 60px; }
+.jx-table--history .jx-table__head, .jx-table--history .jx-table__row { grid-template-columns: 38px minmax(160px, 1.7fr) 132px 96px 92px 92px; }
+.jx-table__rank { color: var(--jx-ink-4); font-size: 12px; }
+.jx-table__target { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.jx-table__name { font-family: var(--jx-sans); font-size: 14px; font-weight: 500; color: var(--jx-ink); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jx-table__host { font-size: 10.5px; color: var(--jx-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jx-topo { display: inline-flex; align-items: center; gap: 7px; justify-self: start; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border: 1px solid; border-radius: 100px; }
+.jx-topo .d { width: 6px; height: 6px; border-radius: 50%; }
+.jx-table__index { display: flex; align-items: center; gap: 10px; }
+.jx-table__index-bar { flex: 1; height: 3px; background: var(--jx-layer-3); overflow: hidden; }
+.jx-table__index-fill { height: 100%; background: var(--jx-accent); }
+.jx-table__index-val { font-size: 12px; color: var(--jx-ink); font-variant-numeric: tabular-nums; width: 26px; text-align: right; }
+.jx-table__spread { font-size: 13px; color: var(--jx-ink); font-variant-numeric: tabular-nums; }
+.jx-table__spread.zero { color: var(--jx-ink-4); }
+.jx-table__agents, .jx-table__time { font-size: 12px; color: var(--jx-ink-3); font-variant-numeric: tabular-nums; }
+
+/* state panels — loading / empty / signed-out (replaces emerald inline boxes) */
+.jx-state { margin-top: clamp(28px, 4vh, 44px); padding: clamp(48px, 8vh, 80px) 28px; text-align: center; border: 1px dashed var(--jx-line-2); border-radius: var(--jx-r-3); background: var(--jx-layer-1); }
+.jx-state__label { font-family: var(--jx-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--jx-accent-hi); }
+.jx-state__body { margin-top: 14px; font-size: 14px; line-height: 1.6; color: var(--jx-ink-2); max-width: 440px; margin-left: auto; margin-right: auto; }
+.jx-state__cta { margin-top: 24px; display: flex; justify-content: center; }
+.jx-state--quiet { border-style: solid; border-color: var(--jx-line); padding: clamp(40px, 6vh, 64px) 28px; }
+.jx-state--quiet .jx-state__label { color: var(--jx-ink-3); }
+
+/* small inline ghost actions used inside table bars (Clear all / Rerun) */
+.jx-minibtn { font-family: var(--jx-mono); font-size: 10.5px; letter-spacing: 0.02em; color: var(--jx-ink-2); background: var(--jx-layer-2); border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-1); padding: 6px 12px; cursor: pointer; transition: background .16s var(--jx-ease), color .16s var(--jx-ease); }
+.jx-minibtn:hover { background: var(--jx-layer-3); color: var(--jx-ink); }
+.jx-minibtn--danger:hover { color: var(--jx-deviant); border-color: rgba(255,93,107,0.4); }
+
+/* ----------------------------------------------------------------------------
+   About — the 5 buyer-context vectors as an instrument readout + a tech ledger.
+   No glass cards, no glow blobs (the old emerald slop this replaces).
+   -------------------------------------------------------------------------- */
+.jx-vectors { margin-top: clamp(36px, 5vh, 52px); border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); overflow: hidden; background: var(--jx-layer-1); }
+.jx-vector { display: grid; grid-template-columns: 64px minmax(120px, 200px) 1fr; gap: clamp(14px, 2vw, 28px); padding: 22px 24px; border-top: 1px solid var(--jx-line); align-items: baseline; }
+.jx-vector:first-child { border-top: none; }
+.jx-vector__sym { font-family: var(--jx-mono); font-size: 12px; color: var(--jx-accent-hi); letter-spacing: 0.06em; }
+.jx-vector__name { font-size: 16px; font-weight: 600; color: var(--jx-ink); letter-spacing: -0.015em; }
+.jx-vector__desc { font-size: 13.5px; line-height: 1.6; color: var(--jx-ink-2); max-width: 62ch; }
+@media (max-width: 760px) { .jx-vector { grid-template-columns: 1fr; gap: 6px; } }
+
+.jx-prose { margin-top: 22px; }
+.jx-prose p { margin-top: 18px; font-size: clamp(14.5px, 1.4vw, 16px); line-height: 1.7; color: var(--jx-ink-2); max-width: 68ch; }
+.jx-prose p:first-child { margin-top: 0; }
+
+.jx-stack { margin-top: clamp(36px, 5vh, 52px); display: grid; gap: 0; }
+.jx-stack__row { display: grid; grid-template-columns: 220px 1fr; gap: clamp(16px, 3vw, 40px); padding: 22px 0; border-top: 1px solid var(--jx-line); align-items: baseline; }
+.jx-stack__row:first-child { border-top: none; }
+.jx-stack__name { font-size: 15px; font-weight: 600; color: var(--jx-ink); letter-spacing: -0.01em; }
+.jx-stack__role { margin-top: 5px; font-family: var(--jx-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jx-ink-3); }
+.jx-stack__desc { font-size: 13.5px; line-height: 1.6; color: var(--jx-ink-2); max-width: 64ch; }
+@media (max-width: 720px) { .jx-stack__row { grid-template-columns: 1fr; gap: 8px; } }
+
+/* a quiet closing CTA band for content pages (About / Method) */
+.jx-endcta { margin-top: clamp(48px, 8vh, 88px); padding: clamp(32px, 5vh, 52px) 0 0; border-top: 1px solid var(--jx-line); display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.jx-endcta__copy { font-size: clamp(18px, 2vw, 24px); font-weight: 600; letter-spacing: -0.02em; color: var(--jx-ink); max-width: 22ch; }

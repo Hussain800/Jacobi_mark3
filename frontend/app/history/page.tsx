@@ -1,28 +1,24 @@
 "use client";
 
 /**
- * History — the logbook of past probes, ported to the Claude Design system.
+ * History — the logbook of past probes, rebuilt on the .jx forensic system.
  *
  * Three states:
  *   1. Logged-out  → sign-in CTA (Google via Supabase OAuth)
  *   2. Logged-in, zero probes → honest empty state
- *   3. Logged-in with probes  → table of probes from localStorage
+ *   3. Logged-in with probes  → .jx data table
  *
- * NOTE: per-user history is currently sourced from localStorage
- * (`probe-conversations`) since that's how /chat persists results today.
- * When the backend ships a `/api/history?user=…` endpoint, swap the
- * loader in `loadHistory()`.
+ * The data layer is UNCHANGED: backend `/api/history` (user-scoped, RLS-safe)
+ * with a localStorage fallback for pre-auth probes. Only the presentation moves
+ * from the old jacobi-design board to the .jx table.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Script from "next/script";
-import DesignNav from "../../components/design/DesignNav";
-import DesignFooter from "../../components/design/DesignFooter";
-import { useReveals } from "../../components/design/landing-interactions";
+import MarketingShell from "../../components/marketing/MarketingShell";
+import { PageHeader, SectionMarker } from "../../components/marketing/parts";
 import { createClient } from "../../lib/supabase/client";
 import { getClientApiBase } from "../../lib/api-base";
-import "../jacobi-design.css";
 
 interface ConversationSummary {
   id: string;
@@ -49,7 +45,7 @@ interface BackendHistoryRow {
 
 const TOPO_COLOR: Record<string, string> = {
   uniform:     "#33d39b",
-  selective:   "#d8b06a",
+  selective:   "#92a6ff",
   progressive: "#ffb053",
   aggressive:  "#ff5d6b",
 };
@@ -71,8 +67,6 @@ export default function HistoryPage() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
-
-  useReveals();
 
   useEffect(() => {
     const sb = createClient();
@@ -154,194 +148,99 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="jacobi-design">
-      <Script src="/jacobi-design/scene.js"   strategy="afterInteractive" />
-      <Script src="/jacobi-design/effects.js" strategy="afterInteractive" />
+    <MarketingShell>
+      <PageHeader
+        eyebrow="Logbook"
+        title={<>Your <span className="jx-soft">audit history</span>.</>}
+        lede="Every audit you've run — target, topology, spread, and the evidence behind it — kept in one reviewable trail."
+      />
 
-      <DesignNav />
-
-      <main className="page">
-        <section className="section page-top">
-          <div className="wrap">
-            <div className="sec-head" data-reveal>
-              <span className="eyebrow">
-                <span className="dot">●</span> Logbook
-              </span>
-              <h1 className="display sec-title">
-                Your{" "}
-                <span className="serif-i" style={{ color: "var(--cobalt-bright)" }}>
-                  audit history
-                </span>
-              </h1>
-              <p className="sec-lede sec">
-                Every audit you've run, with topology, spread, and the evidence.
-              </p>
+      <SectionMarker id="01" name="The logbook" meta="probes · topology · spread" />
+      <section className="jx-section jx-section--tight">
+        <div className="jx-wrap jx-wrap--wide">
+          {/* ── Loading auth ──────────────────────────────────── */}
+          {signedIn === null && (
+            <div className="jx-state jx-state--quiet" data-reveal>
+              <div className="jx-state__label">Checking session…</div>
             </div>
+          )}
 
-            {/* ── Loading auth ────────────────────────────────────── */}
-            {signedIn === null && (
-              <div
-                data-reveal
-                style={{
-                  padding: "80px 0",
-                  textAlign: "center",
-                  color: "var(--text-3)",
-                  fontFamily: "var(--mono)",
-                  fontSize: 12,
-                }}
-              >
-                Checking session…
+          {/* ── Logged out ────────────────────────────────────── */}
+          {signedIn === false && (
+            <div className="jx-state" data-reveal>
+              <div className="jx-state__label">Sign in to view history</div>
+              <p className="jx-state__body">
+                Your probes are tied to your account. Sign in with Google to see your
+                evidence trail across devices.
+              </p>
+              <div className="jx-state__cta">
+                <button onClick={signIn} className="jx-btn jx-btn--primary">Sign in with Google →</button>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* ── Logged out ──────────────────────────────────────── */}
-            {signedIn === false && (
-              <div
-                data-reveal
-                style={{
-                  padding: "80px 24px",
-                  textAlign: "center",
-                  border: "1px dashed var(--line-2)",
-                  borderRadius: "var(--r)",
-                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
-                }}
-              >
-                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
-                  Sign in to view history
-                </div>
-                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
-                  Your probes are tied to your account. Sign in with Google to
-                  see your evidence trail across devices.
-                </p>
-                <button onClick={signIn} className="btn btn-primary">
-                  Sign in with Google →
-                </button>
+          {/* ── Logged in, empty ──────────────────────────────── */}
+          {signedIn === true && sorted.length === 0 && (
+            <div className="jx-state" data-reveal>
+              <div className="jx-state__label">The logbook is empty</div>
+              <p className="jx-state__body">Audit a URL to start building your evidence trail.</p>
+              <div className="jx-state__cta">
+                <Link href="/chat" className="jx-btn jx-btn--primary">Start an audit →</Link>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* ── Logged in, empty ────────────────────────────────── */}
-            {signedIn === true && sorted.length === 0 && (
-              <div
-                data-reveal
-                style={{
-                  padding: "80px 24px",
-                  textAlign: "center",
-                  border: "1px dashed var(--line-2)",
-                  borderRadius: "var(--r)",
-                  background: "linear-gradient(180deg, var(--surface), var(--ink-2))",
-                }}
-              >
-                <div className="label-mono" style={{ marginBottom: 14, color: "var(--cobalt-bright)" }}>
-                  The logbook is empty
-                </div>
-                <p style={{ fontSize: 14, color: "var(--text-2)", maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
-                  Audit a URL to start building your evidence trail.
-                </p>
-                <Link href="/chat" className="btn btn-primary">
-                  Start an audit →
-                </Link>
+          {/* ── Logged in, has probes ─────────────────────────── */}
+          {signedIn === true && sorted.length > 0 && (
+            <>
+              <div className="jx-tablebar" data-reveal>
+                <span>{sorted.length} probe{sorted.length !== 1 ? "s" : ""} recorded</span>
+                {!confirmClear ? (
+                  <button onClick={() => setConfirmClear(true)} className="jx-minibtn">Clear all</button>
+                ) : (
+                  <span style={{ display: "flex", gap: 8 }}>
+                    <button onClick={clearHistory} className="jx-minibtn jx-minibtn--danger">Confirm delete</button>
+                    <button onClick={() => setConfirmClear(false)} className="jx-minibtn">Cancel</button>
+                  </span>
+                )}
               </div>
-            )}
 
-            {/* ── Logged in, has probes ───────────────────────────── */}
-            {signedIn === true && sorted.length > 0 && (
-              <>
-                <div
-                  data-reveal
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 16,
-                    fontFamily: "var(--mono)",
-                    fontSize: 11,
-                    color: "var(--text-3)",
-                  }}
-                >
-                  <span>{sorted.length} probe{sorted.length !== 1 ? "s" : ""} recorded</span>
-                  {!confirmClear ? (
-                    <button
-                      onClick={() => setConfirmClear(true)}
-                      className="btn btn-ghost"
-                      style={{ fontSize: 10, padding: "6px 12px" }}
-                    >
-                      Clear all
-                    </button>
-                  ) : (
-                    <span style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={clearHistory}
-                        className="btn btn-primary"
-                        style={{ fontSize: 10, padding: "6px 12px" }}
-                      >
-                        Confirm delete
-                      </button>
-                      <button
-                        onClick={() => setConfirmClear(false)}
-                        className="btn btn-ghost"
-                        style={{ fontSize: 10, padding: "6px 12px" }}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  )}
-                </div>
-
-                <div className="board-scroll" data-reveal>
-                  <div className="board-table">
-                    <div className="bt-head">
-                      <span>#</span>
-                      <span>Target</span>
-                      <span>Topology</span>
-                      <span>Spread</span>
-                      <span>Probed</span>
-                      <span>&nbsp;</span>
-                      <span>&nbsp;</span>
-                    </div>
-                    {sorted.map((entry, i) => {
-                      const topo = (entry.topologyClass || "uniform").toLowerCase();
-                      const c = TOPO_COLOR[topo] || "var(--text-3)";
-                      const savings = entry.savings ?? 0;
-                      return (
-                        <div key={entry.id} className="bt-row" data-reveal>
-                          <span className="bt-rank">{String(i + 1).padStart(2, "0")}</span>
-                          <span className="bt-target">
-                            <span className="bt-name">{entry.targetName || host(entry.targetUrl)}</span>
-                            <span className="bt-host">{host(entry.targetUrl)}</span>
-                          </span>
-                          <span
-                            className="topo-pill"
-                            style={{ color: c, borderColor: `${c}55`, background: `${c}12` }}
-                          >
-                            <span className="d" style={{ background: c }} />
-                            {topo}
-                          </span>
-                          <span className={`bt-spread ${savings === 0 ? "zero" : ""}`}>
-                            {savings > 0 ? `+$${Math.round(savings)}` : "—"}
-                          </span>
-                          <span className="bt-time">{timeAgo(entry.timestamp)}</span>
-                          <span>
-                            <Link
-                              href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`}
-                              className="btn btn-ghost"
-                              style={{ fontSize: 10, padding: "6px 12px" }}
-                            >
-                              Rerun
-                            </Link>
-                          </span>
-                          <span>&nbsp;</span>
-                        </div>
-                      );
-                    })}
+              <div className="jx-table-stage" data-reveal>
+                <div className="jx-table jx-table--history">
+                  <div className="jx-table__head">
+                    <span>#</span><span>Target</span><span>Topology</span>
+                    <span className="r">Spread</span><span className="r">Probed</span><span className="r">&nbsp;</span>
                   </div>
+                  {sorted.map((entry, i) => {
+                    const topo = (entry.topologyClass || "uniform").toLowerCase();
+                    const c = TOPO_COLOR[topo] || "var(--jx-ink-3)";
+                    const savings = entry.savings ?? 0;
+                    return (
+                      <div key={entry.id} className="jx-table__row">
+                        <span className="jx-table__rank">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="jx-table__target">
+                          <span className="jx-table__name">{entry.targetName || host(entry.targetUrl)}</span>
+                          <span className="jx-table__host">{host(entry.targetUrl)}</span>
+                        </span>
+                        <span className="jx-topo" style={{ color: c, borderColor: `${c}55`, background: `${c}14` }}>
+                          <span className="d" style={{ background: c }} />{topo}
+                        </span>
+                        <span className={`jx-table__spread r${savings === 0 ? " zero" : ""}`}>
+                          {savings > 0 ? `+$${Math.round(savings)}` : "—"}
+                        </span>
+                        <span className="jx-table__time r">{timeAgo(entry.timestamp)}</span>
+                        <span className="r">
+                          <Link href={`/chat?url=${encodeURIComponent(entry.targetUrl)}`} className="jx-minibtn">Rerun</Link>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              </>
-            )}
-          </div>
-        </section>
-      </main>
-
-      <DesignFooter />
-    </div>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    </MarketingShell>
   );
 }

@@ -1,7 +1,9 @@
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 httpx==0.28.*
-mcp>=1.4.0
+# FastMCP < ~1.13 crashes on typing-generic tool params (issubclass on
+# Dict[str, Any]); agentcore/mcp_server.py needs a modern release.
+mcp>=1.28
 pydantic==2.10.*
 python-dotenv==1.0.*
 groq>=0.12.0

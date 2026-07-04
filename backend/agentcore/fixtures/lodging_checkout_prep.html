@@ -1,0 +1,85 @@
+<!-- JACOBI DEMO FIXTURE — deterministic synthetic page, not a real merchant -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirm and pay — Marina Bay View Hotel, Dubai Marina | StayDemo</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1f2b; margin: 0; background: #f6f7f9; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px; }
+    .card { background: #fff; border: 1px solid #e5e8ee; border-radius: 12px; padding: 24px; }
+    .hotel { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+    .loc { color: #5a6472; margin: 0 0 16px; }
+    .dates { color: #333; margin: 0 0 20px; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: #5a6472; margin: 0 0 12px; }
+    .li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f2f6; }
+    .li .lbl { color: #23303f; }
+    .li .mand { color: #b3261e; font-size: 12px; margin-left: 6px; }
+    .li .amt { font-weight: 600; }
+    .total-row { display: flex; justify-content: space-between; padding-top: 16px; margin-top: 8px;
+                 border-top: 2px solid #dfe3ea; }
+    .total-row .lbl { font-weight: 700; font-size: 18px; }
+    .total { font-size: 26px; font-weight: 800; color: #0b1220; }
+    .cta { display: block; text-align: center; margin-top: 20px; background: #5b7cf5;
+           color: #fff; text-decoration: none; padding: 14px; border-radius: 10px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1 class="hotel">Marina Bay View Hotel, Dubai Marina</h1>
+      <p class="loc">Dubai Marina, Dubai, United Arab Emirates</p>
+      <p class="dates">Check-in Tue, Jul 15 · Check-out Fri, Jul 18 · 3 nights · 2 guests</p>
+
+      <h2>Price details</h2>
+
+      <div class="li">
+        <span class="lbl">Room · 3 nights</span>
+        <span class="amt"
+              data-jacobi-field="line_item"
+              data-label="Room · 3 nights"
+              data-amount="2180"
+              data-currency="AED">AED 2,180</span>
+      </div>
+
+      <div class="li">
+        <span class="lbl">Tourism Dirham fee<span class="mand">(mandatory)</span></span>
+        <span class="amt"
+              data-jacobi-field="mandatory_fee"
+              data-label="Tourism Dirham fee (mandatory)"
+              data-amount="60"
+              data-currency="AED">AED 60</span>
+      </div>
+
+      <div class="li">
+        <span class="lbl">Destination fee<span class="mand">(mandatory)</span></span>
+        <span class="amt"
+              data-jacobi-field="mandatory_fee"
+              data-label="Destination fee (mandatory)"
+              data-amount="190"
+              data-currency="AED">AED 190</span>
+      </div>
+
+      <div class="li">
+        <span class="lbl">Service charge<span class="mand">(mandatory)</span></span>
+        <span class="amt"
+              data-jacobi-field="mandatory_fee"
+              data-label="Service charge (mandatory)"
+              data-amount="100"
+              data-currency="AED">AED 100</span>
+      </div>
+
+      <div class="total-row">
+        <span class="lbl">Total</span>
+        <span class="total"
+              data-jacobi-field="displayed_total"
+              data-amount="2530"
+              data-currency="AED">AED 2,530</span>
+      </div>
+
+      <a class="cta" href="#pay">Confirm and pay</a>
+    </div>
+  </div>
+</body>
+</html>

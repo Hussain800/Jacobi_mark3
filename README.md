@@ -31,6 +31,7 @@ and receipts**, whether you are being charged for *who you are*.
 ## Table of contents
 
 - [What is JACOBI?](#what-is-jacobi)
+- [Jacobi for Agents — price provenance for AI agents](#jacobi-for-agents--price-provenance-for-ai-agents)
 - [Why it matters](#why-it-matters)
 - [The name — why a *Jacobian*](#the-name--why-a-jacobian)
 - [Features](#features)
@@ -92,6 +93,29 @@ single buyer-context variable can explain.
 
 > **Honest timing.** Smart 24 audits typically complete within **60–100 seconds**,
 > depending on the target site (JS-heavy travel pages sit at the slower end).
+
+## Jacobi for Agents — price provenance for AI agents
+
+The agentic layer of JACOBI: the verification call an AI agent makes **before**
+recommending, booking, or purchasing. Given a purchase context, Jacobi returns
+a machine-readable **DecisionEnvelope** — `proceed` / `proceed_with_caution` /
+`ask_user` / `handoff_to_user` / `use_official_route` / `block` — with a
+decomposed **Price Provenance Score**, reason codes, a human explanation, and
+a deterministic SHA-256 **EvidenceManifest**.
+
+- **Three surfaces, one engine:** REST (`/api/v1/agent/*`), an MCP stdio
+  server (`python -m agentcore.mcp_server`), and the dashboard at
+  `/dashboard/provenance`.
+- **Hard safety boundary:** no purchase execution exists; `purchase_authorized`
+  is blocked on restricted or unknown routes unless `official_route` is true;
+  no identity spoofing, CAPTCHA bypass, or platform evasion anywhere.
+- **Built-in demos:** a lodging fee-drift flow (AED 2,180 listing →
+  AED 2,530 checkout-prep after 3 mandatory fees → `ask_user`) and a
+  restricted-route purchase attempt (→ `block`), both deterministic,
+  fixture-backed, and labeled as such.
+
+Full docs: **[docs/JACOBI_FOR_AGENTS.md](docs/JACOBI_FOR_AGENTS.md)** ·
+example client: `python examples/agent_client_demo.py`
 
 ## Why it matters
 

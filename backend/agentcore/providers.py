@@ -221,10 +221,19 @@ budget = BudgetTracker()
 
 
 def choose_provider(url: str) -> CollectionProvider:
-    """Provider router v0: fixtures → FixtureProvider, else local HTTP.
-    Managed adapters slot in here behind capability/budget/policy checks."""
+    """Provider router: fixtures → FixtureProvider; real URLs → Playwright
+    browser evidence when the optional dependency is installed, else local
+    HTTP. Managed adapters slot in here behind capability/budget/policy
+    checks."""
     if url.startswith("fixture://"):
         return FixtureProvider()
+    try:
+        from .playwright_provider import LocalPlaywrightProvider, is_available
+
+        if is_available():
+            return LocalPlaywrightProvider()
+    except ImportError:
+        pass
     return LocalHttpProvider()
 
 

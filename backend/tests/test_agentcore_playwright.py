@@ -81,3 +81,50 @@ def test_unsafe_url_rejected(monkeypatch):
     attempt = LocalPlaywrightProvider().collect("http://127.0.0.1/", "listing")
     assert attempt.error is not None
     assert attempt.artifacts == []
+
+
+def test_redirect_to_private_address_rejected(monkeypatch):
+    # A public-looking URL that 302s to a private address must be dropped
+    # AFTER navigation too (redirect TOCTOU guard), with no artifacts kept.
+    import http.server
+    import threading
+
+    class Redirector(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/private":
+                body = b"<html><body>internal</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/private")
+                self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Redirector)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    start_url = f"http://127.0.0.1:{srv.server_port}/page"
+
+    from agentcore import playwright_provider as pp
+    from url_guard import UnsafeUrlError
+
+    real_guard_error = UnsafeUrlError
+
+    def selective_guard(url):
+        # allow the start path; reject the redirect landing path — stands in
+        # for a public URL 302ing to a private/metadata address
+        if "/private" in url:
+            raise real_guard_error(f"non-public address blocked in test: {url}")
+
+    monkeypatch.setattr(pp, "validate_public_url", selective_guard)
+    try:
+        attempt = pp.LocalPlaywrightProvider().collect(start_url, "listing")
+    finally:
+        srv.shutdown()
+
+    assert attempt.error is not None and "redirect" in attempt.error
+    assert attempt.artifacts == []

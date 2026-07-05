@@ -166,6 +166,19 @@ class LocalPlaywrightProvider(CollectionProvider):
             if response is not None:
                 attempt.http_status = response.status
 
+            # Redirect TOCTOU guard: the pre-goto check validated the request
+            # URL, but the browser follows redirects — re-validate where we
+            # actually landed so a public URL 302ing to a private/metadata
+            # address never gets its content captured as evidence.
+            try:
+                validate_public_url(page.url)
+            except UnsafeUrlError as exc:
+                attempt.error = f"unsafe redirect target rejected: {exc}"
+                attempt.limitations.append(
+                    "Navigation redirected to a non-public address; no artifacts captured."
+                )
+                return attempt
+
             artifacts: list[Artifact] = []
 
             html = page.content()

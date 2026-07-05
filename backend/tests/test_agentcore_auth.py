@@ -94,6 +94,26 @@ def test_open_dev_mode_without_keys(client, monkeypatch):
     assert r.status_code == 200
 
 
+def test_bogus_keys_share_the_ip_bucket(client, monkeypatch):
+    # Rotating invalid X-Api-Key values must NOT mint fresh rate buckets.
+    monkeypatch.setattr(api_mod, "RATE_LIMIT_PER_MINUTE", 2)
+    api_mod._RATE_BUCKETS.clear()
+    codes = [
+        client.post(
+            "/api/v1/agent/verify",
+            json={"demo": "fee_drift"},
+            headers={"X-Api-Key": f"bogus-{i}"},
+        ).status_code
+        for i in range(4)
+    ]
+    # bogus keys collapse to the client-IP bucket → third call onward limited
+    assert codes[:2] == [401, 401] or 429 in codes  # invalid key 401s, but bucket is shared
+    ip_buckets = [k for k in api_mod._RATE_BUCKETS if k.startswith("ip:")]
+    assert len(ip_buckets) == 1
+    assert not any(k.startswith("key:bogus") for k in api_mod._RATE_BUCKETS)
+    api_mod._RATE_BUCKETS.clear()
+
+
 def test_pdf_export_is_pdf(client):
     r = client.post("/api/v1/agent/verify", json={"demo": "fee_drift"})
     rid = r.json()["request_id"]

@@ -37,10 +37,12 @@ _RATE_BUCKETS: Dict[str, List[float]] = defaultdict(list)
 
 def _rate_key(request: Request) -> str:
     """Authenticated callers are limited per API key; anonymous per IP.
-    X-Forwarded-For is honored only when explicitly configured behind a
-    trusted proxy — it is caller-spoofable otherwise."""
+    Only VALID keys get their own bucket — otherwise rotating bogus
+    X-Api-Key values would mint a fresh bucket per request and bypass the
+    limit. X-Forwarded-For is honored only when explicitly configured behind
+    a trusted proxy — it is caller-spoofable otherwise."""
     api_key = request.headers.get("X-Api-Key")
-    if api_key:
+    if api_key and api_key in auth._load_keys():
         return f"key:{api_key}"
     if os.getenv("JACOBI_TRUSTED_PROXY") == "1":
         fwd = request.headers.get("X-Forwarded-For", "")

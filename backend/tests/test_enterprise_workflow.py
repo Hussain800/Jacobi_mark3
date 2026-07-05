@@ -1,10 +1,21 @@
 import asyncio
 
+import pytest
+
 import main as M
 import enterprise_store
 from enterprise_access import EnterprisePermissionError, require_permission
 from auth_user import get_optional_user
 from map_policy import evaluate_map_observation
+
+
+@pytest.fixture(autouse=True)
+def _force_memory_store(monkeypatch):
+    # These tests exercise the in-memory workspace flow (they reset
+    # _MEMORY_WORKSPACES directly). Without this, a developer .env.local with
+    # real Supabase credentials flips enterprise_store into DB mode and the
+    # workspace calls 500 against the live project.
+    monkeypatch.setattr(enterprise_store, "get_supabase", lambda: None)
 
 
 def _as_user(user_id: str):

@@ -13,12 +13,12 @@ a claim-only manifest.
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import policy as policy_mod
 from . import scoring
 from .evidence import build_manifest
+from .storage import get_repo
 from .extract import money_from_extraction
 from .providers import budget, collect_stages
 from .schemas import (
@@ -67,16 +67,11 @@ DEMOS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Bounded in-memory stores (same posture as the probe SESSION_STORE bounds).
-_MAX_STORE = 500
-ENVELOPES: "OrderedDict[str, DecisionEnvelope]" = OrderedDict()
-MANIFESTS: "OrderedDict[str, Any]" = OrderedDict()
-
-
-def _store(d: OrderedDict, key: str, value: Any) -> None:
-    d[key] = value
-    while len(d) > _MAX_STORE:
-        d.popitem(last=False)
+# Storage is a repository (storage.py): in-memory bounded by default,
+# Supabase-backed with JACOBI_AGENT_STORAGE=supabase. Reads resolve across the
+# caller's org plus the public demo/dev orgs — object-level authorization
+# lives in the repo's org matching.
+DEFAULT_READ_ORGS = ["demo", "dev", "mcp-local"]
 
 
 def _fmt_money(m: Money) -> str:
@@ -375,6 +370,7 @@ def run_verify(
     agent_id: str = "unknown-agent",
     item_or_booking: Optional[Dict[str, Any]] = None,
     merchant: Optional[Dict[str, Any]] = None,
+    org: str = "demo",
 ) -> DecisionEnvelope:
     """Primary entry: build obligation, gate, collect, score, decide."""
     if demo:
@@ -467,21 +463,32 @@ def run_verify(
         fixture_mode=fixture_mode,
     )
 
-    _store(ENVELOPES, envelope.request_id, envelope)
-    _store(MANIFESTS, manifest.manifest_id, manifest)
+    repo = get_repo()
+    repo.save_decision(envelope, org)
+    repo.save_manifest(manifest, org)
     return envelope
 
 
-def get_envelope(request_id: str) -> Optional[DecisionEnvelope]:
-    return ENVELOPES.get(request_id)
+def get_envelope(request_id: str, orgs: Optional[List[str]] = None) -> Optional[DecisionEnvelope]:
+    repo = get_repo()
+    for org in orgs or DEFAULT_READ_ORGS:
+        env = repo.get_decision(request_id, org)
+        if env is not None:
+            return env
+    return None
 
 
-def get_manifest(manifest_id: str):
-    return MANIFESTS.get(manifest_id)
+def get_manifest(manifest_id: str, orgs: Optional[List[str]] = None):
+    repo = get_repo()
+    for org in orgs or DEFAULT_READ_ORGS:
+        man = repo.get_manifest(manifest_id, org)
+        if man is not None:
+            return man
+    return None
 
 
-def explain(request_id: str) -> Optional[Dict[str, str]]:
-    env = ENVELOPES.get(request_id)
+def explain(request_id: str, orgs: Optional[List[str]] = None) -> Optional[Dict[str, str]]:
+    env = get_envelope(request_id, orgs)
     if env is None:
         return None
     return {

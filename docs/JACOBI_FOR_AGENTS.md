@@ -51,6 +51,13 @@ npm run dev
 No extra env vars are required for the demos — see
 [Environment variables](#environment-variables) for the optional ones.
 
+**Local dashboard demo:** `frontend/.env.local` must point at the local
+backend, i.e. `NEXT_PUBLIC_API_URL=http://localhost:8000` and
+`BACKEND_API_URL=http://localhost:8000` (with those values the browser uses
+the same-origin Next proxy, which forwards `/api/*` to the local backend).
+If it points at the deployed Render URL instead, demo clicks go straight to
+prod — which 404s until this branch is deployed there.
+
 ## Demo flows
 
 ### 1. Lodging fee-drift (fixture-backed)
@@ -191,8 +198,13 @@ mutations), and optional HMAC signature (`JACOBI_MANIFEST_SIGNING_KEY`).
 |---|---|---|
 | `JACOBI_AGENT_BUDGET_USD` | `5.0` | Per-process managed-collection spend ceiling; exceeding returns `BUDGET_BLOCKED` |
 | `JACOBI_ARTIFACT_DIR` | `backend/agentcore/_artifacts` | Raw HTML evidence storage (gitignored) |
+| `JACOBI_ARTIFACT_MAX_FILES` | `500` | Cap on stored HTML artifacts (oldest pruned) — bounds disk use from unauthenticated verifies |
+| `JACOBI_AGENT_RATE_LIMIT_PER_MIN` | `30` | Per-IP rate limit on `/verify` and `/compare-total-price` (429 beyond) |
 | `JACOBI_MANIFEST_SIGNING_KEY` | unset | Optional HMAC-SHA256 manifest signing |
 | `JACOBI_POLICY_OVERRIDES` | unset | JSON `{domain: action_mode}` policy overrides |
+
+Every envelope also carries `ttl_seconds` (900): evidence is a snapshot —
+agents should re-verify after the window rather than acting on stale prices.
 
 ## Tests
 

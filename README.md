@@ -96,6 +96,12 @@ single buyer-context variable can explain.
 
 ## Jacobi for Agents — price provenance for AI agents
 
+> **Two products share this repo.** The sections below this one describe the
+> original enterprise pricing-audit product (synthetic-buyer probes,
+> dashboards, evidence packs). This section describes **Jacobi for Agents** —
+> the newer agent-facing provenance layer. They share infrastructure but the
+> agent layer imports none of the legacy collection tooling.
+
 The agentic layer of JACOBI: the verification call an AI agent makes **before**
 recommending, booking, or purchasing. Given a purchase context, Jacobi returns
 a machine-readable **DecisionEnvelope** — `proceed` / `proceed_with_caution` /

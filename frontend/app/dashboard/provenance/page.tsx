@@ -224,6 +224,7 @@ export default function ProvenancePage() {
           <input
             value={advUrl}
             onChange={(e) => setAdvUrl(e.target.value)}
+            aria-label="URL to verify"
             placeholder="https://example.com/product"
             style={{
               width: "100%", boxSizing: "border-box", marginBottom: 8,
@@ -236,6 +237,7 @@ export default function ProvenancePage() {
             <select
               value={advScope}
               onChange={(e) => setAdvScope(e.target.value)}
+              aria-label="Consent scope"
               style={{
                 background: "var(--surface)", border: "1px solid var(--line)",
                 borderRadius: 8, padding: "8px 10px", color: "inherit",
@@ -369,6 +371,19 @@ export default function ProvenancePage() {
                   )}
                 </tbody>
               </table>
+              {env.price_summary.mandatory_fees_detected.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-2)" }}>
+                  Mandatory fees detected:{" "}
+                  {env.price_summary.mandatory_fees_detected
+                    .map((f) => `${f.label ?? "Fee"} ${money(f)}`)
+                    .join(" · ")}
+                </div>
+              )}
+              {env.price_summary.currency_notes.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 13, color: "var(--gold)" }}>
+                  {env.price_summary.currency_notes.join(" ")}
+                </div>
+              )}
             </Section>
           )}
 
@@ -442,7 +457,7 @@ export default function ProvenancePage() {
                 Agent instruction: {env.agent_instruction}
               </span>
               <span style={{ fontSize: 12, fontFamily: "var(--mono)", color: "var(--text-2)" }}>
-                preferred route: {env.route_summary.preferred_route} · legality: {env.route_summary.route_legality} · budget: {env.budget.budget_status}
+                preferred route: {env.route_summary.preferred_route} · legality: {env.route_summary.route_legality} · budget: {env.budget.budget_status} (est ${env.budget.estimated_cost_usd.toFixed(2)})
               </span>
             </div>
           </Section>

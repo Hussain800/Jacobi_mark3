@@ -2238,6 +2238,11 @@ app.include_router(export_router)
 # Stripe test flow never opens. Found during sanity check.
 from billing import router as billing_router
 app.include_router(billing_router)
+# Jacobi for Agents: price-provenance verification for AI agents
+# (/api/v1/agent/verify, /policy/check, /manifests/{id}, ...). Evidence and
+# decisioning only — no purchase execution exists behind these routes.
+from agentcore.api import router as agent_router
+app.include_router(agent_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None

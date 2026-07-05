@@ -18,8 +18,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from . import auth
 from . import engine
 from . import policy as policy_mod
+from .pdf_export import build_evidence_pdf
 from .schemas import ConsentScope, PolicyDecision
 
 # /api prefix so the Next dev proxy (app/api/[...path] → backend /api/*) and
@@ -33,8 +35,22 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("JACOBI_AGENT_RATE_LIMIT_PER_MIN", "30"))
 _RATE_BUCKETS: Dict[str, List[float]] = defaultdict(list)
 
 
+def _rate_key(request: Request) -> str:
+    """Authenticated callers are limited per API key; anonymous per IP.
+    X-Forwarded-For is honored only when explicitly configured behind a
+    trusted proxy — it is caller-spoofable otherwise."""
+    api_key = request.headers.get("X-Api-Key")
+    if api_key:
+        return f"key:{api_key}"
+    if os.getenv("JACOBI_TRUSTED_PROXY") == "1":
+        fwd = request.headers.get("X-Forwarded-For", "")
+        if fwd:
+            return f"ip:{fwd.split(',')[0].strip()}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
 def _enforce_rate_limit(request: Request) -> None:
-    key = request.client.host if request.client else "unknown"
+    key = _rate_key(request)
     now = time.time()
     bucket = [t for t in _RATE_BUCKETS[key] if now - t < 60.0]
     if len(bucket) >= RATE_LIMIT_PER_MINUTE:
@@ -71,6 +87,7 @@ def agent_health() -> Dict[str, Any]:
 @router.post("/verify")
 def verify(req: VerifyRequest, request: Request):
     _enforce_rate_limit(request)
+    org = auth.org_for_write(request, is_demo=bool(req.demo))
     try:
         return engine.run_verify(
             demo=req.demo,
@@ -81,6 +98,7 @@ def verify(req: VerifyRequest, request: Request):
             agent_id=req.agent_id,
             item_or_booking=req.item_or_booking,
             merchant=req.merchant,
+            org=org,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -89,6 +107,7 @@ def verify(req: VerifyRequest, request: Request):
 @router.post("/compare-total-price")
 def compare_total_price(req: VerifyRequest, request: Request) -> Dict[str, Any]:
     _enforce_rate_limit(request)
+    org = auth.org_for_write(request, is_demo=bool(req.demo))
     try:
         env = engine.run_verify(
             demo=req.demo,
@@ -99,6 +118,7 @@ def compare_total_price(req: VerifyRequest, request: Request) -> Dict[str, Any]:
             agent_id=req.agent_id,
             item_or_booking=req.item_or_booking,
             merchant=req.merchant,
+            org=org,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -121,34 +141,52 @@ def policy_check(req: PolicyCheckRequest) -> PolicyDecision:
 
 
 @router.get("/decisions/{request_id}")
-def get_decision(request_id: str):
-    env = engine.get_envelope(request_id)
+def get_decision(request_id: str, request: Request):
+    env = engine.get_envelope(request_id, auth.readable_orgs(request))
     if env is None:
         raise HTTPException(status_code=404, detail="decision not found")
     return env
 
 
+@router.get("/decisions/{request_id}/export.pdf")
+def export_decision_pdf(request_id: str, request: Request) -> Response:
+    """PDF evidence receipt for a stored decision."""
+    orgs = auth.readable_orgs(request)
+    env = engine.get_envelope(request_id, orgs)
+    if env is None:
+        raise HTTPException(status_code=404, detail="decision not found")
+    man = engine.get_manifest(env.evidence.manifest_id, orgs)
+    pdf = build_evidence_pdf(env, man)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="jacobi-evidence-{request_id}.pdf"'
+        },
+    )
+
+
 @router.post("/explain")
-def explain_decision(body: Dict[str, str]) -> Dict[str, str]:
+def explain_decision(body: Dict[str, str], request: Request) -> Dict[str, str]:
     request_id = body.get("request_id", "")
-    out = engine.explain(request_id)
+    out = engine.explain(request_id, auth.readable_orgs(request))
     if out is None:
         raise HTTPException(status_code=404, detail="decision not found")
     return out
 
 
 @router.get("/manifests/{manifest_id}")
-def get_manifest(manifest_id: str):
-    man = engine.get_manifest(manifest_id)
+def get_manifest(manifest_id: str, request: Request):
+    man = engine.get_manifest(manifest_id, auth.readable_orgs(request))
     if man is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     return man
 
 
 @router.get("/manifests/{manifest_id}/export")
-def export_manifest(manifest_id: str) -> Response:
+def export_manifest(manifest_id: str, request: Request) -> Response:
     """JSON evidence export (download)."""
-    man = engine.get_manifest(manifest_id)
+    man = engine.get_manifest(manifest_id, auth.readable_orgs(request))
     if man is None:
         raise HTTPException(status_code=404, detail="manifest not found")
     payload = json.dumps(man.model_dump(mode="json"), indent=2, default=str)

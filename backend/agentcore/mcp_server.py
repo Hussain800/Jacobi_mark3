@@ -62,6 +62,7 @@ def verify_purchase_context(
         displayed_total=displayed,
         official_route=official_route,
         agent_id=agent_id,
+        org="mcp-local",
     )
     return env.model_dump(mode="json")
 
@@ -83,7 +84,7 @@ def compare_total_price(
     )
     env = engine.run_verify(
         demo=demo, url=url, consent_scope="research_only", displayed_total=displayed,
-        agent_id="mcp-client",
+        agent_id="mcp-client", org="mcp-local",
     )
     return {
         "request_id": env.request_id,
@@ -114,7 +115,7 @@ def create_evidence_manifest(
     """Collect evidence for a target and return the deterministic SHA-256
     evidence manifest (artifacts, hashes, capabilities, limitations)."""
     env = engine.run_verify(demo=demo, url=url, consent_scope="research_only",
-                            agent_id="mcp-client")
+                            agent_id="mcp-client", org="mcp-local")
     man = engine.get_manifest(env.evidence.manifest_id)
     return man.model_dump(mode="json") if man else {"error": "manifest unavailable"}
 

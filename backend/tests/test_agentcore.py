@@ -214,6 +214,7 @@ def test_envelope_json_schema_valid_roundtrip():
     payload = env.model_dump(mode="json")
     again = DecisionEnvelope.model_validate(payload)
     assert again.request_id == env.request_id
+    assert payload["ttl_seconds"] == 900  # evidence freshness window
     json.dumps(payload)  # JSON-serializable end to end
 
 
@@ -293,3 +294,15 @@ def test_api_404s(client):
     assert client.get("/api/v1/agent/manifests/man_nope").status_code == 404
     assert client.get("/api/v1/agent/decisions/req_nope").status_code == 404
     assert client.post("/api/v1/agent/verify", json={"demo": "nope"}).status_code == 422
+
+
+def test_api_verify_rate_limited(client, monkeypatch):
+    from agentcore import api as api_mod
+
+    monkeypatch.setattr(api_mod, "RATE_LIMIT_PER_MINUTE", 2)
+    api_mod._RATE_BUCKETS.clear()
+    assert client.post("/api/v1/agent/verify", json={"demo": "fee_drift"}).status_code == 200
+    assert client.post("/api/v1/agent/verify", json={"demo": "fee_drift"}).status_code == 200
+    r = client.post("/api/v1/agent/verify", json={"demo": "fee_drift"}).status_code
+    assert r == 429
+    api_mod._RATE_BUCKETS.clear()  # don't poison other tests

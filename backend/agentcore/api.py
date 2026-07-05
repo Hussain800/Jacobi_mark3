@@ -9,9 +9,12 @@ anywhere behind these endpoints.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+import os
+import time
+from collections import defaultdict
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -22,6 +25,25 @@ from .schemas import ConsentScope, PolicyDecision
 # /api prefix so the Next dev proxy (app/api/[...path] → backend /api/*) and
 # direct prod calls share one path shape.
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
+
+# Per-IP sliding-window rate limit on the endpoints that trigger collection.
+# The /verify raw-url path is an unauthenticated fetch trigger (SSRF-guarded
+# but still egress) — without this it is an open fetch proxy / DoS amplifier.
+RATE_LIMIT_PER_MINUTE = int(os.getenv("JACOBI_AGENT_RATE_LIMIT_PER_MIN", "30"))
+_RATE_BUCKETS: Dict[str, List[float]] = defaultdict(list)
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    key = request.client.host if request.client else "unknown"
+    now = time.time()
+    bucket = [t for t in _RATE_BUCKETS[key] if now - t < 60.0]
+    if len(bucket) >= RATE_LIMIT_PER_MINUTE:
+        _RATE_BUCKETS[key] = bucket
+        raise HTTPException(status_code=429, detail="agent verification rate limit exceeded")
+    bucket.append(now)
+    _RATE_BUCKETS[key] = bucket
+    if len(_RATE_BUCKETS) > 10_000:  # bound the bucket map itself
+        _RATE_BUCKETS.clear()
 
 
 class VerifyRequest(BaseModel):
@@ -47,7 +69,8 @@ def agent_health() -> Dict[str, Any]:
 
 
 @router.post("/verify")
-def verify(req: VerifyRequest):
+def verify(req: VerifyRequest, request: Request):
+    _enforce_rate_limit(request)
     try:
         return engine.run_verify(
             demo=req.demo,
@@ -64,7 +87,8 @@ def verify(req: VerifyRequest):
 
 
 @router.post("/compare-total-price")
-def compare_total_price(req: VerifyRequest) -> Dict[str, Any]:
+def compare_total_price(req: VerifyRequest, request: Request) -> Dict[str, Any]:
+    _enforce_rate_limit(request)
     try:
         env = engine.run_verify(
             demo=req.demo,

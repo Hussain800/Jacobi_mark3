@@ -305,4 +305,5 @@ class DecisionEnvelope(BaseModel):
     policy: Optional[PolicyDecision] = None
     evidence: EvidenceRef = Field(default_factory=EvidenceRef)
     budget: BudgetInfo = Field(default_factory=BudgetInfo)
+    ttl_seconds: int = 900  # evidence freshness window — re-verify after this
     fixture_mode: bool = False  # True when the verification ran against demo fixtures

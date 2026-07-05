@@ -62,6 +62,18 @@ def _artifact_dir() -> Path:
     return d
 
 
+def _prune_artifacts(d: Path) -> None:
+    """Keep the artifact dir bounded: unauthenticated /verify calls each write
+    one HTML file, so without a cap this is a disk-fill vector."""
+    cap = int(os.getenv("JACOBI_ARTIFACT_MAX_FILES", "500"))
+    files = sorted(d.glob("*.html"), key=lambda p: p.stat().st_mtime)
+    for stale in files[: max(0, len(files) - cap)]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
 class CollectionProvider(ABC):
     name: str = "abstract"
 
@@ -166,10 +178,12 @@ class LocalHttpProvider(CollectionProvider):
 
         raw = resp.content
         sha = hashlib.sha256(raw).hexdigest()
-        out_path = _artifact_dir() / f"{sha}.html"
+        art_dir = _artifact_dir()
+        out_path = art_dir / f"{sha}.html"
         try:
             out_path.write_bytes(raw)
             storage = str(out_path)
+            _prune_artifacts(art_dir)
         except OSError:
             storage = None  # evidence still carries the hash
         base.final_url = str(resp.url)

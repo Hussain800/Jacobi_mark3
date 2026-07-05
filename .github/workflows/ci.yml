@@ -15,10 +15,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest
       - name: Run tests
         run: |
-          pytest backend/tests/; code=$?
+          cd backend
+          python -m pytest tests/; code=$?
           # Tolerate exit 5 (no tests collected); fail the job on real test
           # failures / collection errors instead of swallowing them.
           if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then exit "$code"; fi

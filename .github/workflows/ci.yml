@@ -20,7 +20,8 @@ jobs:
           pip install pytest
       - name: Run tests
         run: |
-          pytest backend/tests/; code=$?
+          cd backend
+          pytest tests/; code=$?
           # Tolerate exit 5 (no tests collected); fail the job on real test
           # failures / collection errors instead of swallowing them.
           if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then exit "$code"; fi

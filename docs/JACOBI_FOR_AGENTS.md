@@ -58,6 +58,55 @@ the same-origin Next proxy, which forwards `/api/*` to the local backend).
 If it points at the deployed Render URL instead, demo clicks go straight to
 prod — which 404s until this branch is deployed there.
 
+## Production-beta setup
+
+The demos need nothing. For a shared/production-beta deployment, wire these:
+
+### API-key auth (`X-Api-Key`)
+
+Set `JACOBI_AGENT_API_KEYS` to a comma-separated `key:org` list:
+
+```
+JACOBI_AGENT_API_KEYS=key1:org1,key2:org2
+```
+
+Callers pass the key in the `X-Api-Key` header. Rules:
+
+- **Demos stay keyless** — any request with `demo` set skips the key check.
+- **Raw-URL verifies require a key** when `JACOBI_AGENT_API_KEYS` is set.
+  `401` = invalid key, `403` = key required but missing.
+- **Unset** = keyless dev-open: raw-URL verifies work without a header.
+
+The dashboard has an optional API-key field (stored in memory only, never
+persisted); when filled it sends `X-Api-Key` on verify + manifest/PDF fetches.
+
+### Storage (`JACOBI_AGENT_STORAGE`)
+
+- `memory` (default) — in-process, bounded, forgotten on restart. Fine for dev.
+- `supabase` — persists decisions/manifests via the repo layer. Needs
+  `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` and the `agent_provenance_records`
+  table (see `supabase/migrations`).
+
+### Optional Playwright provider
+
+For real browser evidence (rendered DOM + screenshot) instead of plain HTTP:
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
+Enabled by `JACOBI_ENABLE_PLAYWRIGHT` (set `0` to disable). Honest caveat:
+this is a **local browser emulation** — it renders JS and captures a
+screenshot, but it is **not real IP geography** and the envelope still says so
+via its capability tier + limitations. Set `JACOBI_PLAYWRIGHT_TRACE` to keep
+traces; `JACOBI_TRUSTED_PROXY` if the backend sits behind a proxy.
+
+### PDF evidence export
+
+`GET /api/v1/agent/decisions/{request_id}/export.pdf` returns a
+`application/pdf` evidence receipt for a stored decision (honors `X-Api-Key`).
+
 ## Demo flows
 
 ### 1. Lodging fee-drift (fixture-backed)
@@ -114,11 +163,13 @@ guessing (`LOW_EXTRACTOR_CONFIDENCE`).
 | POST | `/api/v1/agent/policy/check` | Policy decision for URL + scope |
 | POST | `/api/v1/agent/explain` | `{request_id}` → user-facing explanation |
 | GET | `/api/v1/agent/decisions/{id}` | Fetch stored envelope |
+| GET | `/api/v1/agent/decisions/{id}/export.pdf` | PDF evidence receipt (`application/pdf`) |
 | GET | `/api/v1/agent/manifests/{id}` | Fetch evidence manifest |
 | GET | `/api/v1/agent/manifests/{id}/export` | JSON evidence download |
 
-Stores are in-memory and bounded (500); persistence to the enterprise
-Supabase schema is a deliberate later step.
+Storage is configurable (`JACOBI_AGENT_STORAGE`): `memory` (default, bounded,
+process-local) or `supabase` (repo-layer persistence). Raw-URL verifies can be
+gated behind `X-Api-Key` — see [Production-beta setup](#production-beta-setup).
 
 ## MCP server
 
@@ -180,17 +231,20 @@ mutations), and optional HMAC signature (`JACOBI_MANIFEST_SIGNING_KEY`).
 
 ## Limitations (honest)
 
-- Collection is **local-only** (fixtures + plain HTTP). No JS rendering, no
-  screenshots, no managed anti-bot providers, no real-IP geography — every
-  envelope carries `EVIDENCE_LIMITED_LOCAL_ONLY` and the manifest says
-  exactly what was and wasn't captured.
+- Collection is **local** — fixtures, plain HTTP, and (optionally) a local
+  Playwright browser (`JACOBI_ENABLE_PLAYWRIGHT`). Even with Playwright it is
+  **not real-IP geography** and no managed anti-bot providers are wired; every
+  envelope carries `EVIDENCE_LIMITED_LOCAL_ONLY` and the manifest says exactly
+  what was and wasn't captured.
 - The generic extractor is a fallback heuristic; only pages with
   `data-jacobi-field` annotations (fixtures/partners) extract at high
   confidence.
-- Decision/manifest stores are in-memory per process — restart forgets them.
-- The provider router has one real route today; managed adapters
-  (Browserbase/Zyte/Bright Data) are future `CollectionProvider`
-  implementations behind the same budget + policy gates.
+- Persistence is now a repo layer: `memory` (process-local, forgotten on
+  restart) or opt-in `supabase` via `JACOBI_AGENT_STORAGE`.
+- Auth exists (API keys via `X-Api-Key`) and evidence exports both JSON and
+  **PDF**. Still deferred: managed collection providers
+  (Browserbase/Zyte/Bright Data — future `CollectionProvider`s behind the same
+  budget + policy gates) and per-org dashboards / usage accounting.
 
 ## Environment variables
 
@@ -202,6 +256,11 @@ mutations), and optional HMAC signature (`JACOBI_MANIFEST_SIGNING_KEY`).
 | `JACOBI_AGENT_RATE_LIMIT_PER_MIN` | `30` | Per-IP rate limit on `/verify` and `/compare-total-price` (429 beyond) |
 | `JACOBI_MANIFEST_SIGNING_KEY` | unset | Optional HMAC-SHA256 manifest signing |
 | `JACOBI_POLICY_OVERRIDES` | unset | JSON `{domain: action_mode}` policy overrides |
+| `JACOBI_AGENT_API_KEYS` | unset | `key:org` comma list; when set, raw-URL verifies require `X-Api-Key` (demos stay keyless). Unset = keyless dev-open |
+| `JACOBI_AGENT_STORAGE` | `memory` | `memory` (bounded, process-local) or `supabase` (repo-layer persistence; needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`) |
+| `JACOBI_ENABLE_PLAYWRIGHT` | `0` | `1` enables the local Playwright provider (real rendered DOM + screenshot; still not real-IP geography) |
+| `JACOBI_PLAYWRIGHT_TRACE` | unset | Keep Playwright traces for captured pages |
+| `JACOBI_TRUSTED_PROXY` | unset | Trust proxy headers for client-IP (when the backend sits behind a proxy) |
 
 Every envelope also carries `ttl_seconds` (900): evidence is a snapshot —
 agents should re-verify after the window rather than acting on stale prices.

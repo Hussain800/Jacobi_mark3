@@ -130,6 +130,11 @@ export default function ProvenancePage() {
   const [error, setError] = useState<string | null>(null);
   const [advUrl, setAdvUrl] = useState("");
   const [advScope, setAdvScope] = useState("recommend");
+  const [apiKey, setApiKey] = useState("");
+
+  // X-Api-Key header only when a key is entered; demos stay keyless.
+  const authHeaders = (): Record<string, string> =>
+    apiKey.trim() ? { "X-Api-Key": apiKey.trim() } : {};
 
   async function runVerify(body: Record<string, unknown>, label: string) {
     setLoading(label);
@@ -141,10 +146,13 @@ export default function ProvenancePage() {
     try {
       const r = await fetch(target, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(body),
       });
       if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          throw new Error("API key required/invalid for custom URL verification.");
+        }
         const detail = await r.text();
         throw new Error(`HTTP ${r.status} from ${target}: ${detail.slice(0, 300)}`);
       }
@@ -164,7 +172,9 @@ export default function ProvenancePage() {
     if (!env) return;
     if (!manifest) {
       try {
-        const r = await fetch(`${API}/api/v1/agent/manifests/${env.evidence.manifest_id}`);
+        const r = await fetch(`${API}/api/v1/agent/manifests/${env.evidence.manifest_id}`, {
+          headers: authHeaders(),
+        });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         setManifest(await r.json());
       } catch (e) {
@@ -173,6 +183,26 @@ export default function ProvenancePage() {
       }
     }
     setShowManifest(true);
+  }
+
+  // Plain <a href> can't carry X-Api-Key, so when a key is set we fetch → blob
+  // → object URL → programmatic download click. Keyless keeps the plain link.
+  async function downloadWithKey(url: string, filename: string) {
+    try {
+      const r = await fetch(url, { headers: authHeaders() });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      setError(`Download failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   return (
@@ -258,6 +288,24 @@ export default function ProvenancePage() {
               {loading === "custom" ? "Verifying…" : "Verify"}
             </button>
           </div>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            aria-label="API key"
+            placeholder="API key (optional)"
+            autoComplete="off"
+            style={{
+              width: "100%", boxSizing: "border-box", marginTop: 8,
+              background: "transparent", border: "1px solid var(--line)",
+              borderRadius: 8, padding: "8px 10px", color: "var(--text-1, inherit)",
+              fontFamily: "var(--mono)", fontSize: 12,
+            }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-2)", lineHeight: 1.4 }}>
+            Needed for verifying custom URLs when the backend has keys
+            configured; demos run without one.
+          </p>
         </div>
       </div>
 
@@ -294,7 +342,9 @@ export default function ProvenancePage() {
               <span style={{ fontSize: 12, color: "var(--text-2)" }}> /100 provenance</span>
             </span>
             {pill(`${env.confidence} confidence`, "var(--cobalt-bright)")}
-            {env.fixture_mode && pill("fixture demo data", "var(--gold)")}
+            {env.fixture_mode
+              ? pill("fixture demo data", "var(--gold)")
+              : pill("live local evidence", "var(--cobalt-bright)")}
           </div>
 
           <Section title="Why">
@@ -423,19 +473,53 @@ export default function ProvenancePage() {
                 ))}
               </ul>
             )}
-            <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+            <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button
                 onClick={toggleManifest}
                 style={{ background: "none", border: "1px solid var(--line)", borderRadius: 8, color: "inherit", cursor: "pointer", fontSize: 12, padding: "7px 12px" }}
               >
                 {showManifest ? "Hide manifest JSON" : "View manifest JSON"}
               </button>
-              <a
-                href={`${API}/api/v1/agent/manifests/${env.evidence.manifest_id}/export`}
-                style={{ border: "1px solid var(--line)", borderRadius: 8, color: "inherit", fontSize: 12, padding: "7px 12px", textDecoration: "none" }}
-              >
-                Download JSON
-              </a>
+              {apiKey.trim() ? (
+                <button
+                  onClick={() =>
+                    downloadWithKey(
+                      `${API}/api/v1/agent/manifests/${env.evidence.manifest_id}/export`,
+                      `manifest-${env.evidence.manifest_id}.json`,
+                    )
+                  }
+                  style={{ background: "none", border: "1px solid var(--line)", borderRadius: 8, color: "inherit", cursor: "pointer", fontSize: 12, padding: "7px 12px" }}
+                >
+                  Download JSON
+                </button>
+              ) : (
+                <a
+                  href={`${API}/api/v1/agent/manifests/${env.evidence.manifest_id}/export`}
+                  style={{ border: "1px solid var(--line)", borderRadius: 8, color: "inherit", fontSize: 12, padding: "7px 12px", textDecoration: "none" }}
+                >
+                  Download JSON
+                </a>
+              )}
+              {apiKey.trim() ? (
+                <button
+                  onClick={() =>
+                    downloadWithKey(
+                      `${API}/api/v1/agent/decisions/${env.request_id}/export.pdf`,
+                      `decision-${env.request_id}.pdf`,
+                    )
+                  }
+                  style={{ background: "none", border: "1px solid var(--line)", borderRadius: 8, color: "inherit", cursor: "pointer", fontSize: 12, padding: "7px 12px" }}
+                >
+                  Download PDF
+                </button>
+              ) : (
+                <a
+                  href={`${API}/api/v1/agent/decisions/${env.request_id}/export.pdf`}
+                  style={{ border: "1px solid var(--line)", borderRadius: 8, color: "inherit", fontSize: 12, padding: "7px 12px", textDecoration: "none" }}
+                >
+                  Download PDF
+                </a>
+              )}
             </div>
             {showManifest && manifest != null && (
               <pre

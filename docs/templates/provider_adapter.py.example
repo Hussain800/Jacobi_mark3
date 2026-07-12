@@ -1,0 +1,44 @@
+"""Copy into backend/compare/adapters/ and replace every placeholder."""
+
+from compare.adapters.base import (
+    MerchantAdapter,
+    ProviderCost,
+    ProviderHealth,
+    ProviderKind,
+    ProviderRateLimit,
+)
+
+
+class ExamplePublicAdapter(MerchantAdapter):
+    merchant_id = "example_public"
+    merchant_name = "Example public catalogue"
+    domains = ["shop.example"]
+    categories = ["electronics"]
+    provider_kind = ProviderKind.merchant_search
+    provider_cost = ProviderCost.zero
+    cost_estimate_usd = 0.0
+    evidence_tier = "public_structured"
+    timeout_seconds = 5.0
+    retries = 0
+    capabilities = ("merchant-search", "structured-metadata")
+    known_limitations = [
+        "Public catalogue only",
+        "Checkout-only charges remain unknown",
+    ]
+    rate_limit = ProviderRateLimit(
+        requests=10,
+        window_seconds=60,
+        policy="Respect published source limits and cache responses",
+    )
+    health = ProviderHealth.unknown
+    extraction_fields = (
+        "title", "model", "mpn", "gtin", "item_price", "currency",
+        "seller", "condition", "stock",
+    )
+    explicit_invocation_required = True
+    fixture = False
+
+    async def search_offers(self, product, market):
+        # Validate server-fetched URLs and every redirect, bound all I/O, and
+        # return OfferObservation values only for fields actually observed.
+        raise NotImplementedError

@@ -1,0 +1,56 @@
+name: Provider adapter proposal
+description: Propose a policy-compliant merchant, catalogue, feed, or official API adapter.
+title: "[Adapter]: "
+labels: ["merchant adapter"]
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and domains
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Provider kind
+      options:
+        - Browser-assisted
+        - Direct public structured metadata
+        - Merchant search
+        - Official API/feed
+        - Local Playwright
+        - Optional managed/paid
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: Access and policy basis
+      description: Public documentation, terms, robots/policy considerations, authorization, reviewed date, and required manual handoff.
+    validations:
+      required: true
+  - type: textarea
+    id: fields
+    attributes:
+      label: Observable fields and limitations
+      description: Identity, price, shipping, seller, condition, stock, warranty, returns, freshness.
+    validations:
+      required: true
+  - type: textarea
+    id: fixtures
+    attributes:
+      label: Fixture and test plan
+      description: Include failures, mismatches, multiple sellers, changed markup, timeout, and blocked response.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: The proposal does not require CAPTCHA bypass, stealth, credentials, or checkout automation.
+          required: true
+        - label: CI will be hermetic and will not call the live provider.
+          required: true
+        - label: Any paid provider will be disabled by default and explicitly invoked.
+          required: true

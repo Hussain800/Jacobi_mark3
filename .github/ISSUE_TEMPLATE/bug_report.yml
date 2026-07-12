@@ -1,0 +1,66 @@
+name: Bug report
+description: Report reproducible behavior that is not a product-match error or security issue.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include secrets, authenticated page captures, personal data, or security vulnerabilities. Use SECURITY.md for private reports."
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: commit SHA, branch, extension version
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Backend REST
+        - Chrome extension
+        - Frontend
+        - MCP
+        - CLI
+        - Persistence/migration
+        - Deep Audit
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Actual behavior
+      description: Include sanitized errors and whether data was fixture, browser-assisted, direct-public, or live.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Prefer deterministic fixture steps and exact commands.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, Python, Node, Chrome, storage backend
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets, tokens, personal data, and authenticated content.
+          required: true
+        - label: This report did not require paid-provider calls or access-control bypass.
+          required: true

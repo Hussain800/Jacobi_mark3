@@ -92,8 +92,8 @@ No row may be promoted to `COMPLETE` from source inspection alone. The verificat
 | Persistence | Supabase production persistence, safe migration, RLS/access boundaries | COMPLETE | `SupabaseComparisonRepository`; `supabase/migrations/202607120001_price_optimization_persistence.sql` | `test_compare_persistence_migration.py`; storage fail-closed tests | Static migration validation passed; applying to a real project is credential-gated deployment work |
 | Agentcore/evidence | Reuse immutable EvidenceManifest with source URL, timestamp, method, raw price, identifiers, seller, availability, tier, confidence, limitations, hashes | PARTIAL | `backend/compare/service.py`; `backend/agentcore/evidence.py` | Agentcore/compare tests | Manifest comparison context/ranking trace and several offer fields are missing |
 | Agentcore/evidence | OptimizationEnvelope or compatible DecisionEnvelope extension | NOT_STARTED | `OptimizationResult` exists but is not an Agentcore envelope | None | Add shared schema/bridge and tests |
-| MCP | Nine requested comparison/evidence/deep-audit tools reuse the same core services | NOT_STARTED | Existing Agentcore MCP only | Agentcore MCP tests | Add tools, schemas, docs, contract tests |
-| CLI | `jacobi identify/compare/optimize/providers/health/audit` with human and JSON output | NOT_STARTED | None | None | Add package entry point and tests |
+| MCP | Nine requested comparison/evidence/deep-audit tools reuse the same core services | COMPLETE | `backend/agentcore/mcp_server.py`; `backend/compare/tooling.py`; `docs/MCP_PRICE_OPTIMIZATION.md` | `test_price_optimization_mcp.py`; preserved Agentcore tests | Live synthetic audits require both explicit Deep Audit selection and managed-provider acknowledgement |
+| CLI | `jacobi identify/compare/optimize/providers/health/audit` with human and JSON output | COMPLETE | `backend/jacobi.py`; shared tooling facade; `docs/CLI.md` | `test_jacobi_cli.py`; `test_compare_tooling.py` | CLI is run as `python -m jacobi` from `backend/` |
 
 ## Open source, security, observability, and deployment
 

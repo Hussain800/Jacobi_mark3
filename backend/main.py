@@ -2243,6 +2243,12 @@ app.include_router(billing_router)
 # decisioning only — no purchase execution exists behind these routes.
 from agentcore.api import router as agent_router
 app.include_router(agent_router)
+# Jacobi Compare: consumer price-optimization pivot (/api/v1/compare,
+# /api/v1/comparisons/{id}). Zero-cost fixture/local providers only — never
+# Bright Data, never the synthetic probe matrix (that remains the optional
+# Deep Audit path).
+from compare.api import router as compare_router
+app.include_router(compare_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None

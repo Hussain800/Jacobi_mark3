@@ -1,5 +1,7 @@
 "use strict";
 
+// Web app (legacy Deep Audit chat flow). The comparison API URL lives in
+// sidepanel/app.js (default http://localhost:8000).
 var JACOBI_BACKEND = "http://localhost:3000";
 
 chrome.storage.sync.get("jacobi_settings", function (result) {
@@ -8,6 +10,7 @@ chrome.storage.sync.get("jacobi_settings", function (result) {
   }
 });
 
+// Legacy probe path — now the optional Deep Audit entry, via context menu only.
 function openProbe(url) {
   if (!url || !/^https?:\/\//i.test(url)) return;
 
@@ -21,24 +24,22 @@ function openProbe(url) {
       domain = new URL(url).hostname;
     } catch (e) { /* ignore */ }
 
-    recent.unshift({
-      url: url,
-      domain: domain,
-      timestamp: Date.now(),
-    });
-
+    recent.unshift({ url: url, domain: domain, timestamp: Date.now() });
     if (recent.length > 50) recent.length = 50;
-
     chrome.storage.local.set({ jacobi_recent: recent });
   });
 }
 
 chrome.runtime.onInstalled.addListener(function () {
   chrome.contextMenus.create({
-    id: "probe-price",
-    title: "Probe this price with JACOBI",
+    id: "deep-audit",
+    title: "Deep-audit this price with Jacobi",
     contexts: ["page", "link"],
   });
+  // Toolbar click opens the comparison side panel.
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(function (info, tab) {
@@ -47,6 +48,24 @@ chrome.contextMenus.onClicked.addListener(function (info, tab) {
 });
 
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (message.type === "PRODUCT_PAGE_DETECTED") {
+    if (sender.tab && sender.tab.id != null) {
+      chrome.action.setBadgeText({ text: "✓", tabId: sender.tab.id });
+      chrome.action.setBadgeBackgroundColor({ color: "#00b33c", tabId: sender.tab.id });
+    }
+    sendResponse({});
+    return true;
+  }
+
+  if (message.type === "OPEN_SIDE_PANEL") {
+    if (sender.tab && sender.tab.id != null && chrome.sidePanel) {
+      // Called from a user click in the content script — gesture propagates.
+      chrome.sidePanel.open({ tabId: sender.tab.id });
+    }
+    sendResponse({});
+    return true;
+  }
+
   if (message.type === "GET_TAB_URL") {
     sendResponse({ url: (sender.tab && sender.tab.url) || "" });
     return true;
@@ -55,15 +74,6 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (message.type === "OPEN_PROBE") {
     openProbe(message.url || (sender.tab && sender.tab.url) || "");
     sendResponse({});
-    return true;
-  }
-
-  if (message.type === "PROBE_CURRENT_TAB") {
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-      var url = (tabs && tabs[0] && tabs[0].url) || "";
-      if (url) openProbe(url);
-      sendResponse({});
-    });
     return true;
   }
 

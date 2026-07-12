@@ -1,18 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "JACOBI — Price Probe",
-  "version": "0.3.0",
-  "description": "Right-click any page to probe for price discrimination. JACOBI deploys 24 agents across location, device, cookie, and network tiers.",
+  "name": "Jacobi — Verified Price Comparison",
+  "version": "0.4.0",
+  "description": "Find the cheapest verified way to buy the exact product you are viewing. Exact-match, all-in totals, evidence-backed.",
   "permissions": [
     "contextMenus",
     "activeTab",
     "storage",
-    "notifications",
-    "scripting"
+    "sidePanel"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "http://localhost:8000/*"
   ],
   "externally_connectable": {
     "matches": [
@@ -24,24 +22,10 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "JACOBI \u2014 Probe this price"
+    "default_title": "Jacobi — compare this price"
   },
-  "commands": {
-    "probe-current-page": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+P",
-        "mac": "Command+Shift+P"
-      },
-      "description": "Probe current page \u2014 immediately opens JACOBI with current URL"
-    },
-    "quick-probe-link": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+L",
-        "mac": "Command+Shift+L"
-      },
-      "description": "Quick probe link \u2014 probes selected/hovered URL or current page"
-    }
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
   },
   "options_ui": {
     "page": "settings.html",
@@ -49,8 +33,16 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.amazon.ae/*",
+        "https://*.noon.com/*",
+        "https://*.sharafdg.com/*",
+        "https://*.jumbo.ae/*",
+        "https://*.sony-mea.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["product-context.js"],
       "run_at": "document_idle"
     }
   ]

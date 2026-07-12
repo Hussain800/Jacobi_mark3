@@ -4,8 +4,8 @@ Order of operations:
   1. reject identity mismatches (equivalence engine already classified)
   2. reject out-of-stock and stale offers
   3. separate condition mismatches (similar) and disclosed trade-offs
-  4. rank exact-eligible offers by complete payable total
-  5. tie-break by equivalence score, then extraction confidence
+  4. rank exact-eligible offers according to the explicit preference mode
+  5. deterministically tie-break using route quality and observation identity
 A lower scraped number never outranks a verified one: offers whose payable
 total is incomplete cannot win the headline.
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .schemas import (
     CandidateResult,
@@ -25,8 +25,10 @@ from .schemas import (
     Money,
     OFFER_TTL_SECONDS,
     OfferObservation,
+    PreferenceMode,
     ReasonCode,
     Recommendation,
+    RouteLegality,
     Savings,
     SellerType,
     StockStatus,
@@ -35,7 +37,10 @@ from .total_cost import unknown_reason_codes
 
 
 def _is_stale(offer: OfferObservation, now: datetime) -> bool:
-    age = (now - offer.observed_at).total_seconds()
+    observed_at = offer.observed_at
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=timezone.utc)
+    age = (now - observed_at).total_seconds()
     return age > OFFER_TTL_SECONDS
 
 
@@ -46,10 +51,171 @@ def _fmt(m: Money) -> str:
     return f"{m.currency} {q:,.2f}"
 
 
+_EXCLUSION_EXPLANATIONS = {
+    ReasonCode.CURRENCY_UNSUPPORTED: "The offer uses a currency that was not safely converted.",
+    ReasonCode.OUT_OF_STOCK: "The offer is explicitly out of stock.",
+    ReasonCode.OFFER_STALE: "The observed price is older than Jacobi's freshness window.",
+    ReasonCode.ROUTE_NOT_LEGAL: "The purchase route is blocked by route-legality policy.",
+    ReasonCode.USER_NOT_ELIGIBLE: "The current user is not eligible for this route.",
+    ReasonCode.SELLER_LEGITIMACY_LOW: "The seller was explicitly marked as not legitimate.",
+}
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
+
+
+def _seller_score(offer: OfferObservation) -> float:
+    type_score = {
+        SellerType.official_store: 1.0,
+        SellerType.first_party: 0.9,
+        SellerType.marketplace: 0.5,
+        SellerType.unknown: 0.25,
+    }[offer.seller.type]
+    score = type_score
+    if offer.seller.trust_score is not None:
+        trust = min(1.0, max(0.0, float(offer.seller.trust_score)))
+        score = (type_score + trust) / 2
+    if offer.seller.legitimate is True:
+        score = min(1.0, score + 0.05)
+    elif offer.seller.legitimate is False:
+        score = 0.0
+    return round(score, 4)
+
+
+def _local_warranty_score(offer: OfferObservation) -> int:
+    region = str(
+        offer.warranty.get("region")
+        or offer.product.variant.warranty_region
+        or ""
+    ).strip().lower()
+    if region in {"ae", "uae", "united arab emirates", "local", "gcc"}:
+        return 2
+    if region:
+        return 0
+    return 1
+
+
+def _delivery_score(offer: OfferObservation) -> float:
+    days = _number(
+        offer.delivery.get("max_days", offer.delivery.get("days")),
+        default=30.0,
+    )
+    free_bonus = 0.1 if offer.delivery.get("free") is True else 0.0
+    return round(min(1.0, max(0.0, 1.0 - min(days, 30.0) / 30.0) + free_bonus), 4)
+
+
+def _returns_score(offer: OfferObservation) -> float:
+    days = _number(
+        offer.return_terms.get("window_days", offer.return_terms.get("days")),
+        default=0.0,
+    )
+    return round(min(max(days, 0.0), 90.0) / 90.0, 4)
+
+
+def _evidence_score(offer: OfferObservation) -> float:
+    tier_score = {
+        "official_api": 1.0,
+        "browser_submitted": 0.9,
+        "local_http": 0.75,
+        "structured_metadata": 0.75,
+        "fixture": 0.4,
+    }.get((offer.evidence_tier or "").lower(), 0.5)
+    if offer.fixture:
+        tier_score = min(tier_score, 0.4)
+    immutable_bonus = 0.05 if offer.evidence_ref else 0.0
+    extraction = min(1.0, max(0.0, offer.extraction_confidence))
+    return round(min(1.0, (tier_score + extraction) / 2 + immutable_bonus), 4)
+
+
+def _ranking_factors(
+    candidate: CandidateResult,
+    now: datetime,
+) -> Dict[str, Any]:
+    offer = candidate.offer
+    price = offer.price
+    observed_at = offer.observed_at
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=timezone.utc)
+    age_seconds = max(0.0, (now - observed_at).total_seconds())
+    availability_score = {
+        StockStatus.in_stock: 3,
+        StockStatus.preorder: 2,
+        StockStatus.unknown: 1,
+        StockStatus.out_of_stock: 0,
+    }[offer.stock]
+    condition_score = {
+        "new": 4,
+        "open_box": 3,
+        "refurbished": 2,
+        "used": 1,
+        "unknown": 0,
+    }[offer.condition.value]
+    return {
+        "total_complete": price.total_complete,
+        "payable_total": (
+            str(price.payable_total.quantized()) if price.payable_total else None
+        ),
+        "equivalence_confidence": round(candidate.equivalence.score, 4),
+        "seller_legitimacy": _seller_score(offer),
+        "condition": condition_score,
+        "uae_local_warranty": _local_warranty_score(offer),
+        "delivery": _delivery_score(offer),
+        "returns": _returns_score(offer),
+        "availability": availability_score,
+        "freshness_seconds": round(age_seconds, 3),
+        "user_eligibility": 0 if offer.user_eligible is False else (2 if offer.user_eligible else 1),
+        "route_legality": {
+            RouteLegality.blocked: 0,
+            RouteLegality.unknown: 1,
+            RouteLegality.allowed: 2,
+        }[offer.route_legality],
+        "evidence_quality": _evidence_score(offer),
+    }
+
+
+def _sort_key(candidate: CandidateResult, preference_mode: PreferenceMode) -> tuple:
+    factors = candidate.ranking_factors
+    price = candidate.offer.price
+    total = (
+        price.payable_total.quantized()
+        if price.total_complete and price.payable_total
+        else Decimal("Infinity")
+    )
+    quality = (
+        -factors["equivalence_confidence"],
+        -factors["seller_legitimacy"],
+        -factors["condition"],
+        -factors["uae_local_warranty"],
+        -factors["delivery"],
+        -factors["returns"],
+        -factors["availability"],
+        -factors["user_eligibility"],
+        -factors["route_legality"],
+        factors["freshness_seconds"],
+        -factors["evidence_quality"],
+    )
+    complete = 0 if factors["total_complete"] else 1
+    if preference_mode == PreferenceMode.official_seller:
+        preference = (0 if candidate.offer.seller.type == SellerType.official_store else 1, total)
+    elif preference_mode == PreferenceMode.uae_local_warranty:
+        preference = (-factors["uae_local_warranty"], total)
+    else:
+        # Both balanced and lowest-complete-price preserve price as the primary
+        # decision. Balanced applies the full quality tuple for deterministic ties.
+        preference = (total,)
+    return (complete, *preference, *quality, candidate.offer.observation_id)
+
+
 def rank(
     current: OfferObservation,
     candidates: List[Tuple[OfferObservation, EquivalenceResult]],
     now: Optional[datetime] = None,
+    preference_mode: PreferenceMode = PreferenceMode.balanced,
 ) -> Tuple[
     List[CandidateResult],  # eligible (exact, complete or not), ranked
     List[CandidateResult],  # tradeoffs
@@ -57,6 +223,7 @@ def rank(
     List[CandidateResult],  # rejected
 ]:
     now = now or datetime.now(timezone.utc)
+    preference_mode = PreferenceMode(preference_mode)
     eligible: List[CandidateResult] = []
     tradeoffs: List[CandidateResult] = []
     similar: List[CandidateResult] = []
@@ -73,30 +240,57 @@ def rank(
         if _is_stale(offer, now):
             exclusion.append(ReasonCode.OFFER_STALE)
 
-        cand = CandidateResult(offer=offer, equivalence=eq, exclusion_reasons=exclusion)
+        if offer.route_legality == RouteLegality.blocked:
+            exclusion.append(ReasonCode.ROUTE_NOT_LEGAL)
+        if offer.user_eligible is False:
+            exclusion.append(ReasonCode.USER_NOT_ELIGIBLE)
+        if offer.seller.legitimate is False:
+            exclusion.append(ReasonCode.SELLER_LEGITIMACY_LOW)
+
+        if eq.classification == EquivalenceClass.mismatch:
+            exclusion.extend(eq.reason_codes or [ReasonCode.VARIANT_MISMATCH])
+
+        # Preserve order while removing duplicate codes from overlapping checks.
+        exclusion = list(dict.fromkeys(exclusion))
+        explanations = [
+            _EXCLUSION_EXPLANATIONS.get(code, eq.explanation or code.value)
+            for code in exclusion
+        ]
+        cand = CandidateResult(
+            offer=offer,
+            equivalence=eq,
+            exclusion_reasons=exclusion,
+            exclusion_explanations=explanations,
+        )
+        cand.ranking_factors = _ranking_factors(cand, now)
 
         if eq.classification == EquivalenceClass.mismatch or exclusion:
+            cand.selection_explanation = "; ".join(explanations)
             rejected.append(cand)
         elif eq.classification == EquivalenceClass.similar:
+            cand.exclusion_reasons = list(dict.fromkeys(eq.reason_codes))
+            cand.exclusion_explanations = [eq.explanation]
+            cand.selection_explanation = eq.explanation
             similar.append(cand)
         elif eq.classification == EquivalenceClass.exact_tradeoff:
+            cand.exclusion_reasons = list(dict.fromkeys(eq.reason_codes))
+            cand.exclusion_explanations = [eq.explanation]
+            cand.selection_explanation = eq.explanation
             tradeoffs.append(cand)
         else:
             cand.eligible = True
+            cand.selection_explanation = (
+                "Eligible exact equivalent with complete all-in total."
+                if offer.price.total_complete
+                else "Eligible exact equivalent, but its all-in total is incomplete."
+            )
             eligible.append(cand)
 
-    def _key(c: CandidateResult):
-        p = c.offer.price
-        return (
-            0 if p.total_complete else 1,               # verified totals first
-            p.payable_total.quantized() if p.payable_total else Decimal("Infinity"),
-            -c.equivalence.score,
-            -c.offer.extraction_confidence,
-        )
-
-    eligible.sort(key=_key)
-    tradeoffs.sort(key=_key)
-    similar.sort(key=_key)
+    key = lambda candidate: _sort_key(candidate, preference_mode)
+    eligible.sort(key=key)
+    tradeoffs.sort(key=key)
+    similar.sort(key=key)
+    rejected.sort(key=key)
     for i, c in enumerate(eligible):
         c.rank = i + 1
     return eligible, tradeoffs, similar, rejected

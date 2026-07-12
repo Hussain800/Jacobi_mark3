@@ -19,6 +19,7 @@ from ..schemas import (
     OfferObservation,
     PriceBreakdown,
     ProductIdentity,
+    RouteLegality,
     Seller,
     SellerType,
     StockStatus,
@@ -127,6 +128,7 @@ def structured_data_to_offer(
             name=data.get("seller") or merchant_name,
             type=seller_type,
             trust_score=data.get("seller_trust_score"),
+            legitimate=data.get("seller_legitimate"),
         ),
         price=PriceBreakdown(
             item=item,
@@ -140,6 +142,12 @@ def structured_data_to_offer(
         return_terms=dict(data.get("return_terms") or {}),
         extraction_confidence=float(data.get("extraction_confidence", identity.identity_confidence)),
         evidence_ref=data.get("evidence_ref"),
+        user_eligible=data.get("user_eligible"),
+        route_legality=_enum_or_default(
+            RouteLegality,
+            data.get("route_legality"),
+            RouteLegality.unknown,
+        ),
         fixture=False,
     )
 

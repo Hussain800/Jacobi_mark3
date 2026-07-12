@@ -68,6 +68,21 @@ class Confidence(str, Enum):
     high = "high"
 
 
+class PreferenceMode(str, Enum):
+    """How valid offers are ordered after mandatory safety filters."""
+
+    balanced = "balanced"
+    lowest_complete_price = "lowest_complete_price"
+    official_seller = "official_seller"
+    uae_local_warranty = "uae_local_warranty"
+
+
+class RouteLegality(str, Enum):
+    allowed = "allowed"
+    blocked = "blocked"
+    unknown = "unknown"
+
+
 class CostState(str, Enum):
     known = "known"
     estimated = "estimated"
@@ -101,6 +116,9 @@ class ReasonCode(str, Enum):
     OFFER_STALE = "OFFER_STALE"
     STOCK_UNCONFIRMED = "STOCK_UNCONFIRMED"
     OUT_OF_STOCK = "OUT_OF_STOCK"
+    ROUTE_NOT_LEGAL = "ROUTE_NOT_LEGAL"
+    USER_NOT_ELIGIBLE = "USER_NOT_ELIGIBLE"
+    SELLER_LEGITIMACY_LOW = "SELLER_LEGITIMACY_LOW"
     EXACT_MATCH_INSUFFICIENT = "EXACT_MATCH_INSUFFICIENT"
     OFFICIAL_ROUTE_FOUND = "OFFICIAL_ROUTE_FOUND"
     PROVIDER_PARTIAL_FAILURE = "PROVIDER_PARTIAL_FAILURE"
@@ -184,6 +202,7 @@ class Seller(BaseModel):
     name: Optional[str] = None
     type: SellerType = SellerType.unknown
     trust_score: Optional[float] = None
+    legitimate: Optional[bool] = None
 
 
 class CostLine(BaseModel):
@@ -259,7 +278,10 @@ class OfferObservation(BaseModel):
     warranty: Dict[str, Any] = Field(default_factory=dict)   # {"region": "UAE", "duration": "1 year"}
     return_terms: Dict[str, Any] = Field(default_factory=dict)
     extraction_confidence: float = 0.0
+    evidence_tier: Optional[str] = None
     evidence_ref: Optional[str] = None
+    user_eligible: Optional[bool] = None
+    route_legality: RouteLegality = RouteLegality.unknown
     fixture: bool = False
 
 
@@ -280,6 +302,9 @@ class CandidateResult(BaseModel):
     eligible: bool = False
     rank: Optional[int] = None
     exclusion_reasons: List[ReasonCode] = Field(default_factory=list)
+    exclusion_explanations: List[str] = Field(default_factory=list)
+    ranking_factors: Dict[str, Any] = Field(default_factory=dict)
+    selection_explanation: str = ""
 
 
 class Savings(BaseModel):
@@ -328,6 +353,11 @@ class CurrentOfferInput(BaseModel):
     price: Money
     shipping: Optional[Money] = None
     seller: Optional[str] = None
+    seller_type: SellerType = SellerType.unknown
+    seller_trust_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    seller_legitimate: Optional[bool] = None
+    user_eligible: Optional[bool] = None
+    route_legality: RouteLegality = RouteLegality.unknown
     condition: Condition = Condition.new
     stock: StockStatus = StockStatus.unknown
     warranty_text: Optional[str] = None
@@ -361,6 +391,7 @@ class ComparisonRequest(BaseModel):
     comparison_urls: List[str] = Field(default_factory=list, max_length=20)
     include_fixture_offers: bool = False
     allow_direct_http: bool = False
+    preference_mode: PreferenceMode = PreferenceMode.balanced
     overall_timeout_seconds: float = Field(default=15.0, ge=1.0, le=30.0)
     max_concurrency: int = Field(default=5, ge=1, le=10)
 
@@ -384,6 +415,7 @@ class OptimizationResult(BaseModel):
     schema_version: str = SCHEMA_VERSION
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     market: str = "AE"
+    preference_mode: PreferenceMode = PreferenceMode.balanced
     product: ProductIdentity = Field(default_factory=ProductIdentity)
     current_offer: Optional[OfferObservation] = None
     best_offer: Optional[OfferObservation] = None

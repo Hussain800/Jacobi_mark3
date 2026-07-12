@@ -58,6 +58,7 @@ from .schemas import (
 )
 from .total_cost import apply_total
 from .storage import ComparisonRepository, create_repository
+from .telemetry import MetricEvent, MetricsRecorder, metrics_from_env
 
 _MAX_RESULTS = 500
 _RESULTS: "OrderedDict[str, OptimizationResult]" = OrderedDict()
@@ -142,13 +143,20 @@ def _current_offer(request: ComparisonRequest, identity: ProductIdentity,
         merchant_name=merchant_name,
         source_url=request.source_url,
         product=identity,
-        seller=Seller(name=cur.seller or merchant_name, type=SellerType.unknown),
+        seller=Seller(
+            name=cur.seller or merchant_name,
+            type=cur.seller_type,
+            trust_score=cur.seller_trust_score,
+            legitimate=cur.seller_legitimate,
+        ),
         price=PriceBreakdown(item=cur.price, shipping=cur.shipping),
         condition=cur.condition,
         stock=cur.stock,
         warranty={"text": cur.warranty_text} if cur.warranty_text else {},
         delivery={"text": cur.delivery_text} if cur.delivery_text else {},
         extraction_confidence=identity.identity_confidence,
+        user_eligible=cur.user_eligible,
+        route_legality=cur.route_legality,
     )
     return apply_total(offer)
 
@@ -165,6 +173,8 @@ async def _search_one(
             offers = await asyncio.wait_for(
                 adapter.search_offers(identity, market), timeout=adapter.timeout_seconds
             )
+        for offer in offers:
+            offer.evidence_tier = adapter.evidence_tier
         return adapter, offers, None, time.monotonic() - start
     except asyncio.TimeoutError:
         return adapter, [], f"timeout after {adapter.timeout_seconds}s", time.monotonic() - start
@@ -325,9 +335,11 @@ class ComparisonService:
         self,
         adapters: Optional[List[MerchantAdapter]] = None,
         repository: Optional[ComparisonRepository] = None,
+        metrics: Optional[MetricsRecorder] = None,
     ):
         self._adapters = adapters
         self.repository = repository or create_repository()
+        self.metrics = metrics or metrics_from_env()
 
     def _request_adapters(self, request: ComparisonRequest) -> List[MerchantAdapter]:
         adapters = list(self._adapters or [])
@@ -408,8 +420,20 @@ class ComparisonService:
             )
 
     async def compare(self, request: ComparisonRequest) -> OptimizationResult:
+        started = time.monotonic()
         adapters = self._request_adapters(request)
         identity = resolve_identity(request.current_offer)
+        self.metrics.record(
+            MetricEvent.identity_success
+            if identity.identity_confidence >= 0.70
+            else MetricEvent.identity_uncertainty,
+            dimensions={"market": request.market},
+        )
+        self.metrics.record(
+            MetricEvent.providers_attempted,
+            value=len(adapters),
+            dimensions={"market": request.market},
+        )
         current = _current_offer(request, identity, adapters)
         comparison_id = f"cmp_{secrets.token_hex(8)}"
         access_token = secrets.token_urlsafe(32)
@@ -419,6 +443,7 @@ class ComparisonService:
         attempts: List[CollectionAttempt] = [_current_page_attempt(request, current)]
         candidate_offers: List[OfferObservation] = []
         fixture_mode = False
+        providers_successful = 0
 
         # Identity below the probable threshold -> no discovery; be honest.
         if identity.identity_confidence >= 0.70 and adapters:
@@ -453,8 +478,14 @@ class ComparisonService:
                         retryable=error.startswith("timeout"),
                     ))
                     continue
+                providers_successful += 1
                 candidate_offers.extend(offers)
 
+        self.metrics.record(
+            MetricEvent.providers_successful,
+            value=providers_successful,
+            dimensions={"market": request.market},
+        )
         candidates = []
         current_url = canonicalize_offer_url(request.source_url)
         for offer in deduplicate_offers(candidate_offers):
@@ -472,7 +503,18 @@ class ComparisonService:
             fixture_mode = fixture_mode or offer.fixture
             candidates.append((offer, classify(identity, current.condition, offer)))
 
-        eligible, tradeoffs, similar, rejected = rank(current, candidates)
+        if provider_errors:
+            self.metrics.record(
+                MetricEvent.partial_failure,
+                value=len(provider_errors),
+                dimensions={"market": request.market},
+            )
+
+        eligible, tradeoffs, similar, rejected = rank(
+            current,
+            candidates,
+            preference_mode=request.preference_mode,
+        )
         rec, savings, best, confidence, codes = build_recommendation(
             current, eligible, tradeoffs, similar, identity.identity_confidence
         )
@@ -490,6 +532,7 @@ class ComparisonService:
         result = OptimizationResult(
             comparison_id=comparison_id,
             market=request.market,
+            preference_mode=request.preference_mode,
             product=identity,
             current_offer=current,
             best_offer=best,
@@ -512,6 +555,22 @@ class ComparisonService:
         _ACCESS_HASHES[comparison_id] = access_hash
         while len(_ACCESS_HASHES) > _MAX_RESULTS:
             _ACCESS_HASHES.popitem(last=False)
+        outcome = result.recommendation.status.value
+        self.metrics.record(
+            MetricEvent.saving_found
+            if result.savings.amount is not None
+            else MetricEvent.no_saving,
+            dimensions={
+                "market": request.market,
+                "outcome": outcome,
+                "preference_mode": request.preference_mode.value,
+            },
+        )
+        self.metrics.record(
+            MetricEvent.latency_ms,
+            value=(time.monotonic() - started) * 1000,
+            dimensions={"market": request.market, "outcome": outcome},
+        )
         return result
 
 

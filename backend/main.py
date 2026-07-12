@@ -2491,9 +2491,13 @@ async def _complete_probe_in_background(
     except Exception as db_err:
         print(f"[PROBE-BG] persist terminal result failed: {db_err!r}")
 
-    # Increment quota ONLY when a row was actually persisted. Transient
-    # DB errors don't charge credit.
-    if saved_id:
+    # Increment quota ONLY when a row was actually persisted AND real work was
+    # done. real_probes_executed == 0 marks paths that provably launched no
+    # agent (e.g. the pre-flight needs_context rejection of a dateless travel
+    # URL) — no BrightData cost was incurred, so charging a monthly credit
+    # would double-punish an input error. None (crash/hard-timeout mid-run)
+    # still charges: agents may have fetched before the failure.
+    if saved_id and session.get("real_probes_executed") != 0:
         try:
             await increment_probe_count(user_id)
         except Exception as inc_err:

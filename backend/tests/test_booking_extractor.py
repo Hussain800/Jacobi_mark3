@@ -45,6 +45,23 @@ def test_travel_context_requires_dates():
     assert yes["currency"] == "INR"
 
 
+def test_frontend_completed_url_passes_gate():
+    # Cross-layer contract: CockpitProbe.withTravelContext() appends exactly
+    # these params to dateless booking URLs (checkin/checkout computed, +30/+32
+    # days). The gate must accept that shape or the UI fix regresses silently.
+    url = (HOTEL + "?checkin=2026-08-11&checkout=2026-08-13"
+           "&group_adults=2&no_rooms=1&group_children=0")
+    ctx = travel_context(url)
+    assert ctx["ok"] is True
+    assert ctx["adults"] == "2" and ctx["rooms"] == "1"
+    # searchresults URLs get the same treatment (existing ss param preserved)
+    search = ("https://www.booking.com/searchresults.html?ss=Tokyo"
+              "&checkin=2026-08-11&checkout=2026-08-13&group_adults=2"
+              "&no_rooms=1&group_children=0")
+    assert travel_context(search)["ok"] is True
+    assert requires_travel_context(search) is True
+
+
 def test_no_dates_returns_context_message_not_a_price():
     ex = get_extractor(HOTEL)
     r = ex("<html></html>", HOTEL)

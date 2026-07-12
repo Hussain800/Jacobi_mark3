@@ -134,7 +134,7 @@ def build_recommendation(
 
     # Best offer = cheapest exact-eligible with a COMPLETE payable total.
     complete_eligible = [c for c in eligible if c.offer.price.total_complete]
-    for c in eligible:
+    for c in eligible + tradeoffs + similar:
         if not c.offer.price.total_complete:
             codes.extend(unknown_reason_codes(c.offer.price))
 

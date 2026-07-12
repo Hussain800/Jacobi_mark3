@@ -14,7 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import List, Optional
 
-from .schemas import Money, OfferObservation, PriceBreakdown, ReasonCode
+from .schemas import CostLine, CostState, Money, OfferObservation, PriceBreakdown, ReasonCode
 
 _UNKNOWN_CODE = {
     "shipping": ReasonCode.SHIPPING_UNKNOWN,
@@ -22,36 +22,84 @@ _UNKNOWN_CODE = {
     "duties": ReasonCode.DUTY_UNKNOWN,
 }
 
-# MVP scope is UAE-domestic (PDR: cross-border out of scope): taxes are
-# displayed VAT-inclusive and import duty does not apply, so a missing
-# taxes/duties field means "not applicable", not "unknown". Shipping is the
-# one component that genuinely varies per merchant and MUST be observed.
-_REQUIRED_COMPONENTS = ("shipping",)
-
-
 def compute_payable(price: PriceBreakdown, currency: str) -> PriceBreakdown:
-    """Fill payable_total / total_complete / unknown_components. Pure."""
+    """Calculate guaranteed payable total without erasing uncertainty."""
     unknown: List[str] = []
+    estimated: List[str] = []
+    conditional: List[CostLine] = []
     total: Decimal = price.item.quantized()
+
+    def checked_amount(money: Money, name: str) -> Decimal:
+        if money.currency != currency:
+            raise ValueError(
+                f"{name} currency {money.currency} does not match total currency {currency}"
+            )
+        return money.quantized()
+
+    checked_amount(price.item, "item")
 
     for name in ("shipping", "taxes", "duties"):
         component: Optional[Money] = getattr(price, name)
-        if component is None:
-            if name in _REQUIRED_COMPONENTS:
-                unknown.append(name)
+        state: CostState = getattr(price, f"{name}_state")
+        if state == CostState.not_applicable:
             continue
-        total += component.quantized()
+        if state == CostState.unknown:
+            unknown.append(name)
+            continue
+        if component is None:
+            raise ValueError(f"{name} state {state.value} requires an amount")
+        total += checked_amount(component, name)
+        if state == CostState.estimated:
+            estimated.append(name)
 
     for fee in price.mandatory_fees:
-        total += fee.quantized()
+        total += checked_amount(fee, "mandatory_fee")
+
+    def add_cost_lines(lines: List[CostLine]) -> None:
+        nonlocal total
+        for line in lines:
+            if line.state == CostState.not_applicable:
+                continue
+            if line.state == CostState.unknown:
+                unknown.append(line.kind)
+                continue
+            total += checked_amount(line.amount, line.kind)
+            if line.state == CostState.estimated:
+                estimated.append(line.kind)
+
+    add_cost_lines(price.marketplace_fees)
+    add_cost_lines(price.payment_fees)
+    add_cost_lines(price.fx_adjustments)
+    add_cost_lines(price.mandatory_service_costs)
+
+    def apply_discounts(lines: List[CostLine]) -> None:
+        nonlocal total
+        for line in lines:
+            guaranteed = (
+                line.state == CostState.known
+                and line.amount is not None
+                and line.user_eligible is not False
+                and (line.user_eligible is True or not line.eligibility)
+            )
+            if guaranteed:
+                total -= checked_amount(line.amount, line.kind)
+            else:
+                conditional.append(line)
+
+    apply_discounts(price.coupons)
+    apply_discounts(price.membership_discounts)
+    apply_discounts(price.student_discounts)
+    conditional.extend(price.cashback)
 
     if price.verified_discount is not None:
-        total -= price.verified_discount.quantized()
+        total -= checked_amount(price.verified_discount, "verified_discount")
 
     return price.model_copy(update={
         "payable_total": Money(amount=total, currency=currency),
-        "total_complete": not unknown,
-        "unknown_components": unknown,
+        "total_complete": not unknown and not estimated,
+        "unknown_components": list(dict.fromkeys(unknown)),
+        "estimated_components": list(dict.fromkeys(estimated)),
+        "conditional_savings": conditional,
     })
 
 

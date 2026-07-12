@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "0.1.0"
 
@@ -47,10 +47,10 @@ class SellerType(str, Enum):
 
 
 class EquivalenceClass(str, Enum):
-    exact = "exact"                    # eligible for the "Save AED X" headline
-    exact_tradeoff = "exact_tradeoff"  # same product, material disclosed difference
-    similar = "similar"                # e.g. refurbished same model
-    mismatch = "mismatch"              # rejected — never recommended
+    exact = "EXACT_EQUIVALENT"
+    exact_tradeoff = "EQUIVALENT_WITH_DISCLOSED_TRADEOFF"
+    similar = "SIMILAR_NOT_EQUIVALENT"
+    mismatch = "REJECTED"
 
 
 class ComparisonStatus(str, Enum):
@@ -68,6 +68,13 @@ class Confidence(str, Enum):
     high = "high"
 
 
+class CostState(str, Enum):
+    known = "known"
+    estimated = "estimated"
+    unknown = "unknown"
+    not_applicable = "not_applicable"
+
+
 class ReasonCode(str, Enum):
     PRODUCT_IDENTITY_EXACT = "PRODUCT_IDENTITY_EXACT"
     PRODUCT_IDENTITY_PROBABLE = "PRODUCT_IDENTITY_PROBABLE"
@@ -79,6 +86,11 @@ class ReasonCode(str, Enum):
     WARRANTY_MISMATCH = "WARRANTY_MISMATCH"
     WARRANTY_UNKNOWN = "WARRANTY_UNKNOWN"
     REGION_MISMATCH = "REGION_MISMATCH"
+    GENERATION_MISMATCH = "GENERATION_MISMATCH"
+    PROCESSOR_MISMATCH = "PROCESSOR_MISMATCH"
+    SIZE_MISMATCH = "SIZE_MISMATCH"
+    BUNDLE_MISMATCH = "BUNDLE_MISMATCH"
+    ACCESSORY_ONLY = "ACCESSORY_ONLY"
     SELLER_RISK = "SELLER_RISK"
     SHIPPING_UNKNOWN = "SHIPPING_UNKNOWN"
     TAX_UNKNOWN = "TAX_UNKNOWN"
@@ -123,6 +135,13 @@ class Variant(BaseModel):
     size: Optional[str] = None          # e.g. screen size "13in"
     connectivity: Optional[str] = None  # e.g. "wifi", "5g", "wifi+cellular"
     region: Optional[str] = None        # e.g. "uae", "international", "us"
+    generation: Optional[str] = None
+    processor: Optional[str] = None
+    screen_size: Optional[str] = None
+    year: Optional[int] = None
+    bundle: List[str] = Field(default_factory=list)
+    accessories: List[str] = Field(default_factory=list)
+    warranty_region: Optional[str] = None
     other: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -131,6 +150,15 @@ class IdentityEvidence(BaseModel):
     value: str
     source: str = "title"       # json_ld | meta | title | adapter | fixture
     confidence: float = 0.0
+    raw_value: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class IdentityContradiction(BaseModel):
+    field: str
+    values: List[str]
+    sources: List[str] = Field(default_factory=list)
+    explanation: str
 
 
 class ProductIdentity(BaseModel):
@@ -141,9 +169,15 @@ class ProductIdentity(BaseModel):
     model: Optional[str] = None                  # normalized model number
     mpn: Optional[str] = None
     gtins: List[str] = Field(default_factory=list)
+    sku: Optional[str] = None
+    merchant_skus: Dict[str, str] = Field(default_factory=dict)
     variant: Variant = Field(default_factory=Variant)
     identity_confidence: float = 0.0
+    confidence_by_field: Dict[str, float] = Field(default_factory=dict)
     evidence: List[IdentityEvidence] = Field(default_factory=list)
+    contradictions: List[IdentityContradiction] = Field(default_factory=list)
+    aliases: Dict[str, List[str]] = Field(default_factory=dict)
+    unknown_fields: List[str] = Field(default_factory=list)
 
 
 class Seller(BaseModel):
@@ -152,17 +186,62 @@ class Seller(BaseModel):
     trust_score: Optional[float] = None
 
 
+class CostLine(BaseModel):
+    """One explicit cost or discount with uncertainty and eligibility preserved."""
+
+    kind: str
+    state: CostState
+    amount: Optional[Money] = None
+    label: Optional[str] = None
+    eligibility: Optional[str] = None
+    user_eligible: Optional[bool] = None
+    assumptions: List[str] = Field(default_factory=list)
+    confidence: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _state_matches_amount(self) -> "CostLine":
+        if self.state in (CostState.known, CostState.estimated) and self.amount is None:
+            raise ValueError("known or estimated cost lines require an amount")
+        if self.state in (CostState.unknown, CostState.not_applicable) and self.amount is not None:
+            raise ValueError("unknown or not-applicable cost lines cannot carry an amount")
+        return self
+
+
 class PriceBreakdown(BaseModel):
-    """All-in payable components. None means UNKNOWN, never zero (PDR FR-7)."""
+    """All-in components with explicit state; unknown never means zero."""
+
     item: Money
     shipping: Optional[Money] = None
+    shipping_state: Optional[CostState] = None
     taxes: Optional[Money] = None
+    taxes_state: Optional[CostState] = None
     duties: Optional[Money] = None
+    duties_state: Optional[CostState] = None
     mandatory_fees: List[Money] = Field(default_factory=list)
+    marketplace_fees: List[CostLine] = Field(default_factory=list)
+    payment_fees: List[CostLine] = Field(default_factory=list)
+    fx_adjustments: List[CostLine] = Field(default_factory=list)
+    coupons: List[CostLine] = Field(default_factory=list)
+    membership_discounts: List[CostLine] = Field(default_factory=list)
+    student_discounts: List[CostLine] = Field(default_factory=list)
+    cashback: List[CostLine] = Field(default_factory=list)
+    mandatory_service_costs: List[CostLine] = Field(default_factory=list)
     verified_discount: Optional[Money] = None
-    payable_total: Optional[Money] = None   # known-components subtotal (total_cost.py)
-    total_complete: bool = False            # True only when no material component unknown
+    payable_total: Optional[Money] = None
+    total_complete: bool = False
     unknown_components: List[str] = Field(default_factory=list)
+    estimated_components: List[str] = Field(default_factory=list)
+    conditional_savings: List[CostLine] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _infer_legacy_states(self) -> "PriceBreakdown":
+        if self.shipping_state is None:
+            self.shipping_state = CostState.known if self.shipping is not None else CostState.unknown
+        if self.taxes_state is None:
+            self.taxes_state = CostState.known if self.taxes is not None else CostState.not_applicable
+        if self.duties_state is None:
+            self.duties_state = CostState.known if self.duties is not None else CostState.not_applicable
+        return self
 
 
 class OfferObservation(BaseModel):
@@ -190,6 +269,7 @@ class EquivalenceResult(BaseModel):
     matched_dimensions: List[str] = Field(default_factory=list)
     mismatched_dimensions: List[str] = Field(default_factory=list)
     unknown_dimensions: List[str] = Field(default_factory=list)
+    field_explanations: Dict[str, str] = Field(default_factory=dict)
     reason_codes: List[ReasonCode] = Field(default_factory=list)
     explanation: str = ""
 
@@ -230,6 +310,19 @@ class CurrentOfferInput(BaseModel):
     mpn: Optional[str] = None
     gtin: Optional[str] = None
     sku: Optional[str] = None
+    family: Optional[str] = None
+    storage: Optional[str] = None
+    memory: Optional[str] = None
+    generation: Optional[str] = None
+    processor: Optional[str] = None
+    screen_size: Optional[str] = None
+    year: Optional[int] = None
+    region: Optional[str] = None
+    colour: Optional[str] = None
+    connectivity: Optional[str] = None
+    bundle: List[str] = Field(default_factory=list)
+    accessories: List[str] = Field(default_factory=list)
+    warranty_region: Optional[str] = None
     price: Money
     shipping: Optional[Money] = None
     seller: Optional[str] = None

@@ -25,6 +25,7 @@ from .schemas import (
     OfferObservation,
     ProductIdentity,
     ReasonCode,
+    SellerType,
 )
 
 # PDR equivalence-score weights — score is reported confidence, classification
@@ -59,6 +60,7 @@ def classify(
     matched: List[str] = []
     mismatched: List[str] = []
     unknown: List[str] = []
+    field_explanations = {}
     codes: List[ReasonCode] = []
     notes: List[str] = []
 
@@ -123,12 +125,27 @@ def classify(
             matched_dimensions=matched,
             mismatched_dimensions=mismatched,
             unknown_dimensions=unknown,
+            field_explanations=field_explanations,
             reason_codes=codes,
             explanation=" ".join(notes) if notes else "Exact match on deterministic identifiers.",
         )
 
-    def _record(dim: str, state: str) -> None:
+    def _record(dim: str, state: str, detail: Optional[str] = None) -> None:
         {"match": matched, "mismatch": mismatched, "unknown": unknown}[state].append(dim)
+        field_explanations[dim] = detail or {
+            "match": "Values match.",
+            "mismatch": "Values conflict.",
+            "unknown": "One or both values are unknown.",
+        }[state]
+
+    brand_state = _cmp_dim(current.brand, cand.brand)
+    family_state = _cmp_dim(current.family, cand.family)
+    _record("brand", brand_state)
+    _record("family", family_state)
+    if brand_state == "mismatch" or family_state == "mismatch":
+        codes.append(ReasonCode.VARIANT_MISMATCH)
+        notes.append("Brand or product family differs.")
+        return _finish(EquivalenceClass.mismatch)
 
     for dim, state in [("gtin", gtin_state), ("mpn", mpn_state), ("model", model_state)]:
         _record(dim, state)
@@ -138,11 +155,11 @@ def classify(
         codes.append(ReasonCode.VARIANT_MISMATCH)
         notes.append("GTIN differs — this is a different retail product.")
         return _finish(EquivalenceClass.mismatch)
-    if mpn_state == "mismatch" and not identifier_match:
+    if mpn_state == "mismatch":
         codes.append(ReasonCode.VARIANT_MISMATCH)
         notes.append(f"Manufacturer part number differs ({current.mpn} vs {cand.mpn}).")
         return _finish(EquivalenceClass.mismatch)
-    if model_state == "mismatch" and not identifier_match:
+    if model_state == "mismatch":
         codes.append(ReasonCode.VARIANT_MISMATCH)
         notes.append(f"Model number differs ({cur_model} vs {cand_model}).")
         return _finish(EquivalenceClass.mismatch)
@@ -184,6 +201,30 @@ def classify(
         notes.append("Connectivity variant differs.")
         return _finish(EquivalenceClass.mismatch)
 
+    material_fields = [
+        ("generation", current.variant.generation, cand.variant.generation,
+         ReasonCode.GENERATION_MISMATCH),
+        ("processor", current.variant.processor, cand.variant.processor,
+         ReasonCode.PROCESSOR_MISMATCH),
+        ("screen_size", current.variant.screen_size or current.variant.size,
+         cand.variant.screen_size or cand.variant.size, ReasonCode.SIZE_MISMATCH),
+        ("year", str(current.variant.year) if current.variant.year else None,
+         str(cand.variant.year) if cand.variant.year else None, ReasonCode.GENERATION_MISMATCH),
+    ]
+    for field, left, right, code in material_fields:
+        state = _cmp_dim(left, right)
+        _record(field, state)
+        if state == "mismatch":
+            codes.append(code)
+            notes.append(f"{field.replace('_', ' ').title()} differs ({left} vs {right}).")
+            return _finish(EquivalenceClass.mismatch)
+
+    if cand.variant.other.get("accessory_only"):
+        _record("listing_type", "mismatch", "Candidate is an accessory-only listing.")
+        codes.append(ReasonCode.ACCESSORY_ONLY)
+        notes.append("Candidate is an accessory-only listing, not the product itself.")
+        return _finish(EquivalenceClass.mismatch)
+
     # ── Condition ───────────────────────────────────────────────────────────
     cond_state = (
         "unknown"
@@ -209,14 +250,6 @@ def classify(
     _record("colour", colour_state)
 
     # ── Warranty ────────────────────────────────────────────────────────────
-    cur_war = (current.variant.other or {}).get("warranty")
-    cand_war = candidate.warranty.get("region") if candidate.warranty else None
-    warranty_state = "unknown" if not candidate.warranty else "known"
-    if warranty_state == "unknown":
-        unknown.append("warranty")
-    else:
-        matched.append("warranty") if cand_war else unknown.append("warranty")
-
     tradeoff = False
     if colour_state == "mismatch":
         tradeoff = True
@@ -225,14 +258,58 @@ def classify(
             f"Colour differs ({current.variant.colour or cur_suffix_colour} vs "
             f"{cand.variant.colour or cand_suffix_colour})."
         )
-    if warranty_state == "unknown":
+    current_warranty = current.variant.warranty_region
+    candidate_warranty = (
+        (candidate.warranty.get("region") if candidate.warranty else None)
+        or cand.variant.warranty_region
+    )
+    warranty_state = _cmp_dim(current_warranty, candidate_warranty)
+    if current_warranty is None and candidate_warranty is not None:
+        warranty_state = (
+            "match"
+            if str(candidate_warranty).strip().lower() in {"uae", "gcc", "local"}
+            else "mismatch"
+        )
+    _record("warranty_region", warranty_state)
+    if candidate_warranty is None:
         tradeoff = True
         codes.append(ReasonCode.WARRANTY_UNKNOWN)
         notes.append("Warranty terms could not be verified for this offer.")
-    elif cand_war and str(cand_war).strip().lower() not in ("uae", "gcc", "local"):
+    elif (
+        warranty_state == "mismatch"
+        or str(candidate_warranty).strip().lower() not in {"uae", "gcc", "local"}
+    ):
         tradeoff = True
         codes.append(ReasonCode.WARRANTY_MISMATCH)
-        notes.append(f"Warranty region is {cand_war}, not UAE-local.")
+        notes.append(f"Warranty region differs or is not UAE-local ({candidate_warranty}).")
+
+    bundle_state = "match" if set(current.variant.bundle) == set(cand.variant.bundle) else "mismatch"
+    if not current.variant.bundle and not cand.variant.bundle:
+        bundle_state = "unknown"
+    _record("bundle", bundle_state)
+    if bundle_state == "mismatch":
+        tradeoff = True
+        codes.append(ReasonCode.BUNDLE_MISMATCH)
+        notes.append("Included bundle items differ.")
+
+    accessories_state = (
+        "match" if set(current.variant.accessories) == set(cand.variant.accessories) else "mismatch"
+    )
+    if not current.variant.accessories and not cand.variant.accessories:
+        accessories_state = "unknown"
+    _record("accessories", accessories_state)
+    if accessories_state == "mismatch":
+        tradeoff = True
+        codes.append(ReasonCode.BUNDLE_MISMATCH)
+        notes.append("Included accessories differ.")
+
+    seller_state = "match"
+    if candidate.seller.type == SellerType.marketplace:
+        seller_state = "mismatch"
+        tradeoff = True
+        codes.append(ReasonCode.SELLER_RISK)
+        notes.append("Marketplace seller route requires a seller-legitimacy trade-off.")
+    _record("seller_route", seller_state)
     if cond_state == "unknown":
         tradeoff = True
 

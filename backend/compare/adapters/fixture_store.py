@@ -27,7 +27,13 @@ from ..schemas import (
     StockStatus,
     Variant,
 )
-from .base import MerchantAdapter
+from .base import (
+    MerchantAdapter,
+    ProviderCost,
+    ProviderHealth,
+    ProviderKind,
+    ProviderRateLimit,
+)
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -45,6 +51,18 @@ class FixtureMerchantAdapter(MerchantAdapter):
     evidence_tier = "fixture"
     cost_estimate_usd = 0.0
     known_limitations = [_FIXTURE_LIMITATION]
+    provider_kind = ProviderKind.fixture
+    provider_cost = ProviderCost.zero
+    capabilities = ("catalogue-lookup", "structured-offer")
+    retries = 0
+    rate_limit = ProviderRateLimit(policy="local fixture; no external requests")
+    health = ProviderHealth.healthy
+    extraction_fields = (
+        "brand", "model", "mpn", "gtin", "variant", "item_price",
+        "shipping", "mandatory_fees", "seller", "condition", "stock",
+        "delivery", "warranty", "return_terms",
+    )
+    fixture = True
 
     def __init__(self, merchant_id: str, merchant_name: str, domains: List[str],
                  catalog_file: Path):

@@ -8,11 +8,33 @@ local Playwright / official APIs) implement the same interface later; Bright
 Data, if ever used, is one more optional adapter — never a default.
 """
 
-from .base import MerchantAdapter, get_adapters, register_adapter, reset_registry_for_tests
+from .base import (
+    MerchantAdapter,
+    OptionalManagedAdapter,
+    ProviderCost,
+    ProviderHealth,
+    ProviderKind,
+    ProviderMetadata,
+    ProviderRateLimit,
+    get_adapters,
+    register_adapter,
+    reset_registry_for_tests,
+)
+from .browser_submitted import BrowserSubmittedOfferAdapter, structured_data_to_offer
+from .direct_http import DirectHttpStructuredMetadataAdapter
 
 __all__ = [
     "MerchantAdapter",
+    "OptionalManagedAdapter",
+    "BrowserSubmittedOfferAdapter",
+    "DirectHttpStructuredMetadataAdapter",
+    "ProviderCost",
+    "ProviderHealth",
+    "ProviderKind",
+    "ProviderMetadata",
+    "ProviderRateLimit",
     "get_adapters",
     "register_adapter",
     "reset_registry_for_tests",
+    "structured_data_to_offer",
 ]

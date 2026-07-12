@@ -408,21 +408,12 @@
 
       // Brief delay so user sees the highlight before navigation
       setTimeout(() => {
-        const encoded = encodeURIComponent(location.href);
-        const chatUrl = `http://localhost:3000/chat?url=${encoded}`;
-
         try {
           chrome.runtime.sendMessage(
-            { type: "OPEN_PROBE", url: location.href, title: document.title },
-            () => {
-              if (chrome.runtime.lastError) {
-                window.open(chatUrl, "_blank");
-              }
-            }
+            { type: "OPEN_SIDE_PANEL" },
+            () => void chrome.runtime.lastError
           );
-        } catch {
-          window.open(chatUrl, "_blank");
-        }
+        } catch { /* extension reloading */ }
       }, 400);
     });
 

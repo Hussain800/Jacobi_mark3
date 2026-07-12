@@ -1,23 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Jacobi — Verified Price Comparison",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Find the cheapest verified way to buy the exact product you are viewing. Exact-match, all-in totals, evidence-backed.",
   "permissions": [
     "contextMenus",
     "activeTab",
+    "scripting",
     "storage",
     "sidePanel"
   ],
-  "host_permissions": [
-    "http://localhost:8000/*"
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
-  "externally_connectable": {
-    "matches": [
-      "http://localhost:3000/*",
-      "http://localhost:8000/*"
-    ]
-  },
+  "optional_permissions": [
+    "tabs"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -31,19 +30,5 @@
     "page": "settings.html",
     "open_in_tab": true
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.amazon.ae/*",
-        "https://*.noon.com/*",
-        "https://*.sharafdg.com/*",
-        "https://*.jumbo.ae/*",
-        "https://*.sony-mea.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
-      ],
-      "js": ["product-context.js"],
-      "run_at": "document_idle"
-    }
-  ]
+  "minimum_chrome_version": "116"
 }

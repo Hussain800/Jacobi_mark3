@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { performance } = require("node:perf_hooks");
 const extraction = require("../shared/extraction.js");
 
 function documentFixture(jsonLd, metadata, bodyText) {
@@ -55,4 +56,17 @@ test("merchant hooks include explicit delivery and warranty selectors", function
   const amazon = extraction.merchantSelectors("www.amazon.ae");
   assert.ok(amazon.delivery.length > 0);
   assert.ok(amazon.warranty.length > 0);
+});
+
+test("local product detection remains comfortably below the 500ms budget", function () {
+  const json = JSON.stringify({
+    "@type": "Product", name: "Sony WH-1000XM6", mpn: "WH-1000XM6/B",
+    offers: { "@type": "Offer", price: "1699", priceCurrency: "AED" },
+  });
+  const doc = documentFixture(json);
+  const location = { href: "https://shop.example/product", hostname: "shop.example" };
+  const started = performance.now();
+  for (let index = 0; index < 100; index += 1) extraction.buildContext(doc, location);
+  const averageMs = (performance.now() - started) / 100;
+  assert.ok(averageMs < 500, `average extraction ${averageMs.toFixed(3)}ms exceeded budget`);
 });

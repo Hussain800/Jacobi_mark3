@@ -238,8 +238,29 @@ async function reportMismatch() {
   const feedback = Array.isArray(stored.jacobi_wrong_match_feedback) ? stored.jacobi_wrong_match_feedback : [];
   feedback.push({ comparisonId: lastResult.comparison_id || null, sourceUrl: lastContext && lastContext.source_url || null, createdAt: new Date().toISOString(), category: "wrong_match" });
   await chrome.storage.local.set({ jacobi_wrong_match_feedback: feedback.slice(-100) });
+  await sendOptionalFeedback("wrong_match_feedback", lastResult.best_offer && lastResult.best_offer.observation_id);
   button.textContent = "Wrong match recorded locally";
   button.disabled = true;
+}
+
+async function sendOptionalFeedback(event, offerObservationId) {
+  if (!IS_EXTENSION || !lastResult || !lastResult.comparison_access_token) return;
+  const settings = await getSettings();
+  if (!settings.privacy.telemetryEnabled) return;
+  try {
+    await fetch(apiUrl(settings.apiBackendUrl, "/api/v1/feedback"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Jacobi-Access-Token": lastResult.comparison_access_token,
+      },
+      body: JSON.stringify({
+        comparison_id: lastResult.comparison_id,
+        event: event,
+        offer_observation_id: offerObservationId || null,
+      }),
+    });
+  } catch (_) { /* Optional telemetry never blocks the user action. */ }
 }
 
 function wireResultActions(result) {
@@ -247,7 +268,10 @@ function wireResultActions(result) {
   if (open) {
     const url = JacobiRender.safeActionUrl(result);
     open.disabled = !url;
-    if (url) open.addEventListener("click", function () { openSafeUrl(url); });
+    if (url) open.addEventListener("click", function () {
+      void sendOptionalFeedback("alternative_opened", result.best_offer && result.best_offer.observation_id);
+      openSafeUrl(url);
+    });
   }
   const evidence = document.getElementById("show-evidence");
   if (evidence) evidence.addEventListener("click", showEvidence);

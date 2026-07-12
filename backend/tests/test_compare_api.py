@@ -15,6 +15,7 @@ from main import app
 
 from compare.adapters import reset_registry_for_tests
 from compare.adapters.base import MerchantAdapter
+from compare.api import reset_rate_limits_for_tests
 from compare.schemas import (
     ComparisonRequest,
     ComparisonStatus,
@@ -46,9 +47,11 @@ SONY_REQUEST = {
 def _clean_state():
     reset_registry_for_tests()
     reset_results_for_tests()
+    reset_rate_limits_for_tests()
     yield
     reset_registry_for_tests()
     reset_results_for_tests()
+    reset_rate_limits_for_tests()
 
 
 @pytest.fixture
@@ -106,6 +109,14 @@ def test_compare_endpoint_finds_verified_saving(client):
     man = r3.json()
     assert man["manifest_sha256"]
     assert any(a["provider"] == "sony_ae" for a in man["collection_attempts"])
+    optimizer_attempt = next(
+        attempt for attempt in man["collection_attempts"]
+        if attempt["provider"] == "jacobi_optimizer"
+    )
+    assert optimizer_attempt["extractions"][0]["value"]["candidates"]
+    envelope = body["optimization_envelope"]
+    assert envelope["immutable_evidence"] is True
+    assert envelope["evidence_manifest_id"] == manifest_id
 
 
 def test_protected_result_survives_process_cache_reset(client):
@@ -221,6 +232,100 @@ def test_compare_health_declares_zero_cost(client):
 
     health = client.get("/api/v1/providers/health").json()
     assert all(provider["cost"] == "zero" for provider in health["providers"])
+
+
+def test_versioned_identify_discover_optimize_status_and_submit_routes(client):
+    identified = client.post(
+        "/api/v1/identify",
+        json={"fields": SONY_REQUEST["current_offer"]},
+        headers={"X-Request-ID": "test-request-id"},
+    )
+    assert identified.status_code == 200
+    assert identified.headers["X-Request-ID"] == "test-request-id"
+    assert identified.json()["mpn"] == "WH-1000XM6/B"
+
+    discovered = client.post("/api/v1/discover", json=SONY_REQUEST)
+    assert discovered.status_code == 200
+    assert discovered.json()["offers"]
+
+    optimized = client.post(
+        "/api/v1/optimize",
+        json={**SONY_REQUEST, "preference_mode": "official_seller"},
+    )
+    assert optimized.status_code == 200
+    optimized_body = optimized.json()
+    assert optimized_body["preference_mode"] == "official_seller"
+    assert optimized_body["best_offer"]["seller"]["type"] == "official_store"
+
+    comparison_id = optimized_body["comparison_id"]
+    token = optimized_body["comparison_access_token"]
+    status = client.get(
+        f"/api/v1/comparisons/{comparison_id}/status",
+        headers={"X-Jacobi-Access-Token": token},
+    )
+    assert status.status_code == 200
+    assert status.json()["complete"] is True
+
+    submitted_request = {
+        **SONY_REQUEST,
+        "include_fixture_offers": False,
+        "submitted_offers": [{
+            "source_url": "https://submitted.example/xm6",
+            "current_offer": {
+                **SONY_REQUEST["current_offer"],
+                "price": {"amount": "1499", "currency": "AED"},
+                "warranty_text": "UAE warranty",
+            },
+        }],
+    }
+    submitted = client.post("/api/v1/offers/submit", json=submitted_request)
+    assert submitted.status_code == 200
+    assert submitted.json()["fixture_mode"] is False
+    assert client.post("/api/v1/offers/submit", json=SONY_REQUEST).status_code == 422
+
+
+def test_deep_audit_route_is_explicit_and_fixture_safe(client):
+    denied = client.post("/api/v1/deep-audit", json={"demo": "fee_drift"})
+    assert denied.status_code == 400
+    allowed = client.post(
+        "/api/v1/deep-audit",
+        json={"explicit": True, "demo": "fee_drift"},
+    )
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["automatic_paid_provider_calls"] is False
+    assert body["result"]["fixture_mode"] is True
+
+
+def test_untrusted_structured_inputs_are_bounded(client):
+    raw_html = {
+        **SONY_REQUEST,
+        "page_evidence": {"raw_html": "<html>not accepted</html>"},
+    }
+    assert client.post("/api/v1/compare", json=raw_html).status_code == 422
+
+    huge_title = {
+        **SONY_REQUEST,
+        "current_offer": {**SONY_REQUEST["current_offer"], "title": "x" * 1001},
+    }
+    assert client.post("/api/v1/compare", json=huge_title).status_code == 422
+
+
+def test_openapi_contains_complete_price_optimization_surface(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    assert {
+        "/api/v1/identify",
+        "/api/v1/discover",
+        "/api/v1/compare",
+        "/api/v1/optimize",
+        "/api/v1/offers/submit",
+        "/api/v1/comparisons/{comparison_id}",
+        "/api/v1/comparisons/{comparison_id}/status",
+        "/api/v1/evidence/{manifest_id}",
+        "/api/v1/providers/health",
+        "/api/v1/providers/capabilities",
+        "/api/v1/deep-audit",
+    } <= set(paths)
 
 
 # ── provider isolation ───────────────────────────────────────────────────────

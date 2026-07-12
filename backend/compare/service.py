@@ -44,11 +44,13 @@ from .equivalence import classify
 from .identity import resolve_identity
 from .ranking import build_recommendation, rank
 from .schemas import (
+    CandidateResult,
     ComparisonRequest,
     ComparisonStatus,
     Condition,
     OfferObservation,
     OptimizationResult,
+    OptimizationEnvelope,
     PriceBreakdown,
     ProductIdentity,
     ProviderError,
@@ -294,6 +296,78 @@ def _current_page_attempt(
     )
 
 
+def _optimization_attempt(
+    current: OfferObservation,
+    candidates: List[CandidateResult],
+    status: ComparisonStatus,
+    preference_mode: str,
+) -> CollectionAttempt:
+    trace = {
+        "preference_mode": preference_mode,
+        "status": status.value,
+        "current_total": (
+            str(current.price.payable_total.quantized())
+            if current.price.payable_total
+            else None
+        ),
+        "current_total_complete": current.price.total_complete,
+        "candidates": [
+            {
+                "observation_id": candidate.offer.observation_id,
+                "source_url": candidate.offer.source_url,
+                "classification": candidate.equivalence.classification.value,
+                "eligible": candidate.eligible,
+                "rank": candidate.rank,
+                "payable_total": (
+                    str(candidate.offer.price.payable_total.quantized())
+                    if candidate.offer.price.payable_total
+                    else None
+                ),
+                "total_complete": candidate.offer.price.total_complete,
+                "exclusion_reasons": [
+                    reason.value for reason in candidate.exclusion_reasons
+                ],
+                "exclusion_explanations": candidate.exclusion_explanations,
+                "selection_explanation": candidate.selection_explanation,
+                "ranking_factors": candidate.ranking_factors,
+            }
+            for candidate in candidates
+        ],
+    }
+    payload = json.dumps(trace, sort_keys=True, default=str).encode("utf-8")
+    now = datetime.now(timezone.utc)
+    return CollectionAttempt(
+        provider="jacobi_optimizer",
+        stage="optimization",
+        url=current.source_url,
+        final_url=current.source_url,
+        started_at=now,
+        ended_at=now,
+        capabilities=ProviderCapabilities(
+            provider="jacobi_optimizer",
+            cost_unit="free",
+        ),
+        artifacts=[Artifact(
+            kind="json",
+            sha256=hashlib.sha256(payload).hexdigest(),
+            bytes=len(payload),
+            content_type="application/json",
+        )],
+        extractions=[Extraction(
+            field="optimization_trace",
+            value=trace,
+            method="deterministic_filter_rank",
+            confidence=1.0,
+            extractor_version="compare-v1",
+        )],
+        limitations=[
+            "Ranking is only as complete as the observed cost, eligibility, and policy fields",
+        ],
+        cost_estimate_usd=0.0,
+        fixture=False,
+    )
+
+
 def _build_manifest(
     request: ComparisonRequest,
     identity: ProductIdentity,
@@ -524,11 +598,32 @@ class ComparisonService:
                 rec = rec.model_copy(update={"status": ComparisonStatus.error_partial})
         codes.append(ReasonCode.DEEP_AUDIT_AVAILABLE)
 
+        all_candidates = eligible + tradeoffs + similar + rejected
+        attempts.append(_optimization_attempt(
+            current,
+            all_candidates,
+            rec.status,
+            request.preference_mode.value,
+        ))
         manifest_id = _build_manifest(request, identity, current, attempts, comparison_id)
         current.evidence_ref = manifest_id
         for candidate in eligible + tradeoffs + similar + rejected:
             candidate.offer.evidence_ref = manifest_id
 
+        envelope = OptimizationEnvelope(
+            comparison_id=comparison_id,
+            decision=rec.status,
+            recommendation=rec,
+            savings=savings,
+            selected_offer_id=best.observation_id if best else None,
+            excluded_offer_ids=[
+                candidate.offer.observation_id
+                for candidate in tradeoffs + similar + rejected
+            ],
+            confidence=confidence,
+            reason_codes=list(dict.fromkeys(codes)),
+            evidence_manifest_id=manifest_id,
+        )
         result = OptimizationResult(
             comparison_id=comparison_id,
             market=request.market,
@@ -546,6 +641,7 @@ class ComparisonService:
             reason_codes=list(dict.fromkeys(codes)),  # dedupe, keep order
             provider_errors=provider_errors,
             evidence_manifest_id=manifest_id,
+            optimization_envelope=envelope,
             comparison_access_token=access_token,
             fixture_mode=fixture_mode,
         )

@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+import json
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -20,6 +21,41 @@ SCHEMA_VERSION = "0.1.0"
 
 # Offers older than this are stale for price purposes (PDR FR-8).
 OFFER_TTL_SECONDS = 900
+
+
+def validate_bounded_json(
+    value: Dict[str, Any],
+    *,
+    max_bytes: int = 131_072,
+    max_nodes: int = 2_000,
+    max_depth: int = 12,
+) -> Dict[str, Any]:
+    """Bound untrusted structured metadata without accepting raw page bodies."""
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("structured metadata must be JSON-compatible") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"structured metadata exceeds {max_bytes} bytes")
+    stack = [(value, 0)]
+    visited = 0
+    while stack:
+        current, depth = stack.pop()
+        visited += 1
+        if visited > max_nodes:
+            raise ValueError("structured metadata contains too many nodes")
+        if depth > max_depth:
+            raise ValueError("structured metadata is nested too deeply")
+        if isinstance(current, dict):
+            for key, item in current.items():
+                if str(key).lower() in {"html", "raw_html", "document_html"}:
+                    raise ValueError("raw page HTML is not accepted")
+                stack.append((item, depth + 1))
+        elif isinstance(current, list):
+            stack.extend((item, depth + 1) for item in current)
+        elif isinstance(current, str) and len(current) > 16_384:
+            raise ValueError("structured metadata strings are too large")
+    return value
 
 
 # ── Enums ────────────────────────────────────────────────────────────────────
@@ -319,6 +355,22 @@ class Recommendation(BaseModel):
     action_url: Optional[str] = None
 
 
+class OptimizationEnvelope(BaseModel):
+    """DecisionEnvelope-compatible summary tied to immutable optimization evidence."""
+
+    envelope_id: str = Field(default_factory=lambda: f"opt_{uuid.uuid4().hex[:16]}")
+    comparison_id: str
+    decision: ComparisonStatus
+    recommendation: Recommendation
+    savings: Savings = Field(default_factory=Savings)
+    selected_offer_id: Optional[str] = None
+    excluded_offer_ids: List[str] = Field(default_factory=list)
+    confidence: Confidence
+    reason_codes: List[ReasonCode] = Field(default_factory=list)
+    evidence_manifest_id: str
+    immutable_evidence: bool = True
+
+
 class ProviderError(BaseModel):
     merchant_id: str
     error: str
@@ -331,15 +383,15 @@ class ProviderError(BaseModel):
 class CurrentOfferInput(BaseModel):
     """Structured fields the extension extracted from the active page.
     Send fields, not the page (PDR FR-2)."""
-    title: Optional[str] = None
-    brand: Optional[str] = None
-    model: Optional[str] = None
-    mpn: Optional[str] = None
-    gtin: Optional[str] = None
-    sku: Optional[str] = None
-    family: Optional[str] = None
-    storage: Optional[str] = None
-    memory: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=1_000)
+    brand: Optional[str] = Field(default=None, max_length=200)
+    model: Optional[str] = Field(default=None, max_length=200)
+    mpn: Optional[str] = Field(default=None, max_length=200)
+    gtin: Optional[str] = Field(default=None, max_length=64)
+    sku: Optional[str] = Field(default=None, max_length=200)
+    family: Optional[str] = Field(default=None, max_length=200)
+    storage: Optional[str] = Field(default=None, max_length=100)
+    memory: Optional[str] = Field(default=None, max_length=100)
     generation: Optional[str] = None
     processor: Optional[str] = None
     screen_size: Optional[str] = None
@@ -367,7 +419,7 @@ class CurrentOfferInput(BaseModel):
 class SubmittedOfferInput(BaseModel):
     """A real offer observed in a user-opened browser tab."""
 
-    source_url: str
+    source_url: str = Field(max_length=2_048)
     merchant_id: Optional[str] = None
     merchant_name: Optional[str] = None
     current_offer: CurrentOfferInput
@@ -381,9 +433,14 @@ class SubmittedOfferInput(BaseModel):
             raise ValueError("source_url must be absolute http(s)")
         return normalized
 
+    @field_validator("page_evidence")
+    @classmethod
+    def _bounded_page_evidence(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return validate_bounded_json(value)
+
 
 class ComparisonRequest(BaseModel):
-    source_url: str
+    source_url: str = Field(max_length=2_048)
     market: str = "AE"
     current_offer: CurrentOfferInput
     page_evidence: Dict[str, Any] = Field(default_factory=dict)  # json_ld, sources, extracted_at
@@ -402,6 +459,11 @@ class ComparisonRequest(BaseModel):
         if not normalized.lower().startswith(("http://", "https://")):
             raise ValueError("source_url must be absolute http(s)")
         return normalized
+
+    @field_validator("page_evidence")
+    @classmethod
+    def _bounded_page_evidence(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return validate_bounded_json(value)
 
     @model_validator(mode="after")
     def _direct_http_is_explicit(self) -> "ComparisonRequest":
@@ -431,6 +493,94 @@ class OptimizationResult(BaseModel):
     reason_codes: List[ReasonCode] = Field(default_factory=list)
     provider_errors: List[ProviderError] = Field(default_factory=list)
     evidence_manifest_id: Optional[str] = None
+    optimization_envelope: Optional[OptimizationEnvelope] = None
     comparison_access_token: Optional[str] = None
     ttl_seconds: int = OFFER_TTL_SECONDS
     fixture_mode: bool = False
+
+
+class IdentifyProductRequest(BaseModel):
+    fields: Dict[str, Any]
+
+    @field_validator("fields")
+    @classmethod
+    def _bounded_fields(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return validate_bounded_json(value, max_bytes=65_536, max_nodes=500)
+
+
+class DiscoveryResult(BaseModel):
+    comparison_id: str
+    comparison_access_token: Optional[str] = None
+    product: ProductIdentity
+    offers: List[OfferObservation] = Field(default_factory=list)
+    provider_errors: List[ProviderError] = Field(default_factory=list)
+    evidence_manifest_id: Optional[str] = None
+    fixture_mode: bool = False
+
+
+class ComparisonStatusResult(BaseModel):
+    comparison_id: str
+    status: ComparisonStatus
+    created_at: datetime
+    provider_errors: List[ProviderError] = Field(default_factory=list)
+    complete: bool = True
+
+
+class ProviderDescriptorResult(BaseModel):
+    provider_id: str
+    name: str
+    merchant_id: Optional[str] = None
+    merchant_name: Optional[str] = None
+    kind: str
+    domains: List[str] = Field(default_factory=list)
+    capabilities: List[str] = Field(default_factory=list)
+    cost: str
+    cost_estimate_usd: float = 0.0
+    evidence_tier: str
+    timeout_seconds: float
+    retries: int
+    limitations: List[str] = Field(default_factory=list)
+    rate_limit: Dict[str, Any] = Field(default_factory=dict)
+    health: str
+    extraction_fields: List[str] = Field(default_factory=list)
+    explicit_invocation_required: bool
+    fixture: bool
+
+
+class ProviderCapabilitiesResult(BaseModel):
+    providers: List[ProviderDescriptorResult]
+    default_paid_provider_count: int = 0
+
+
+class ProviderHealthItem(BaseModel):
+    provider_id: str
+    health: str
+    fixture: bool
+    cost: str
+
+
+class ProviderHealthResult(BaseModel):
+    providers: List[ProviderHealthItem]
+
+
+class DeepAuditRequest(BaseModel):
+    explicit: bool = False
+    demo: Optional[str] = None
+    url: Optional[str] = Field(default=None, max_length=2_048)
+    displayed_total_amount: Optional[float] = Field(default=None, ge=0)
+    displayed_total_currency: str = Field(default="AED", min_length=3, max_length=3)
+    consent_scope: str = "research_only"
+    tier: str = "free"
+    allow_managed_provider: bool = False
+
+    @model_validator(mode="after")
+    def _has_target(self) -> "DeepAuditRequest":
+        if not self.demo and not self.url:
+            raise ValueError("demo or url is required")
+        return self
+
+
+class DeepAuditResult(BaseModel):
+    status: str
+    automatic_paid_provider_calls: bool = False
+    result: Dict[str, Any] = Field(default_factory=dict)

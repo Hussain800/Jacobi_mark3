@@ -1,12 +1,4 @@
-"""Jacobi Compare — REST surface.
-
-POST /api/v1/compare            run a comparison from structured page context
-GET  /api/v1/comparisons/{id}   fetch a stored result
-GET  /api/v1/compare/health     adapters + status
-
-Evidence manifests are served by the existing agentcore routes
-(GET /api/v1/agent/manifests/{manifest_id}) — one evidence surface, not two.
-"""
+"""Versioned REST composition for price optimization and optional Deep Audit."""
 
 from __future__ import annotations
 
@@ -17,13 +9,26 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
+from agentcore.schemas import EvidenceManifest
 
 from .adapters import (
     BrowserSubmittedOfferAdapter,
     DirectHttpStructuredMetadataAdapter,
     get_adapters,
 )
-from .schemas import ComparisonRequest, OptimizationResult
+from . import tooling
+from .schemas import (
+    ComparisonRequest,
+    ComparisonStatusResult,
+    DeepAuditRequest,
+    DeepAuditResult,
+    DiscoveryResult,
+    IdentifyProductRequest,
+    OptimizationResult,
+    ProductIdentity,
+    ProviderCapabilitiesResult,
+    ProviderHealthResult,
+)
 from .service import (
     get_comparison_manifest,
     get_result,
@@ -37,6 +42,10 @@ router = APIRouter(prefix="/api/v1", tags=["compare"])
 # calls need the same brake the agent /verify endpoint has.
 RATE_LIMIT_PER_MINUTE = int(os.getenv("JACOBI_COMPARE_RATE_LIMIT_PER_MIN", "30"))
 _BUCKETS: Dict[str, List[float]] = defaultdict(list)
+
+
+def reset_rate_limits_for_tests() -> None:
+    _BUCKETS.clear()
 
 
 def _enforce_rate_limit(request: Request) -> None:
@@ -90,14 +99,16 @@ def compare_health() -> Dict[str, Any]:
     }
 
 
-@router.get("/providers/capabilities")
-def provider_capabilities() -> Dict[str, Any]:
-    return {"providers": _provider_descriptors(), "default_paid_provider_count": 0}
+@router.get("/providers/capabilities", response_model=ProviderCapabilitiesResult)
+def provider_capabilities() -> ProviderCapabilitiesResult:
+    return ProviderCapabilitiesResult(
+        providers=_provider_descriptors(), default_paid_provider_count=0
+    )
 
 
-@router.get("/providers/health")
-def provider_health() -> Dict[str, Any]:
-    return {
+@router.get("/providers/health", response_model=ProviderHealthResult)
+def provider_health() -> ProviderHealthResult:
+    return ProviderHealthResult.model_validate({
         "providers": [
             {
                 "provider_id": item["provider_id"],
@@ -107,7 +118,22 @@ def provider_health() -> Dict[str, Any]:
             }
             for item in _provider_descriptors()
         ]
-    }
+    })
+
+
+@router.post(
+    "/identify",
+    response_model=ProductIdentity,
+    summary="Identify a product from browser-observed fields",
+)
+def identify_product(
+    body: IdentifyProductRequest,
+    request: Request,
+    response: Response,
+) -> ProductIdentity:
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    return ProductIdentity.model_validate(tooling.identify_product_fields(body.fields))
 
 
 @router.post("/compare", response_model=OptimizationResult)
@@ -119,6 +145,76 @@ async def compare(
     _enforce_rate_limit(request)
     _request_id(response, request)
     return await service.compare(req)
+
+
+@router.post(
+    "/discover",
+    response_model=DiscoveryResult,
+    summary="Discover request-approved offers with isolated provider failures",
+)
+async def discover(
+    req: ComparisonRequest,
+    request: Request,
+    response: Response,
+) -> DiscoveryResult:
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    result = await service.compare(req)
+    return DiscoveryResult.model_validate(tooling.discovery_view(result))
+
+
+@router.post(
+    "/optimize",
+    response_model=OptimizationResult,
+    summary="Find and explain the cheapest valid purchase route",
+)
+async def optimize(
+    req: ComparisonRequest,
+    request: Request,
+    response: Response,
+) -> OptimizationResult:
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    return await service.compare(req)
+
+
+@router.post(
+    "/offers/submit",
+    response_model=OptimizationResult,
+    summary="Compare browser-observed offers submitted from open tabs",
+)
+async def submit_offers(
+    req: ComparisonRequest,
+    request: Request,
+    response: Response,
+) -> OptimizationResult:
+    if not req.submitted_offers:
+        raise HTTPException(status_code=422, detail="submitted_offers must not be empty")
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    return await service.compare(req)
+
+
+@router.post(
+    "/deep-audit",
+    response_model=DeepAuditResult,
+    summary="Explicitly run the preserved advanced audit",
+)
+async def deep_audit(
+    body: DeepAuditRequest,
+    request: Request,
+    response: Response,
+) -> DeepAuditResult:
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    payload = await tooling.deep_audit(**body.model_dump())
+    if "error" in payload:
+        raise HTTPException(status_code=400, detail=payload["error"])
+    return DeepAuditResult(
+        status="complete",
+        automatic_paid_provider_calls=False,
+        result=payload,
+    )
 
 
 @router.get("/comparisons/{comparison_id}", response_model=OptimizationResult)
@@ -136,24 +232,27 @@ def get_comparison(
     return result
 
 
-@router.get("/comparisons/{comparison_id}/status")
+@router.get(
+    "/comparisons/{comparison_id}/status",
+    response_model=ComparisonStatusResult,
+)
 def get_comparison_status(
     comparison_id: str,
     x_jacobi_access_token: Optional[str] = Header(
         default=None, alias="X-Jacobi-Access-Token"
     ),
-) -> Dict[str, Any]:
+) -> ComparisonStatusResult:
     result = get_comparison(comparison_id, x_jacobi_access_token)
-    return {
+    return ComparisonStatusResult.model_validate({
         "comparison_id": result.comparison_id,
         "status": result.recommendation.status,
         "created_at": result.created_at,
         "provider_errors": result.provider_errors,
         "complete": True,
-    }
+    })
 
 
-@router.get("/evidence/{manifest_id}")
+@router.get("/evidence/{manifest_id}", response_model=EvidenceManifest)
 def get_optimization_evidence(
     manifest_id: str,
     comparison_id: str,

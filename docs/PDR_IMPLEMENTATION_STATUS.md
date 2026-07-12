@@ -60,7 +60,7 @@ No row may be promoted to `COMPLETE` from source inspection alone. The verificat
 | Offer discovery | Exact identifiers, merchant/official search, browser-assisted results, submitted URLs, open tabs, public catalog lookups | COMPLETE | Identifier queries; catalogue interface; browser-submitted/open-tab offers; explicit public URLs; merchant-search/official-API plug-in kinds | Discovery/provider/API/extension tests | Autonomous UAE search adapters stay disabled until retailer policy/partnership approval; browser-assisted fallback is implemented |
 | Offer discovery | Deduplicate tracking URLs, sellers, and repeated variants | COMPLETE | `backend/compare/discovery.py`; service candidate integration | `test_compare_discovery.py` | Deduplication is deterministic and performed before equivalence/ranking |
 | Performance | Bounded concurrency, overall deadline, progressive partial output, caching, cancellation, deduplication | COMPLETE | Semaphore/deadlines/task cancellation; staged side-panel progress; bounded result/persistence stores; cached fixture catalogues; candidate dedupe | Provider isolation, storage, API and extension tests | Comparison is bounded synchronous work; pending providers are cancelled at the deadline and returned as partial failures |
-| Performance | Benchmark actual identity/comparison/provider performance honestly | COMPLETE | `backend/compare/benchmark.py` | `test_compare_benchmark.py`; fresh 50-iteration rank-25 run: median 1.7372 ms, p95 2.8168 ms on the local development machine | Hermetic ranker timing is not a live-retailer or end-to-end latency claim |
+| Performance | Benchmark actual identity/comparison/provider performance honestly | COMPLETE | `backend/compare/benchmark.py` | `test_compare_benchmark.py`; post-sync 50-iteration rank-25 run: median 1.92565 ms, p95 3.1644 ms on the local development machine | Hermetic ranker timing is not a live-retailer or end-to-end latency claim |
 
 ## Extension and web product
 
@@ -134,6 +134,16 @@ No row may be promoted to `COMPLETE` from source inspection alone. The verificat
 | 2026-07-12 | `git diff --check main...HEAD` | Only inherited trailing-space warnings in four older Markdown files; no pivot-source whitespace errors identified |
 | 2026-07-12 | `cd backend; python -m pytest tests/test_compare_identity_rich.py tests/test_equivalence_required_fields.py tests/test_total_cost_states.py tests/test_golden_product_pairs.py tests/test_compare_engine.py tests/test_compare_api.py -q` | `149 passed` |
 | 2026-07-12 | `cd backend; python -m pytest tests -q` | `1,586 passed, 2 skipped` in 38.00 s |
+| 2026-07-12 | `git fetch origin main`; `git merge --no-edit origin/main` | Feature branch already contained latest `origin/main` (`2ef0c09`); no conflict or history rewrite |
+| 2026-07-12 | `cd backend; python -m pytest -q` | Post-sync full maintained suite: `1,688 passed, 2 skipped` in 61.15 s |
+| 2026-07-12 | `frontend/node_modules/.bin/tsc --noEmit --incremental false` | PASS |
+| 2026-07-12 | `cd frontend; npm run build` | Next.js 16.2.9 production build PASS; 27 routes generated |
+| 2026-07-12 | Backend import/TestClient/OpenAPI smoke | `/health` and compare health 200; mandatory cost 0; paid providers default false; OpenAPI contains 60 paths |
+| 2026-07-12 | Extension syntax + Node + Chromium + package | 13 Node tests PASS; unpacked Chromium v0.5.0 PASS; screenshot refreshed; package contains 18 runtime files and no tests/artifacts |
+| 2026-07-12 | Documentation/YAML/link checks | 33 Markdown files resolve; Render and five issue-template YAML files parse |
+| 2026-07-12 | Current-tree secret scan; `test_repository_secrets.py` | PASS; known credential is redacted in current tree and already existed on `origin/main`; rotation/history assessment remains external |
+| 2026-07-12 | `git diff --check origin/main...HEAD` | PASS |
+| 2026-07-12 | Docker, Render CLI, Supabase CLI/psql availability | CLIs unavailable locally; Docker/Blueprint/real-RLS validation documented as external deployment checks; static migration/config tests pass |
 
 ## Completion rule
 

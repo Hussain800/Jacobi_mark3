@@ -21,6 +21,7 @@ import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 
@@ -54,6 +55,60 @@ _LOCAL_HTTP_LIMITATIONS = [
     "Does not prove real IP geography",
     "No screenshot capability in local HTTP mode",
 ]
+
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_MAX_REDIRECTS = 3
+
+
+def _fetch_public_html(url: str) -> tuple[int, str, dict[str, str], bytes]:
+    """Fetch a bounded public response while validating every redirect hop."""
+    current = url
+    max_bytes = int(os.getenv("JACOBI_HTTP_MAX_BYTES", str(2 * 1024 * 1024)))
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0 Safari/537.36 JacobiVerifier/1.0"
+        )
+    }
+
+    for hop in range(_MAX_REDIRECTS + 1):
+        validate_public_url(current)
+        with httpx.stream(
+            "GET",
+            current,
+            timeout=15.0,
+            follow_redirects=False,
+            headers=headers,
+        ) as response:
+            if response.status_code in _REDIRECT_STATUSES:
+                location = response.headers.get("location")
+                if not location:
+                    raise ValueError("redirect response omitted Location")
+                if hop >= _MAX_REDIRECTS:
+                    raise ValueError("too many redirects")
+                current = urljoin(current, location)
+                validate_public_url(current)
+                continue
+
+            length = response.headers.get("content-length")
+            if length and int(length) > max_bytes:
+                raise ValueError(f"response too large ({length} > {max_bytes} bytes)")
+            body = bytearray()
+            for chunk in response.iter_bytes():
+                body.extend(chunk)
+                if len(body) > max_bytes:
+                    raise ValueError(
+                        f"response too large ({len(body)} > {max_bytes} bytes)"
+                    )
+            return (
+                response.status_code,
+                str(response.url),
+                dict(response.headers),
+                bytes(body),
+            )
+
+    raise ValueError("redirect resolution failed")
 
 
 def _artifact_dir() -> Path:
@@ -153,30 +208,20 @@ class LocalHttpProvider(CollectionProvider):
             started_at=started,
         )
         try:
-            validate_public_url(url)
+            status, final_url, headers, raw = _fetch_public_html(url)
         except UnsafeUrlError as exc:
             base.error = f"unsafe url rejected: {exc}"
             base.ended_at = datetime.now(timezone.utc)
             return base
-        try:
-            resp = httpx.get(
-                url,
-                timeout=15.0,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/126.0 Safari/537.36 JacobiVerifier/1.0"
-                    )
-                },
-            )
         except httpx.HTTPError as exc:
             base.error = f"fetch failed: {exc.__class__.__name__}: {exc}"
             base.ended_at = datetime.now(timezone.utc)
             return base
+        except (ValueError, OverflowError) as exc:
+            base.error = f"fetch rejected: {exc}"
+            base.ended_at = datetime.now(timezone.utc)
+            return base
 
-        raw = resp.content
         sha = hashlib.sha256(raw).hexdigest()
         art_dir = _artifact_dir()
         out_path = art_dir / f"{sha}.html"
@@ -186,11 +231,11 @@ class LocalHttpProvider(CollectionProvider):
             _prune_artifacts(art_dir)
         except OSError:
             storage = None  # evidence still carries the hash
-        base.final_url = str(resp.url)
-        base.http_status = resp.status_code
+        base.final_url = final_url
+        base.http_status = status
         base.artifacts = [Artifact(
             kind="html", sha256=sha, storage_uri=storage,
-            bytes=len(raw), content_type=resp.headers.get("content-type", "text/html"),
+            bytes=len(raw), content_type=headers.get("content-type", "text/html"),
         )]
         base.extractions = extract_price_fields(raw.decode("utf-8", errors="replace"))
         base.ended_at = datetime.now(timezone.utc)

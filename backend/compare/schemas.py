@@ -297,6 +297,8 @@ class Recommendation(BaseModel):
 class ProviderError(BaseModel):
     merchant_id: str
     error: str
+    code: str = "PROVIDER_FAILED"
+    retryable: bool = False
 
 
 # ── Request / result ─────────────────────────────────────────────────────────
@@ -332,11 +334,49 @@ class CurrentOfferInput(BaseModel):
     delivery_text: Optional[str] = None
 
 
+class SubmittedOfferInput(BaseModel):
+    """A real offer observed in a user-opened browser tab."""
+
+    source_url: str
+    merchant_id: Optional[str] = None
+    merchant_name: Optional[str] = None
+    current_offer: CurrentOfferInput
+    page_evidence: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("source_url")
+    @classmethod
+    def _http_source_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.lower().startswith(("http://", "https://")):
+            raise ValueError("source_url must be absolute http(s)")
+        return normalized
+
+
 class ComparisonRequest(BaseModel):
-    source_url: str = ""
+    source_url: str
     market: str = "AE"
     current_offer: CurrentOfferInput
     page_evidence: Dict[str, Any] = Field(default_factory=dict)  # json_ld, sources, extracted_at
+    submitted_offers: List[SubmittedOfferInput] = Field(default_factory=list, max_length=20)
+    comparison_urls: List[str] = Field(default_factory=list, max_length=20)
+    include_fixture_offers: bool = False
+    allow_direct_http: bool = False
+    overall_timeout_seconds: float = Field(default=15.0, ge=1.0, le=30.0)
+    max_concurrency: int = Field(default=5, ge=1, le=10)
+
+    @field_validator("source_url")
+    @classmethod
+    def _source_is_http(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.lower().startswith(("http://", "https://")):
+            raise ValueError("source_url must be absolute http(s)")
+        return normalized
+
+    @model_validator(mode="after")
+    def _direct_http_is_explicit(self) -> "ComparisonRequest":
+        if self.comparison_urls and not self.allow_direct_http:
+            raise ValueError("comparison_urls require allow_direct_http=true")
+        return self
 
 
 class OptimizationResult(BaseModel):
@@ -359,5 +399,6 @@ class OptimizationResult(BaseModel):
     reason_codes: List[ReasonCode] = Field(default_factory=list)
     provider_errors: List[ProviderError] = Field(default_factory=list)
     evidence_manifest_id: Optional[str] = None
+    comparison_access_token: Optional[str] = None
     ttl_seconds: int = OFFER_TTL_SECONDS
     fixture_mode: bool = False

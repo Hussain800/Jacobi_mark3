@@ -194,15 +194,20 @@ def build_recommendation(
                 break
     if cheaper_tradeoff:
         codes.extend(cheaper_tradeoff.equivalence.reason_codes)
+        codes.append(ReasonCode.LOWER_TOTAL_FOUND)
         p = cheaper_tradeoff.offer.price.payable_total
         diff = cur_total.quantized() - p.quantized()
+        saving = Savings(
+            amount=Money(amount=diff, currency=currency),
+            percent=round(float(diff / cur_total.quantized() * 100), 1),
+        )
         rec = Recommendation(
             status=ComparisonStatus.tradeoff,
             headline=f"{_fmt(Money(amount=diff, currency=currency))} cheaper — with a trade-off",
             explanation=cheaper_tradeoff.equivalence.explanation,
             action_url=cheaper_tradeoff.offer.source_url,
         )
-        return rec, Savings(), cheaper_tradeoff.offer, Confidence.medium, codes
+        return rec, saving, cheaper_tradeoff.offer, Confidence.medium, codes
 
     codes.append(ReasonCode.EXACT_MATCH_INSUFFICIENT)
     rec = Recommendation(

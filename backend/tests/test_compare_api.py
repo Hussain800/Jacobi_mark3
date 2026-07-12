@@ -28,6 +28,7 @@ from compare.service import ComparisonService, get_result, reset_results_for_tes
 SONY_REQUEST = {
     "source_url": "https://www.amazon.ae/dp/B0DEMO123",
     "market": "AE",
+    "include_fixture_offers": True,
     "current_offer": {
         "title": "Sony WH-1000XM6 Wireless Noise Cancelling Headphones - Black",
         "brand": "Sony",
@@ -84,22 +85,90 @@ def test_compare_endpoint_finds_verified_saving(client):
 
     # Result is retrievable and evidence manifest is persisted + fetchable.
     cid = body["comparison_id"]
-    r2 = client.get(f"/api/v1/comparisons/{cid}")
+    access_token = body["comparison_access_token"]
+    assert access_token
+    r2 = client.get(
+        f"/api/v1/comparisons/{cid}",
+        headers={"X-Jacobi-Access-Token": access_token},
+    )
     assert r2.status_code == 200
     assert r2.json()["comparison_id"] == cid
+    assert r2.json()["comparison_access_token"] is None
+    assert client.get(f"/api/v1/comparisons/{cid}").status_code == 404
 
     manifest_id = body["evidence_manifest_id"]
-    r3 = client.get(f"/api/v1/agent/manifests/{manifest_id}")
+    assert client.get(f"/api/v1/agent/manifests/{manifest_id}").status_code == 404
+    r3 = client.get(
+        f"/api/v1/evidence/{manifest_id}?comparison_id={cid}",
+        headers={"X-Jacobi-Access-Token": access_token},
+    )
     assert r3.status_code == 200
     man = r3.json()
     assert man["manifest_sha256"]
     assert any(a["provider"] == "sony_ae" for a in man["collection_attempts"])
 
 
+def test_protected_result_survives_process_cache_reset(client):
+    body = client.post("/api/v1/compare", json=SONY_REQUEST).json()
+    comparison_id = body["comparison_id"]
+    token = body["comparison_access_token"]
+
+    reset_results_for_tests()
+
+    response = client.get(
+        f"/api/v1/comparisons/{comparison_id}",
+        headers={"X-Jacobi-Access-Token": token},
+    )
+    assert response.status_code == 200
+    assert response.json()["comparison_id"] == comparison_id
+
+
+def test_browser_submitted_offer_is_real_zero_cost_route(client):
+    request = {
+        "source_url": "https://shop.example/current",
+        "current_offer": {
+            "title": "Sony WH-1000XM6 Wireless Headphones Black",
+            "brand": "Sony",
+            "mpn": "WH-1000XM6/B",
+            "gtin": "4548736158801",
+            "price": {"amount": "1699", "currency": "AED"},
+            "shipping": {"amount": "0", "currency": "AED"},
+            "condition": "new",
+            "stock": "in_stock",
+        },
+        "submitted_offers": [
+            {
+                "source_url": "https://other.example/sony-xm6",
+                "merchant_id": "other_browser_tab",
+                "merchant_name": "Other browser tab",
+                "current_offer": {
+                    "title": "Sony WH-1000XM6 Wireless Headphones Black",
+                    "brand": "Sony",
+                    "mpn": "WH-1000XM6/B",
+                    "gtin": "4548736158801",
+                    "price": {"amount": "1499", "currency": "AED"},
+                    "shipping": {"amount": "0", "currency": "AED"},
+                    "condition": "new",
+                    "stock": "in_stock",
+                },
+            }
+        ],
+    }
+    response = client.post("/api/v1/compare", json=request)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommendation"]["status"] == "tradeoff"
+    assert body["best_offer"]["merchant_id"] == "other_browser_tab"
+    assert body["fixture_mode"] is False
+    assert body["savings"]["amount"]["amount"] == "200.00"
+    assert "WARRANTY_UNKNOWN" in body["tradeoff_offers"][0]["equivalence"]["reason_codes"]
+
+
 def test_storage_mismatch_never_recommended(client):
     req = {
         "source_url": "https://www.amazon.ae/dp/B0MBA256",
         "market": "AE",
+        "include_fixture_offers": True,
         "current_offer": {
             "title": "Apple MacBook Air 13-inch M3 8GB/256GB - Midnight",
             "brand": "Apple",
@@ -145,6 +214,14 @@ def test_compare_health_declares_zero_cost(client):
     assert {"amazon_ae", "noon_ae", "sharafdg", "sony_ae"} <= ids
     assert all(a["cost_estimate_usd"] == 0.0 for a in body["adapters"])
 
+    capabilities = client.get("/api/v1/providers/capabilities").json()
+    kinds = {provider["kind"] for provider in capabilities["providers"]}
+    assert {"browser-assisted", "direct-http", "fixture"} <= kinds
+    assert capabilities["default_paid_provider_count"] == 0
+
+    health = client.get("/api/v1/providers/health").json()
+    assert all(provider["cost"] == "zero" for provider in health["providers"])
+
 
 # ── provider isolation ───────────────────────────────────────────────────────
 
@@ -189,7 +266,7 @@ def test_provider_failure_is_isolated():
     assert ReasonCode.PROVIDER_PARTIAL_FAILURE in result.reason_codes
     assert result.recommendation.status == ComparisonStatus.save
     assert result.best_offer.merchant_id == "sony_ae"
-    assert get_result(result.comparison_id) is result
+    assert get_result(result.comparison_id).comparison_id == result.comparison_id
 
 
 # ── zero-BrightData guarantee ────────────────────────────────────────────────

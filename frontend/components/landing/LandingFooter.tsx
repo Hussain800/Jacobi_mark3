@@ -1,7 +1,3 @@
-/**
- * LandingFooter — minimal marketing footer, styled by landing.css.
- */
-
 import Link from "next/link";
 import BrandLockup from "../design/BrandLockup";
 
@@ -12,29 +8,28 @@ export default function LandingFooter() {
         <div>
           <BrandLockup size={17} />
           <p className="jx-footer__desc">
-            Evidence-grade pricing intelligence. Controlled synthetic-buyer
-            probes that prove where price changes are driven by buyer context —
-            and capture the receipts.
+            The open-source price optimisation engine for exact product matching,
+            known all-in totals, replaceable providers, and evidence-backed savings.
           </p>
         </div>
-        <nav className="jx-footer__col">
+        <nav className="jx-footer__col" aria-label="Product">
           <span className="jx-label">Product</span>
-          <Link href="/chat">Run an audit</Link>
-          <Link href="/leaderboard">Board</Link>
-          <Link href="/history">History</Link>
-          <Link href="/pricing">Pricing</Link>
-        </nav>
-        <nav className="jx-footer__col">
-          <span className="jx-label">Company</span>
-          <Link href="/method">Method</Link>
+          <Link href="/compare">Compare</Link>
           <Link href="/extension">Extension</Link>
+          <Link href="/history">History</Link>
+          <Link href="/chat">Deep Audit</Link>
+        </nav>
+        <nav className="jx-footer__col" aria-label="Project">
+          <span className="jx-label">Project</span>
+          <Link href="/developers">Developers</Link>
+          <Link href="/method">Method</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
         </nav>
       </div>
       <div className="jx-wrap jx-wrap--wide jx-footer__bottom">
-        <span className="jx-footer__tag">Every price leaves evidence.</span>
-        <span className="jx-footer__tag">© 2026 Jacobi · all rights reserved</span>
+        <span className="jx-footer__tag">Every saving leaves evidence.</span>
+        <span className="jx-footer__tag">Copyright 2026 Jacobi / MIT licensed core</span>
       </div>
     </footer>
   );

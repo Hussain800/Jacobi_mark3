@@ -55,6 +55,8 @@ export default function RouteChrome({ children }: { children: React.ReactNode })
     "/privacy",
     "/terms",
     "/about",
+    "/compare",
+    "/developers",
   ];
   const isDesign =
     pathname === "/" ||

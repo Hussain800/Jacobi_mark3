@@ -16,13 +16,13 @@ const schibsted = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "JACOBI — Price Integrity Intelligence",
+  title: "Jacobi - Verified price optimisation",
   description:
-    "JACOBI runs controlled synthetic-buyer audits to detect personalized-pricing exposure, MAP undercutting, and gray-market drift — and produces evidence-grade reports for compliance and brand-protection teams.",
+    "Jacobi finds the cheapest verified way to buy the exact product you are viewing, calculates the known all-in total, and preserves the evidence.",
   openGraph: {
-    title: "JACOBI — Price Integrity Intelligence",
+    title: "Jacobi - Find the exact same product for less",
     description:
-      "Controlled synthetic-buyer pricing audits. Evidence-grade price-integrity reports for compliance and brand-protection teams.",
+      "Exact-product matching, known all-in totals, evidence, REST, MCP, CLI, and an open-source Chrome side panel.",
     type: "website",
   },
 };

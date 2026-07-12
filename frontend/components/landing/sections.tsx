@@ -1,24 +1,9 @@
 "use client";
 
-/**
- * Landing sections.
- * Phase 3: hero + the bespoke globe (GlobeStage) + forensic instrument chrome
- * (measurement-gridline section markers + the hero instrument ticker). The
- * remaining artifacts (matrix / receipt / audit) are still placeholders until
- * Phase 4.
- */
-
+import Link from "next/link";
 import GlobeStage from "./GlobeStage";
-import ProbeInput from "./ProbeInput";
-import { SAMPLE } from "./data";
-import {
-  EvidenceReceipt as ReceiptDoc,
-  BuyerContextMatrix,
-  PriceDelta,
-  AuditReadout as AuditReadoutArtifact,
-} from "./artifacts";
+import { AuditReadout as AuditReadoutArtifact } from "./artifacts";
 
-/* forensic measurement-gridline section header (the anti-generic structural signal) */
 function SectionMarker({ id, name, meta }: { id: string; name: string; meta: string }) {
   return (
     <div className="jx-marker">
@@ -41,7 +26,6 @@ function SectionHead({ eyebrow, title, lede }: { eyebrow: string; title: string;
   );
 }
 
-/* ───────────────────────── HERO ───────────────────────── */
 export function Hero() {
   return (
     <header className="jx-hero">
@@ -53,56 +37,55 @@ export function Hero() {
           </div>
           <div className="jx-hero__grid">
             <div className="jx-hero__copy" data-reveal>
-              <span className="jx-eyebrow jx-hero__eyebrow"><span className="jx-tick" />Controlled synthetic-buyer audits</span>
-              <h1 className="jx-display jx-h1 jx-hero__title">See the price you were never meant to compare<span className="jx-hero__dot">.</span></h1>
+              <span className="jx-eyebrow jx-hero__eyebrow"><span className="jx-tick" />Exact-product price optimisation</span>
+              <h1 className="jx-display jx-h1 jx-hero__title">Find the exact same product for less<span className="jx-hero__dot">.</span></h1>
               <p className="jx-lede jx-hero__lede">
-                Paste a URL. Twenty-four synthetic buyers check it from every angle — geography,
-                device, cookies, referrer, language — and return evidence, with statistics and receipts.
+                Jacobi recognises the product already open in your browser, verifies equivalent
+                offers, calculates the known all-in total, and shows the cheapest legitimate route.
               </p>
               <div className="jx-hero__cta">
-                <ProbeInput cta="Run an audit" />
-                <p className="jx-probe__note">Public-web only · Sample audit completes in ~60 seconds</p>
+                <div className="jx-pivot-actions">
+                  <Link href="/extension" className="jx-pivot-primary">Load the extension</Link>
+                  <Link href="/compare" className="jx-pivot-secondary">Try the local demo</Link>
+                </div>
+                <p className="jx-probe__note">Open source / UAE electronics first / no paid provider required</p>
               </div>
             </div>
             <div className="jx-hero__stage"><GlobeStage /></div>
           </div>
         </div>
       </div>
-
-      {/* instrument ticker — fills the hero base with signal, not decoration */}
       <div className="jx-ticker">
         <div className="jx-wrap jx-wrap--wide jx-ticker__row">
           <span className="jx-ticker__dot" aria-hidden />
-          <span><span className="jx-ticker__k">sample audit</span>&nbsp;&nbsp;<span className="jx-ticker__v">{SAMPLE.target}</span></span>
-          <span><span className="jx-ticker__k">baseline</span>&nbsp;&nbsp;<span className="jx-ticker__v is-base">${SAMPLE.baseline}</span></span>
-          <span><span className="jx-ticker__k">highest</span>&nbsp;&nbsp;<span className="jx-ticker__v is-dev">${SAMPLE.highest}</span></span>
-          <span><span className="jx-ticker__k">spread</span>&nbsp;&nbsp;<span className="jx-ticker__v">+${SAMPLE.delta} · +{SAMPLE.deltaPct}%</span></span>
-          <span><span className="jx-ticker__k">driver</span>&nbsp;&nbsp;<span className="jx-ticker__v">location · 62%</span></span>
+          <span><span className="jx-ticker__k">deterministic demo</span>&nbsp;&nbsp;<span className="jx-ticker__v">Sony WH-1000XM6</span></span>
+          <span><span className="jx-ticker__k">current</span>&nbsp;&nbsp;<span className="jx-ticker__v is-dev">AED 1,699</span></span>
+          <span><span className="jx-ticker__k">verified route</span>&nbsp;&nbsp;<span className="jx-ticker__v is-base">AED 1,499</span></span>
+          <span><span className="jx-ticker__k">saving</span>&nbsp;&nbsp;<span className="jx-ticker__v">AED 200 / 11.8%</span></span>
+          <span><span className="jx-ticker__k">identity</span>&nbsp;&nbsp;<span className="jx-ticker__v">exact / evidence retained</span></span>
         </div>
       </div>
     </header>
   );
 }
 
-/* ───────────────────────── PROBLEM ───────────────────────── */
 export function Problem() {
   return (
     <>
-      <SectionMarker id="01" name="The problem" meta="same url · different price" />
+      <SectionMarker id="01" name="The problem" meta="cheap is not always equivalent" />
       <section className="jx-section">
         <div className="jx-wrap">
           <div className="jx-problem__grid" data-reveal>
-            <p className="jx-problem__statement">
-              Same URL.<br />Different buyer.<br /><span className="jx-soft">Different</span> price.
-            </p>
+            <p className="jx-problem__statement">Same title.<br />Wrong variant.<br /><span className="jx-soft">False</span> saving.</p>
             <div className="jx-problem__body">
               <p className="jx-lede">
-                Location, device, language, cookies, referrer, and session quietly
-                change what a server decides to charge. It is real, widespread, and —
-                done by hand — almost impossible to prove.
+                A lower listing can hide different storage, an imported warranty, a marketplace
+                seller, missing shipping, or refurbished condition. Jacobi rejects material mismatches first.
               </p>
-              <div style={{ marginTop: 28 }}>
-                <PriceDelta />
+              <div className="jx-route-proof">
+                <div><span>Current route</span><strong>AED 1,699</strong><small>new / UAE warranty</small></div>
+                <div className="is-best"><span>Verified route</span><strong>AED 1,499</strong><small>exact model / delivered</small></div>
+                <div className="is-rejected"><span>Rejected listing</span><strong>AED 1,399</strong><small>refurbished / 90-day warranty</small></div>
               </div>
             </div>
           </div>
@@ -112,28 +95,27 @@ export function Problem() {
   );
 }
 
-/* ───────────────────────── MECHANISM ───────────────────────── */
 export function Mechanism() {
+  const steps = [
+    ["01", "Read the active page", "JSON-LD and structured fields stay local by default."],
+    ["02", "Resolve exact identity", "Conflicts and unknowns remain visible."],
+    ["03", "Discover valid routes", "Browser-assisted, public, local, and official providers."],
+    ["04", "Calculate and rank", "Known all-in totals first; trade-offs stay separate."],
+  ];
   return (
     <div className="jx-sec jx-sec--raised">
-      <SectionMarker id="02" name="The mechanism" meta="∂price / ∂vector" />
+      <SectionMarker id="02" name="The mechanism" meta="identity -> total -> evidence" />
       <section className="jx-section">
         <div className="jx-wrap">
-          <SectionHead
-            eyebrow="Controlled experiment"
-            title="Vary one vector. Hold the rest constant."
-            lede="Jacobi changes a single buyer-context dimension at a time against a fixed baseline, so any price movement can be attributed — not guessed. The Jacobian isolates the driver."
-          />
+          <SectionHead eyebrow="Filter first" title="Verify the product before ranking the price." lede="Deterministic identifiers lead. Unknown shipping never becomes zero. Every excluded offer carries a field-level reason." />
           <div className="jx-feature" data-reveal>
             <div className="jx-feature__copy">
-              <p className="jx-body">
-                Six vectors — geography, device, browser language, cookies, referrer,
-                and session — are tested in controlled waves. Only differences that
-                clear a Welch t-test are reported as evidence.
-              </p>
+              <p className="jx-body">Jacobi resolves GTIN, MPN, model, storage, memory, generation, processor, region, condition, bundle, seller, and warranty before calculating a saving.</p>
             </div>
             <div className="jx-feature__art">
-              <BuyerContextMatrix />
+              <div className="jx-pivot-steps">
+                {steps.map(([n, h, p]) => <div key={n}><b>{n}</b><span><strong>{h}</strong><small>{p}</small></span></div>)}
+              </div>
             </div>
           </div>
         </div>
@@ -142,20 +124,25 @@ export function Mechanism() {
   );
 }
 
-/* ───────────────────────── EVIDENCE RECEIPT ───────────────────────── */
 export function EvidenceReceipt() {
+  const rows = [
+    ["Product", "Sony WH-1000XM6/B / GTIN 4548736158801"],
+    ["Current", "Amazon UAE / AED 1,699 / observed 12:04:18"],
+    ["Best", "Sony Store UAE / AED 1,499 delivered"],
+    ["Match", "EXACT_EQUIVALENT / 0.99"],
+    ["Limits", "Fixture demonstration - not a live retailer claim"],
+  ];
   return (
     <div className="jx-invert">
-      <SectionMarker id="03" name="The evidence" meta="receipts · hash-sealed" />
+      <SectionMarker id="03" name="The evidence" meta="offer observations / hash-sealed" />
       <section className="jx-section">
         <div className="jx-wrap">
-          <SectionHead
-            eyebrow="Raw evidence"
-            title="Receipts a regulator can read."
-            lede="Every probe stores the on-page price, native currency, request context, and timestamp — hash-sealed into one reproducible audit trail."
-          />
+          <SectionHead eyebrow="Inspectable by design" title="A saving you can verify." lede="Every result retains the source URL, timestamp, extraction method, identifiers, seller, availability, raw price, confidence, limitations, and immutable hashes." />
           <div className="jx-receipt-stage" data-reveal>
-            <ReceiptDoc />
+            <div className="jx-evidence-demo">
+              <div className="jx-evidence-demo__head"><span>Evidence manifest</span><code>man_7f4c...9a21</code></div>
+              {rows.map(([k, v]) => <div className="jx-evidence-demo__row" key={k}><span>{k}</span><strong>{v}</strong></div>)}
+            </div>
           </div>
         </div>
       </section>
@@ -163,18 +150,13 @@ export function EvidenceReceipt() {
   );
 }
 
-/* ───────────────────────── AUDIT READOUT ───────────────────────── */
 export function AuditReadout() {
   return (
     <div className="jx-sec jx-sec--deep">
-      <SectionMarker id="04" name="The verdict" meta="baseline → exposed" />
+      <SectionMarker id="04" name="Deep Audit" meta="optional / 60-100 seconds" />
       <section className="jx-section">
         <div className="jx-wrap jx-wrap--wide">
-          <SectionHead
-            eyebrow="At a glance"
-            title="The whole audit, in one readout."
-            lede="Baseline, highest observed, the delta, statistical confidence, and the dominant driver — resolved into a single readout you can hand off or export as an audit-ready report."
-          />
+          <SectionHead eyebrow="Original Jacobi, preserved" title="Investigate buyer-context pricing when you choose." lede="The synthetic shopper matrix, Welch tests, Jacobian sensitivity matrix, PEI attribution gate, and evidence report remain available as a voluntary advanced workflow - never on the normal comparison path." />
           <div data-reveal><AuditReadoutArtifact /></div>
         </div>
       </section>
@@ -182,58 +164,43 @@ export function AuditReadout() {
   );
 }
 
-/* ───────────────────────── DEFENSIBILITY ───────────────────────── */
 export function Defensibility() {
   const items: [string, string][] = [
-    ["Native-currency capture", "Prices recorded in the real on-page currency first, with a USD-normalized comparison alongside."],
-    ["Timestamped evidence", "Each observation is time-stamped and ordered, so any result can be reproduced and defended later."],
-    ["Real vs inferred, separated", "Directly observed agents are never mixed with inferred ones. Inferred values never appear as raw evidence."],
-    ["Controlled probe accounting", "Agent counts, network tiers, and blocked requests are reported in full — no silent gaps in the sample."],
-    ["Public-web only", "Jacobi reads exactly what any buyer could see. No logins, no private data, nothing behind a wall."],
-    ["Audit-ready export", "Summary, figures, and a complete evidence appendix, sealed into a research-grade PDF."],
+    ["Open comparison core", "Schemas, matching, cost calculation, ranking, fixtures, REST, MCP, CLI, and extension are inspectable."],
+    ["Identifier-first matching", "GTIN, MPN, model, configuration, region, condition, bundle, and warranty conflicts cannot be scored away."],
+    ["Honest total cost", "Known, estimated, unknown, and not-applicable costs stay distinct. Cashback never becomes an instant saving."],
+    ["Replaceable providers", "Browser context, direct HTTP, local Playwright, official APIs, and optional managed providers share one contract."],
+    ["Privacy by default", "No full browsing history, payment credentials, unrelated page collection, or default self-hosted telemetry."],
+    ["Deep Audit continuity", "The original mathematical engine remains tested and separate for researchers and advanced users."],
   ];
   return (
     <>
-      <SectionMarker id="05" name="Why it holds up" meta="public-web only" />
+      <SectionMarker id="05" name="Why it holds up" meta="open core / honest uncertainty" />
       <section className="jx-section">
         <div className="jx-wrap">
-          <SectionHead eyebrow="Defensibility" title="Built to be defended." />
+          <SectionHead eyebrow="Trust architecture" title="Built to be checked, changed, and self-hosted." />
           <div className="jx-ledger" data-reveal>
-            {items.map(([h, p], i) => (
-              <div className="jx-ledger__item" key={h}>
-                <span className="jx-ledger__n">{String(i + 1).padStart(2, "0")}</span>
-                <div>
-                  <h3>{h}</h3>
-                  <p>{p}</p>
-                </div>
-              </div>
-            ))}
+            {items.map(([h, p], i) => <div className="jx-ledger__item" key={h}><span className="jx-ledger__n">{String(i + 1).padStart(2, "0")}</span><div><h3>{h}</h3><p>{p}</p></div></div>)}
           </div>
-          <div className="jx-audience">
-            <span className="jx-label">Built for</span>
-            {["Compliance", "Pricing", "MAP & brand protection", "Market intelligence"].map((a, i, arr) => (
-              <span className="jx-audience__tag" key={a}>
-                {a}{i < arr.length - 1 ? <span className="jx-audience__sep">{"  /  "}</span> : null}
-              </span>
-            ))}
-          </div>
+          <div className="jx-audience"><span className="jx-label">Built for</span>{["UAE shoppers", "Developers", "Shopping agents", "Researchers"].map((a, i, arr) => <span className="jx-audience__tag" key={a}>{a}{i < arr.length - 1 ? <span className="jx-audience__sep">{"  /  "}</span> : null}</span>)}</div>
         </div>
       </section>
     </>
   );
 }
 
-/* ───────────────────────── FINAL CTA ───────────────────────── */
 export function FinalCTA() {
   return (
     <div className="jx-sec jx-sec--raised">
-      <SectionMarker id="06" name="Run an audit" meta="one url · ~60s" />
+      <SectionMarker id="06" name="Run Jacobi" meta="local / deterministic / open source" />
       <section className="jx-section jx-cta">
         <div className="jx-wrap jx-cta__inner" data-reveal>
-          <h2 className="jx-display jx-cta__title">Stop guessing. Start auditing.</h2>
-          <p className="jx-cta__sub">24 synthetic buyers · 6 context vectors · one URL</p>
-          <div className="jx-cta__form">
-            <ProbeInput cta="Run an audit" placeholder="paste a URL to run a pricing audit" />
+          <h2 className="jx-display jx-cta__title">See the exact saving before you buy.</h2>
+          <p className="jx-cta__sub">active page / verified identity / known all-in total</p>
+          <div className="jx-pivot-actions jx-pivot-actions--center">
+            <Link href="/extension" className="jx-pivot-primary">Extension setup</Link>
+            <Link href="/developers" className="jx-pivot-secondary">Developer quickstart</Link>
+            <Link href="/chat" className="jx-pivot-tertiary">Open Deep Audit</Link>
           </div>
         </div>
       </section>

@@ -41,7 +41,7 @@ export function DemoModeBanner() {
         ● Demo data
       </span>
       <span style={{ color: "var(--text-2)" }}>
-        Sample audit workspace for illustration. “Run audit” executes a real, live audit.
+        Advanced Deep Audit workspace. Seeded portfolio data is illustrative; price comparison lives in the browser side panel.
       </span>
     </div>
   );
@@ -50,12 +50,14 @@ export function DemoModeBanner() {
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 
 const TABS = [
+  { label: "Price optimizer", href: "/compare" },
   { label: "Overview", href: "/dashboard/overview" },
   { label: "Portfolio", href: "/dashboard/portfolio" },
   { label: "Findings", href: "/dashboard/findings" },
   { label: "Evidence", href: "/dashboard/evidence" },
   { label: "Run audit", href: "/dashboard/audits" },
   { label: "Provenance", href: "/dashboard/provenance" },
+  { label: "Providers", href: "/dashboard/providers" },
   { label: "Settings", href: "/dashboard/settings" },
 ];
 

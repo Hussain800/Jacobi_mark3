@@ -56,7 +56,6 @@ def deduplicate_urls(urls: Iterable[str]) -> list[str]:
         output.append(url)
     return output
 
-
 def _normal_text(value: object) -> str:
     return _SPACE_RE.sub(" ", str(value or "").strip().lower())
 
@@ -127,4 +126,3 @@ def deduplicate_offers(offers: Iterable[OfferObservation]) -> list[OfferObservat
         if semantic_key is not None:
             semantic_indexes[semantic_key] = existing_index
     return output
-

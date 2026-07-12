@@ -2,8 +2,8 @@
 
 Authoritative specification: [`PDR_OPEN_SOURCE_PRICE_OPTIMIZATION.md`](PDR_OPEN_SOURCE_PRICE_OPTIMIZATION.md) (SHA-256 `997B3536BF306765192...`, byte-identical to the copy supplied in `C:\Users\hussa\Downloads`).
 
-Branch: `pivot/price-optimization-mvp`  
-Recovered baseline: `3b024c4`  
+Branch: `pivot/price-optimization-mvp`
+Recovered baseline: `3b024c4`
 Last ledger audit: 2026-07-12
 
 ## Status contract

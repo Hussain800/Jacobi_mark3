@@ -76,4 +76,3 @@ def test_deduplicate_offers_collapses_tracking_and_repeated_seller_variant():
     assert stronger_tracking_duplicate in offers
     assert different_seller in offers
     assert different_variant in offers
-

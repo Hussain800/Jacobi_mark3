@@ -51,4 +51,3 @@ def test_benchmark_cli_emits_machine_readable_measured_output(monkeypatch, capsy
 def test_measure_rejects_invalid_sample_counts(kwargs):
     with pytest.raises(ValueError):
         measure("noop", lambda: None, **kwargs)
-

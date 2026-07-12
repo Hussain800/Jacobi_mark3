@@ -18,7 +18,7 @@ The credential was redacted from the current tree during this review. Rotation a
 |---|---|---|---|
 | SEC-PO-001 | High | MITIGATED_IN_TREE / EXTERNAL_ACTION_OPEN | A tracked Google API-key-shaped value was found in `JACOBI_HANDOFF.md` without an obvious placeholder marker. Commit `caafa55` redacts it and adds a repository secret regression test. Revoke/rotate the credential and assess Git history exposure before publication. The value is intentionally not reproduced here. |
 | SEC-PO-002 | Medium | OPEN | Comparison rate limiting is in-process and keyed by the directly observed client address. A multi-worker or multi-instance production service needs an upstream/shared limiter and a verified proxy trust configuration. |
-| SEC-PO-003 | Medium | ACCEPTED_FOR_LOCAL / OPEN_FOR_HOSTED | Anonymous comparisons use bearer-like access tokens, not authenticated ownership. Tokens are high entropy and stored only as hashes, but there is no expiry/revocation API. Add authenticated ownership and expiring/revocable capabilities before retaining sensitive hosted history. |
+| SEC-PO-003 | Medium | MITIGATED_WITH_RESIDUAL_RISK | Anonymous comparisons use bearer-like access tokens, not authenticated ownership. Tokens are high entropy, stored only as hashes, and expire with the result TTL. There is no early revocation API; add authenticated ownership/revocation before retaining sensitive long-lived hosted history. |
 | SEC-PO-004 | Medium | MITIGATED WITH RESIDUAL RISK | URL validation rejects non-HTTP schemes, credentials, localhost, metadata names, and non-public resolved addresses; redirects are revalidated. DNS rebinding between validation and connection remains possible because the client does not pin the validated address. Use a network egress policy or address-pinned resolver for high-risk deployments. |
 | SEC-PO-005 | Low | OPEN | Direct HTTP provider errors can include upstream text in internal error strings. The comparison service sanitizes public provider errors, but central structured logging/redaction and log-retention policy should be added before hosted operation. |
 | SEC-PO-006 | Low | OPEN | Evidence artifacts are file-count bounded, but production retention/deletion and per-tenant storage quotas are deployment policy rather than enforced centrally. Configure private storage, lifecycle rules, and deletion workflows. |
@@ -51,7 +51,7 @@ The credential was redacted from the current tree during this review. Rotation a
 ### API access and CORS
 
 - POST comparisons are rate limited and include request IDs.
-- Stored comparison reads and evidence reads require `X-Jacobi-Access-Token`; failures use not-found responses to reduce enumeration.
+- Stored comparison reads and evidence reads require an unguessable, hash-stored, TTL-expiring `X-Jacobi-Access-Token`; failures use not-found responses to reduce enumeration.
 - Agentcore custom URL verification can require `X-Api-Key` and scopes stored evidence by organization.
 - CORS defaults to the production web origin and localhost/Vercel previews; credentials are not enabled. Set an explicit production allowlist.
 

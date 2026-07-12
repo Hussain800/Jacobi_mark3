@@ -134,6 +134,26 @@ def test_protected_result_survives_process_cache_reset(client):
     assert response.json()["comparison_id"] == comparison_id
 
 
+def test_comparison_capability_expires_with_result_ttl(client):
+    body = client.post("/api/v1/compare", json=SONY_REQUEST).json()
+    comparison_id = body["comparison_id"]
+    record = service.repository.get_comparison(comparison_id)
+    payload = dict(record.payload)
+    payload["created_at"] = "2000-01-01T00:00:00+00:00"
+    service.repository.save_comparison(
+        comparison_id,
+        payload,
+        product_id=record.links.get("product_id"),
+        evidence_manifest_id=record.links.get("evidence_manifest_id"),
+    )
+    reset_results_for_tests()
+    response = client.get(
+        f"/api/v1/comparisons/{comparison_id}",
+        headers={"X-Jacobi-Access-Token": body["comparison_access_token"]},
+    )
+    assert response.status_code == 404
+
+
 def test_browser_submitted_offer_is_real_zero_cost_route(client):
     request = {
         "source_url": "https://shop.example/current",

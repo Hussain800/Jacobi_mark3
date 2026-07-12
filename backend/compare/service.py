@@ -17,7 +17,7 @@ import json
 import secrets
 import time
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -109,6 +109,11 @@ def verify_comparison_access(comparison_id: str, token: Optional[str]) -> bool:
         if record is not None:
             expected = record.payload.get("_access_token_sha256")
     if expected is None or not token:
+        return False
+    result = get_result(comparison_id)
+    if result is None or datetime.now(timezone.utc) >= (
+        result.created_at + timedelta(seconds=result.ttl_seconds)
+    ):
         return False
     actual = hashlib.sha256(token.encode("utf-8")).hexdigest()
     return secrets.compare_digest(expected, actual)

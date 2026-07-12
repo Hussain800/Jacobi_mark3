@@ -1,0 +1,138 @@
+# Jacobi Price Optimisation PDR Implementation Status
+
+Authoritative specification: [`PDR_OPEN_SOURCE_PRICE_OPTIMIZATION.md`](PDR_OPEN_SOURCE_PRICE_OPTIMIZATION.md) (SHA-256 `997B3536BF306765192...`, byte-identical to the copy supplied in `C:\Users\hussa\Downloads`).
+
+Branch: `pivot/price-optimization-mvp`  
+Recovered baseline: `3b024c4`  
+Last ledger audit: 2026-07-12
+
+## Status contract
+
+- `COMPLETE`: implementation, automated tests, fresh verification, and documentation agree.
+- `PARTIAL`: some repository implementation exists but one or more acceptance requirements are not satisfied.
+- `NOT_STARTED`: no substantive implementation exists on this branch.
+- `EXTERNALLY_BLOCKED`: repository-side preparation is complete; completion requires an external approval, credential, legal decision, partnership, or real-user result.
+- `NOT_APPLICABLE`: explicitly outside the PDR release or prohibited by the PDR.
+
+No row may be promoted to `COMPLETE` from source inspection alone. The verification column must identify a passing automated check or reproducible evidence.
+
+## Recovery and product decisions
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| Document control; Phase 0 | Preserve the existing repository and continue on `pivot/price-optimization-mvp` | COMPLETE | Git worktree at `jacobi-fix-travel-context` | `git status --short`; `git branch --show-current`; `git worktree list`; recovered clean at `3b024c4` | None |
+| Document control; Phase 0 | Commit the authoritative PDR | COMPLETE | `docs/PDR_OPEN_SOURCE_PRICE_OPTIMIZATION.md` | SHA-256 matches supplied download; 3,207 lines read in full | None |
+| Decision log 1-7 | Pivot the primary product to verified exact-product savings while preserving Deep Audit and Agentcore | PARTIAL | `backend/compare/`; `extension/`; legacy `backend/math_engine.py`, `backend/pricing_engine.py`, `backend/agentcore/` | Inherited compare and legacy tests exist; full quality gate pending | Web product and all secondary surfaces do not yet consistently express the pivot |
+| Product scope; non-goals | No autonomous purchase, credentials, CAPTCHA bypass, stealth evasion, or paid-provider dependency | PARTIAL | Policy boundaries in legacy Agentcore; fixture compare path | Security and paid-provider isolation tests pending | Legacy Bright Data/identity-context code remains and must be isolated from default comparison path |
+
+## Product identity, matching, cost, and optimisation
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| FR-1 | Detect supported product pages locally from structured data, metadata, price, and URL signals with safe unsupported behaviour | PARTIAL | `extension/product-context.js`; `extension/manifest.json` | Manual source inspection; browser fixtures/tests pending | Detection is price-presence based; precision, hostile JSON-LD, non-product, and <500 ms gates unverified |
+| FR-2 | Extract current offer fields locally and send normalised fields rather than full DOM | PARTIAL | `extension/product-context.js`; `backend/compare/schemas.py` | Extension contract/browser tests pending | Shipping detection is coarse; delivery, warranty, seller, provenance, and merchant selectors are incomplete |
+| FR-3; Domain model | Canonical identity: brand, family, model, MPN, GTIN/EAN/UPC, SKU, storage, memory, generation, processor, screen size, year, region, colour, condition, bundles, accessories, warranty region | PARTIAL | `backend/compare/identity.py`; `backend/compare/schemas.py` | `backend/tests/test_compare_engine.py` | Missing or incomplete family, SKU/aliases, generation, processor, year, bundles, accessories, condition/warranty identity fields |
+| FR-3; Extraction confidence | Field-level provenance, confidence decomposition, contradictions, aliases, and explicit unknowns | PARTIAL | `IdentityEvidence` in `backend/compare/schemas.py` | Existing identity unit tests | Evidence exists only for some fields; contradictions/aliases/explicit unknown records absent |
+| FR-3 | Deterministic identifier priority and no model-only high-confidence hallucination | COMPLETE | `backend/compare/identity.py` | `python -m pytest backend/tests/test_compare_engine.py` baseline result pending in this ledger | No LLM fallback implemented; acceptable for deterministic release |
+| Testing strategy: golden dataset | Version-controlled labelled dataset of at least 100 pairs across every required mismatch/trade-off class | NOT_STARTED | None | None | Must be created and used by automated tests |
+| FR-6 | Explicit classifications: `EXACT_EQUIVALENT`, `EQUIVALENT_WITH_DISCLOSED_TRADEOFF`, `SIMILAR_NOT_EQUIVALENT`, `REJECTED` | PARTIAL | `backend/compare/equivalence.py`; enum aliases currently `exact`, `exact_tradeoff`, `similar`, `mismatch` | Existing compare tests | Public contract names differ from requested names; field-level reason coverage is incomplete |
+| FR-6; Equivalence scoring | Hard-reject GTIN/MPN/model/storage/memory/region/connectivity conflicts; title similarity cannot override conflicts | COMPLETE | `backend/compare/equivalence.py` | Existing compare mismatch tests; 100-pair calibration pending | Must remain green against golden dataset |
+| FR-6 | Explain every compared field with matched, mismatched, unknown state and reason codes | PARTIAL | `EquivalenceResult` and `classify()` | Existing compare tests | Several required fields (bundle, accessory, generation, processor, warranty duration, marketplace seller traps) not evaluated |
+| FR-7 | Decimal-safe money arithmetic | COMPLETE | `Money` and `compute_payable()` in `backend/compare/` | Existing Decimal tests | None |
+| FR-7 | Each cost is known, estimated, unknown, or not applicable | PARTIAL | `PriceBreakdown` uses `None`, `total_complete`, `unknown_components` | Existing unknown-shipping tests | No per-component state enum; estimated and not-applicable cannot be represented explicitly |
+| FR-7 | Item, shipping, taxes, duties, marketplace fees, payment fees, FX, coupons, membership/student pricing, cashback separation, mandatory service costs | PARTIAL | `backend/compare/schemas.py`; `backend/compare/total_cost.py` | Existing total-cost tests | Payment/marketplace fee types, FX assumptions, eligibility, coupon state, cashback, membership/student pricing are incomplete |
+| FR-7; valid saving | Unknown costs never silently equal zero or drive a headline saving | COMPLETE | `compute_payable()`; `build_recommendation()` | Existing incomplete-total tests | Taxes/duties are treated N/A by domestic-MVP policy; explicit state still required |
+| FR-8 | Freshness, evidence tier, extraction source, stock freshness, TTL, and revalidation status | PARTIAL | `OfferObservation`; `OFFER_TTL_SECONDS`; manifest attempts | Existing stale-offer tests | Stock freshness and revalidation status/API absent; one global TTL only |
+| FR-9; methodology | Filter-first ranking, complete totals first, deterministic exclusions | PARTIAL | `backend/compare/ranking.py` | Existing ranking tests | Preference modes and several quality dimensions are not represented |
+| FR-9 | Rank by payable total plus equivalence, completeness, seller legitimacy, condition, warranty, delivery, returns, availability, freshness, eligibility, legality, evidence quality | PARTIAL | `rank()` | Existing ranking tests | Tie-breaker currently uses only equivalence and extraction confidence after total completeness/price |
+| FR-10 | Explain every excluded offer and expose current/best/eligible/trade-off/similar/rejected offers | PARTIAL | `CandidateResult`; `OptimizationResult`; side panel rendering | Existing API tests | Exclusions are reason-code lists without a complete human field-by-field trace |
+
+## Providers, discovery, UAE support, and performance
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| FR-4/FR-5 | Capability-aware plugin interface for current-page, structured metadata, direct HTTP, browser-assisted, local Playwright, merchant search, official API, optional managed provider | PARTIAL | `backend/compare/adapters/base.py`; legacy `backend/agentcore/providers.py`, `playwright_provider.py` | Provider isolation tests exist | Compare registry only registers fixture merchant adapters; legacy provider interfaces are not unified with compare |
+| FR-5 | Provider metadata: domains, capabilities, cost, evidence tier, timeouts, retries, limitations, rate limits, health, extraction fields | PARTIAL | `MerchantAdapter` class attributes; `/api/v1/compare/health` | Existing compare API tests | Retries, rate limits, health state, detailed capabilities/extraction fields absent |
+| Reliability | Provider failures and timeouts are isolated and honest partial results returned | COMPLETE | `_search_one()` and `ComparisonService.compare()` | `backend/tests/test_compare_engine.py`, `test_compare_api.py` | Overall deadline/cancellation still required |
+| UAE support | Fixture support for Amazon UAE, Noon, Sharaf DG, and Sony UAE is labelled as fixture | COMPLETE | `backend/compare/fixtures/`; `fixture_store.py`; side-panel `demo fixtures` tag | Fixture adapter tests | Not live retailer support |
+| UAE support | Practical Jumbo and official manufacturer fixture coverage | PARTIAL | Sony fixture only; Jumbo domain in extension | No Jumbo adapter fixture/test | Must not claim unsupported live coverage |
+| UAE support | At least one genuine zero-cost live provider path | NOT_STARTED | Legacy local Playwright can fetch an explicit URL but is not integrated with compare discovery | None | Must implement lawful public/direct or browser-submitted live path without CAPTCHA/stealth |
+| Offer discovery | Exact identifiers, merchant/official search, browser-assisted results, submitted URLs, open tabs, public catalog lookups | NOT_STARTED | Current fixture catalog search only | None | Requires provider orchestration and request contracts |
+| Offer discovery | Deduplicate tracking URLs, sellers, and repeated variants | NOT_STARTED | URL tracking stripping exists only in extension current page | None | Backend candidate deduplication absent |
+| Performance | Bounded concurrency, overall deadline, progressive partial output, caching, cancellation, deduplication | PARTIAL | Async fan-out with per-adapter timeout | Provider isolation tests | No overall deadline, progressive/status jobs, cache, cancellation, or discovery dedupe |
+| Performance | Benchmark actual identity/comparison/provider performance honestly | NOT_STARTED | None | None | Requires benchmark harness and recorded results |
+
+## Extension and web product
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| Browser extension | Manifest V3 side panel with minimal permissions and scoped merchant access | PARTIAL | `extension/manifest.json`; `background.js` | Manifest inspection | Supported domains are mandatory content-script matches rather than optional host permissions; contextMenus remains |
+| Browser extension | Current-tab JSON-LD, metadata, DOM/merchant extraction and identity preview | PARTIAL | `product-context.js`; `sidepanel/app.js` | Browser tests pending | Generic DOM/merchant selectors and richer identity preview incomplete |
+| Side-panel states | Detection, search/progress, saving, no-saving, trade-off, uncertainty, unsupported, backend unavailable, partial failure | PARTIAL | `extension/sidepanel/app.js` | Browser tests pending | Partial-failure state is only evidence detail; progress is not provider-progressive |
+| Browser extension | Evidence details, open cheaper route, voluntary Deep Audit, settings, self-hosted backend, privacy explanation | PARTIAL | side panel; `settings.html/js`; `background.js` | Browser tests pending | Privacy disclosure not in panel; evidence cannot be opened; settings schema is inconsistent across legacy/new UI |
+| Browser extension | Compare submitted URLs and user-opened comparison tabs | NOT_STARTED | None | None | Required browser-assisted fallback where server collection is blocked |
+| Browser extension | Playwright/Chromium unpacked-extension test and screenshot artifacts | NOT_STARTED | None | None | Must add deterministic CI-safe extension harness/artifacts |
+| Web application redesign | Homepage/metadata/navigation/onboarding/dashboard/history/results/settings/evidence/providers reflect verified exact-price pivot | NOT_STARTED | Existing web app remains primarily audit/enterprise oriented | Frontend build baseline pending | Requires careful preservation of legacy Deep Audit routes |
+| Web application redesign | Deep Audit retained as advanced, voluntary experience | PARTIAL | `/chat`; extension context-menu/footer entry; legacy backend | Legacy tests | Web navigation/positioning not yet updated |
+
+## API, persistence, evidence, MCP, and CLI
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| API requirements | Versioned identification endpoint | NOT_STARTED | Identity logic exists only inside compare | None | Add typed route and contract tests |
+| API requirements | Discovery/submitted-offer endpoint | NOT_STARTED | Fixture discovery internal only | None | Add typed routes and provider orchestration |
+| API requirements | Comparison and comparison status endpoints | PARTIAL | `POST /api/v1/compare`; `GET /api/v1/comparisons/{id}` | `test_compare_api.py` | Status is in-memory final-only; no asynchronous/progressive semantics |
+| API requirements | Optimisation endpoint/explanation | PARTIAL | Comparison currently includes ranking/recommendation | Compare tests | No independently callable typed optimisation/explanation API |
+| API requirements | Evidence endpoint | PARTIAL | Existing `/api/v1/agent/manifests/{id}` | Agentcore tests | New canonical `/api/v1/evidence/{id}` and comparison authorization contract absent |
+| API requirements | Provider health and capability endpoints | PARTIAL | `GET /api/v1/compare/health` | Compare API test | Health is static metadata; no real health/retry/rate-limit status |
+| API requirements | Deep Audit versioned endpoint | PARTIAL | Legacy probe/chat APIs | Legacy tests | No `/api/v1/comparisons/{id}/deep-audit` compatibility route |
+| API behaviour | Typed validation/errors, request IDs, timeouts, partial results, rate limiting, OpenAPI descriptions | PARTIAL | FastAPI/Pydantic; compare per-IP limit | API tests | Missing request IDs, overall timeout, structured shared error model, endpoint descriptions |
+| API architecture | Business logic outside `backend/main.py` | COMPLETE | `backend/compare/api.py`, `service.py`, engines | Import/API tests | Legacy business logic remains in main but new compare logic is modular |
+| Persistence | Repository-backed development persistence for products, offers, comparisons, evidence, watches, preferences | NOT_STARTED | Compare uses bounded process-memory `_RESULTS`; Agentcore has separate repository | None | Implement explicit development repository |
+| Persistence | Supabase production persistence, safe migration, RLS/access boundaries | NOT_STARTED | No price-optimisation migration | None | Must fail closed when production storage is requested but misconfigured |
+| Agentcore/evidence | Reuse immutable EvidenceManifest with source URL, timestamp, method, raw price, identifiers, seller, availability, tier, confidence, limitations, hashes | PARTIAL | `backend/compare/service.py`; `backend/agentcore/evidence.py` | Agentcore/compare tests | Manifest comparison context/ranking trace and several offer fields are missing |
+| Agentcore/evidence | OptimizationEnvelope or compatible DecisionEnvelope extension | NOT_STARTED | `OptimizationResult` exists but is not an Agentcore envelope | None | Add shared schema/bridge and tests |
+| MCP | Nine requested comparison/evidence/deep-audit tools reuse the same core services | NOT_STARTED | Existing Agentcore MCP only | Agentcore MCP tests | Add tools, schemas, docs, contract tests |
+| CLI | `jacobi identify/compare/optimize/providers/health/audit` with human and JSON output | NOT_STARTED | None | None | Add package entry point and tests |
+
+## Open source, security, observability, and deployment
+
+| PDR section | Requirement | Status | Implementation files | Tests / verification | Limitation or external blocker |
+|---|---|---|---|---|---|
+| Open-source strategy | README promise, architecture, local/extension setup, provider plugin guide, MCP/CLI/deploy guides, fixture guide, roadmap, limitations, demo | PARTIAL | `README.md`; existing docs | Documentation audit pending | README remains dominated by legacy product; many requested guides absent |
+| Open-source strategy | CONTRIBUTING, SECURITY, privacy, code of conduct, issue templates, PR template, adapter template | NOT_STARTED | Privacy page exists in frontend only | None | Repository-level contribution/governance templates absent |
+| Open-source strategy | Archive obsolete docs without deleting useful history | PARTIAL | Legacy docs preserved | Git history/source inspection | No explicit archive/index separating current from historical docs |
+| Security/privacy | SSRF, redirects/private IPs, URL validation, hostile JSON-LD/HTML, message validation, CORS, secrets/API keys, storage/evidence access, rate limits, timeouts, limits, sanitisation, telemetry, paid-provider isolation | PARTIAL | Existing `backend/url_guard.py`, Agentcore policy/auth, compare rate limit | Legacy security tests | New comparison/provider/extension threat surface lacks complete tests and review |
+| Security/privacy | Create `docs/SECURITY_REVIEW_PRICE_OPTIMIZATION.md` | NOT_STARTED | None | None | Must contain evidence-backed findings and residual risks |
+| Bright Data default | Normal comparison never automatically calls Bright Data or any paid provider; optional path disabled by default | PARTIAL | Compare registry currently fixture-only and zero-cost | Need explicit regression test/config audit | No compare managed-provider plugin yet; must prove future optional adapter remains opt-in |
+| Observability | Optional privacy-conscious metrics for identity, providers, partial failures, saving/no-saving, open action, latency, mismatch feedback | NOT_STARTED | Legacy Sentry/metrics unrelated to compare | None | Telemetry must default disabled in self-hosted mode |
+| Validation | Repository infrastructure for false/wrong-match feedback and real-user study | NOT_STARTED | None | None | Actual user-study outcomes will remain external after infrastructure exists |
+| Deployment | Docker/env/health/Render/Vercel/extension production/Supabase/optional Playwright/CORS/startup checks; no Bright Data requirement | PARTIAL | Root `Dockerfile`; env examples; Vercel configs | Build/boot checks pending | Price-optimisation settings and fail-closed persistence startup checks absent |
+| Chrome Web Store | Package/submission preparation with single-purpose and privacy disclosures | NOT_STARTED | Manifest single-purpose text partially updated | None | Final approval is `EXTERNALLY_BLOCKED` only after repository package is complete |
+| Retailer/legal approvals | Policy records and integration interfaces for retailer-specific live support | NOT_STARTED | Legacy Agentcore policy registry only | None | Partnership/legal approval may later be `EXTERNALLY_BLOCKED`; repository work is still required |
+| Real-user metrics | Validate release thresholds on real pages/users | NOT_STARTED | None | None | After instrumentation and test protocol exist, actual results are externally blocked |
+
+## Phase ledger
+
+| Phase | Requirement | Status | Evidence | Remaining work |
+|---|---|---|---|---|
+| Phase 0 | PDR, branch, schemas, fixture merchants/API, side-panel fixture result | COMPLETE | Commits `f5ecbc6..3b024c4`; inherited compare tests | Baseline gates must remain green |
+| Phase 1 | Exact identity spine, first live adapter, 30 labelled pairs, core UI states | PARTIAL | Deterministic identity/equivalence and fixture side panel exist | Rich identity, live adapter, dataset, extension tests |
+| Phase 2 | 3-5 live merchants, persistence, evidence, telemetry, <10 s comparison | NOT_STARTED | Fixture fan-out only | Live/browser-assisted providers, persistence, telemetry, benchmarks |
+| Phase 3 | 100-pair benchmark, CLI, MCP tools, adapter SDK, screenshots, privacy/open-source release candidate | NOT_STARTED | None | Full implementation and gates |
+| Phase 4 | Public beta infrastructure, watches, feedback/version workflow, health dashboard | NOT_STARTED | Legacy watchlist infrastructure is not wired to compare | Repository preparation; Web Store/GitHub launch and real metrics external |
+| Phase 5 | Warranty/payment/official-store framework, Deep Audit side-panel entry, remote MCP/community adapters | PARTIAL | Deep Audit entry exists | Remaining modules and documented interfaces |
+| Phase 6 | Category expansion selected from evidence | NOT_APPLICABLE | PDR places this after validation | No category expansion before UAE electronics release evidence |
+
+## Verification log
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-07-12 | `git status --short` | Clean at recovered baseline |
+| 2026-07-12 | `git branch --show-current` | `pivot/price-optimization-mvp` |
+| 2026-07-12 | `git log --oneline --decorate -30` | Ten local pivot commits recovered through `3b024c4` |
+| 2026-07-12 | `git diff --check main...HEAD` | Only inherited trailing-space warnings in four older Markdown files; no pivot-source whitespace errors identified |
+
+## Completion rule
+
+Final completion requires every row above to be `COMPLETE`, `EXTERNALLY_BLOCKED`, or `NOT_APPLICABLE`, with no `PARTIAL` or `NOT_STARTED` entries. External statuses may be used only after all repository-side interfaces, fixtures, configuration, tests, documentation, and runbooks needed for later completion exist.

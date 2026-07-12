@@ -98,6 +98,6 @@ Migration `supabase/migrations/202607120001_price_optimization_persistence.sql` 
 
 ## Deployment topology
 
-The repository currently supports a single FastAPI container, a separately built Next.js frontend, Supabase, and the unpacked extension. Redis, a durable job queue, production merchant search integrations, Chrome Web Store distribution, and managed-provider adapters are not present.
+The repository currently supports a single FastAPI container and Render Blueprint, a separately built Next.js/Vercel frontend, Supabase, and the unpacked/packaged extension. Redis, a durable job queue, production merchant search integrations, Chrome Web Store approval, and managed-provider adapters are not present.
 
 See [deployment](DEPLOYMENT_PRICE_OPTIMIZATION.md), [security review](SECURITY_REVIEW_PRICE_OPTIMIZATION.md), and [limitations](LIMITATIONS_PRICE_OPTIMIZATION.md).

@@ -9,7 +9,7 @@ Deployment of the comparison path does not require Bright Data or another paid c
 - Supabase when durable production persistence is selected.
 - Manifest V3 extension configured for the deployed backend and web origin.
 
-There is no committed Render blueprint, Docker Compose file, Redis queue, or production merchant-search service. Configure those explicitly rather than assuming they exist.
+`render.yaml` provides a free-plan Docker Blueprint for the API with the comparison health check and zero-cost defaults. There is no Docker Compose file, Redis queue, or production merchant-search service; configure those explicitly rather than assuming they exist.
 
 ## Backend container
 
@@ -63,9 +63,20 @@ JACOBI_ARTIFACT_MAX_FILES=500
 JACOBI_HTTP_MAX_BYTES=2097152
 SENTRY_DSN=                 # blank disables telemetry
 SENTRY_TRACES_SAMPLE_RATE=0
+JACOBI_COMPARE_TELEMETRY_ENABLED=false
 ```
 
 Sentry is opt-in. The backend removes request headers, cookies, bodies, and query strings and disables default PII before sending events.
+
+## Render Blueprint
+
+The committed Blueprint deploys the root Dockerfile and prompts for `ALLOWED_ORIGINS`. Validate it when the Render CLI is installed:
+
+```powershell
+render blueprints validate
+```
+
+The local verification environment did not include the Render CLI, so the Blueprint received YAML/static schema checks only. Durable Supabase storage remains an explicit environment change described above.
 
 ## Bright Data isolation
 

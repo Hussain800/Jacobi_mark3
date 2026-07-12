@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: jacobi-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/compare/health
+    autoDeploy: true
+    envVars:
+      - key: JACOBI_COMPARE_STORAGE
+        value: memory
+      - key: JACOBI_COMPARE_TELEMETRY_ENABLED
+        value: "false"
+      - key: JACOBI_ENABLE_PLAYWRIGHT
+        value: "0"
+      - key: ALLOWED_ORIGINS
+        sync: false

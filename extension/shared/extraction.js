@@ -228,8 +228,7 @@
     currentOffer.condition = f.condition || "unknown";
     currentOffer.stock = f.stock || "unknown";
     if (f.shipping && f.shipping.currency) currentOffer.shipping = f.shipping;
-    return {
-      context: {
+    const context = {
         source_url: sourceUrl,
         market: "AE",
         current_offer: currentOffer,
@@ -240,7 +239,16 @@
           extracted_at: (now || new Date()).toISOString(),
           limitations: ["Browser-observed fields are not independently fetched by the backend", "Checkout-only costs may remain unknown"],
         },
-      },
+      };
+    const localDemo = /^(localhost|127\.0\.0\.1)$/.test(String(locationLike.hostname || "").toLowerCase()) &&
+      /(?:fixture-product|sony-wh-1000xm6)/i.test(String(locationLike.href || ""));
+    if (localDemo) {
+      context.include_fixture_offers = true;
+      context.page_evidence.fixture_demo = true;
+      context.page_evidence.limitations.push("Local deterministic demo explicitly enabled retailer fixtures");
+    }
+    return {
+      context: context,
       preview: f,
       reason: null,
     };

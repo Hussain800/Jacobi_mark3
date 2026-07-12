@@ -34,6 +34,8 @@ python -m http.server 4173
 
 Then open `http://127.0.0.1:4173/fixture-product.html`.
 
+The extractor recognizes only this named localhost fixture (and the repository's named Sony demo page) as a deterministic demo and explicitly sends `include_fixture_offers=true`. Normal retailer pages never enable fixtures automatically, and the result remains labelled `fixture_mode=true`.
+
 ## Automated artifact
 
 ```powershell

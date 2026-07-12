@@ -85,7 +85,7 @@ python -m pytest tests/test_url_guard.py tests/test_agentcore_http_security.py \
 84 passed, 1 warning
 
 node --test extension/tests/*.test.js
-13 passed
+14 passed
 
 python -m pytest tests/test_repository_secrets.py -q
 1 passed, 1 warning

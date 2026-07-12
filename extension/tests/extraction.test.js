@@ -70,3 +70,21 @@ test("local product detection remains comfortably below the 500ms budget", funct
   const averageMs = (performance.now() - started) / 100;
   assert.ok(averageMs < 500, `average extraction ${averageMs.toFixed(3)}ms exceeded budget`);
 });
+
+test("only the named localhost demo pages explicitly enable retailer fixtures", function () {
+  const json = JSON.stringify({
+    "@type": "Product", name: "Sony WH-1000XM6", mpn: "WH-1000XM6/B",
+    offers: { "@type": "Offer", price: "1699", priceCurrency: "AED" },
+  });
+  const demo = extraction.buildContext(
+    documentFixture(json),
+    { href: "http://127.0.0.1:4173/fixture-product.html", hostname: "127.0.0.1" },
+  );
+  const normal = extraction.buildContext(
+    documentFixture(json),
+    { href: "https://shop.example/fixture-product.html", hostname: "shop.example" },
+  );
+  assert.equal(demo.context.include_fixture_offers, true);
+  assert.equal(demo.context.page_evidence.fixture_demo, true);
+  assert.equal(normal.context.include_fixture_offers, undefined);
+});

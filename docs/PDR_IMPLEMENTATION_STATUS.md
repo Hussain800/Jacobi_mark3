@@ -139,7 +139,7 @@ No row may be promoted to `COMPLETE` from source inspection alone. The verificat
 | 2026-07-12 | `frontend/node_modules/.bin/tsc --noEmit --incremental false` | PASS |
 | 2026-07-12 | `cd frontend; npm run build` | Next.js 16.2.9 production build PASS; 27 routes generated |
 | 2026-07-12 | Backend import/TestClient/OpenAPI smoke | `/health` and compare health 200; mandatory cost 0; paid providers default false; OpenAPI contains 60 paths |
-| 2026-07-12 | Extension syntax + Node + Chromium + package | 13 Node tests PASS; unpacked Chromium v0.5.0 PASS; screenshot refreshed; package contains 18 runtime files and no tests/artifacts |
+| 2026-07-12 | Extension syntax + Node + Chromium + package | 14 Node tests PASS; unpacked Chromium v0.5.0 PASS; screenshot refreshed; package contains 18 runtime files and no tests/artifacts |
 | 2026-07-12 | Documentation/YAML/link checks | 33 Markdown files resolve; Render and five issue-template YAML files parse |
 | 2026-07-12 | Current-tree secret scan; `test_repository_secrets.py` | PASS; known credential is redacted in current tree and already existed on `origin/main`; rotation/history assessment remains external |
 | 2026-07-12 | `git diff --check origin/main...HEAD` | PASS |

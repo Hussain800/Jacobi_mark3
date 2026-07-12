@@ -1,0 +1,36 @@
+{
+  "reviewed_at": "2026-07-12",
+  "default": {
+    "server_search": "disabled_pending_policy_review",
+    "browser_assisted": "explicit_user_action",
+    "direct_http": "explicit_public_structured_metadata_only",
+    "captcha_or_stealth": "prohibited"
+  },
+  "retailers": {
+    "amazon.ae": {
+      "support": ["current_page", "user_opened_tabs", "fixture"],
+      "independent_live_support": false,
+      "limitation": "No autonomous search or CAPTCHA handling; retailer approval not established"
+    },
+    "noon.com": {
+      "support": ["current_page", "user_opened_tabs", "fixture"],
+      "independent_live_support": false,
+      "limitation": "No autonomous search or CAPTCHA handling; retailer approval not established"
+    },
+    "sharafdg.com": {
+      "support": ["current_page", "user_opened_tabs", "fixture"],
+      "independent_live_support": false,
+      "limitation": "Browser-observed fields only until public automation policy is approved"
+    },
+    "jumbo.ae": {
+      "support": ["current_page", "user_opened_tabs", "fixture"],
+      "independent_live_support": false,
+      "limitation": "Browser-observed fields only until public automation policy is approved"
+    },
+    "sony-mea.com": {
+      "support": ["current_page", "user_opened_tabs", "fixture"],
+      "independent_live_support": false,
+      "limitation": "Official-store fixture does not prove current inventory or API access"
+    }
+  }
+}

@@ -119,6 +119,18 @@ class RouteLegality(str, Enum):
     unknown = "unknown"
 
 
+class RevalidationStatus(str, Enum):
+    fresh = "fresh"
+    needs_revalidation = "needs_revalidation"
+    not_supported = "not_supported"
+
+
+class FeedbackEvent(str, Enum):
+    alternative_opened = "alternative_opened"
+    false_match_report = "false_match_report"
+    wrong_match_feedback = "wrong_match_feedback"
+
+
 class CostState(str, Enum):
     known = "known"
     estimated = "estimated"
@@ -305,6 +317,9 @@ class OfferObservation(BaseModel):
     merchant_name: str = ""
     source_url: str = ""
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    stock_observed_at: Optional[datetime] = None
+    ttl_seconds: int = Field(default=OFFER_TTL_SECONDS, ge=30, le=86_400)
+    revalidation_status: RevalidationStatus = RevalidationStatus.fresh
     product: ProductIdentity = Field(default_factory=ProductIdentity)
     seller: Seller = Field(default_factory=Seller)
     price: PriceBreakdown
@@ -584,3 +599,14 @@ class DeepAuditResult(BaseModel):
     status: str
     automatic_paid_provider_calls: bool = False
     result: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FeedbackRequest(BaseModel):
+    comparison_id: str = Field(min_length=5, max_length=100)
+    event: FeedbackEvent
+    offer_observation_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class FeedbackResult(BaseModel):
+    accepted: bool = True
+    event_id: str

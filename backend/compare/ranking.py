@@ -23,11 +23,11 @@ from .schemas import (
     EquivalenceClass,
     EquivalenceResult,
     Money,
-    OFFER_TTL_SECONDS,
     OfferObservation,
     PreferenceMode,
     ReasonCode,
     Recommendation,
+    RevalidationStatus,
     RouteLegality,
     Savings,
     SellerType,
@@ -41,7 +41,16 @@ def _is_stale(offer: OfferObservation, now: datetime) -> bool:
     if observed_at.tzinfo is None:
         observed_at = observed_at.replace(tzinfo=timezone.utc)
     age = (now - observed_at).total_seconds()
-    return age > OFFER_TTL_SECONDS
+    return age > offer.ttl_seconds
+
+
+def _stock_is_stale(offer: OfferObservation, now: datetime) -> bool:
+    if offer.stock == StockStatus.unknown:
+        return False
+    observed_at = offer.stock_observed_at or offer.observed_at
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=timezone.utc)
+    return (now - observed_at).total_seconds() > offer.ttl_seconds
 
 
 def _fmt(m: Money) -> str:
@@ -55,6 +64,7 @@ _EXCLUSION_EXPLANATIONS = {
     ReasonCode.CURRENCY_UNSUPPORTED: "The offer uses a currency that was not safely converted.",
     ReasonCode.OUT_OF_STOCK: "The offer is explicitly out of stock.",
     ReasonCode.OFFER_STALE: "The observed price is older than Jacobi's freshness window.",
+    ReasonCode.STOCK_UNCONFIRMED: "Availability was not observed within Jacobi's freshness window.",
     ReasonCode.ROUTE_NOT_LEGAL: "The purchase route is blocked by route-legality policy.",
     ReasonCode.USER_NOT_ELIGIBLE: "The current user is not eligible for this route.",
     ReasonCode.SELLER_LEGITIMACY_LOW: "The seller was explicitly marked as not legitimate.",
@@ -239,6 +249,10 @@ def rank(
             exclusion.append(ReasonCode.OUT_OF_STOCK)
         if _is_stale(offer, now):
             exclusion.append(ReasonCode.OFFER_STALE)
+            offer.revalidation_status = RevalidationStatus.needs_revalidation
+        if _stock_is_stale(offer, now):
+            exclusion.append(ReasonCode.STOCK_UNCONFIRMED)
+            offer.revalidation_status = RevalidationStatus.needs_revalidation
 
         if offer.route_legality == RouteLegality.blocked:
             exclusion.append(ReasonCode.ROUTE_NOT_LEGAL)

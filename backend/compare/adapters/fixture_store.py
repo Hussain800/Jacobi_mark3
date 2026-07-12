@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -38,6 +39,12 @@ from .base import (
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 _FIXTURE_LIMITATION = "Deterministic development fixture — not a live retailer offer"
+
+
+@lru_cache(maxsize=32)
+def _read_fixture(path: str) -> List[Dict[str, Any]]:
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return raw.get("offers", [])
 
 
 def _money(v: Any, currency: str) -> Money | None:
@@ -72,8 +79,7 @@ class FixtureMerchantAdapter(MerchantAdapter):
         self._catalog_file = catalog_file
 
     def _catalog(self) -> List[Dict[str, Any]]:
-        raw = json.loads(self._catalog_file.read_text(encoding="utf-8"))
-        return raw.get("offers", [])
+        return _read_fixture(str(self._catalog_file))
 
     def _matches(self, product: ProductIdentity, rec: Dict[str, Any]) -> bool:
         """Loose recall filter; precision is the equivalence engine's job."""
@@ -146,4 +152,6 @@ def default_fixture_adapters() -> List[FixtureMerchantAdapter]:
             "sharafdg", "Sharaf DG", ["sharafdg.com"], FIXTURE_DIR / "sharafdg.json"),
         FixtureMerchantAdapter(
             "sony_ae", "Sony Store UAE", ["sony-mea.com"], FIXTURE_DIR / "sony_ae.json"),
+        FixtureMerchantAdapter(
+            "jumbo_ae", "Jumbo Electronics UAE", ["jumbo.ae"], FIXTURE_DIR / "jumbo_ae.json"),
     ]

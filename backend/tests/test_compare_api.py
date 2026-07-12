@@ -23,7 +23,7 @@ from compare.schemas import (
     Money,
     ReasonCode,
 )
-from compare.service import ComparisonService, get_result, reset_results_for_tests
+from compare.service import ComparisonService, get_result, reset_results_for_tests, service
 
 
 SONY_REQUEST = {
@@ -295,6 +295,25 @@ def test_deep_audit_route_is_explicit_and_fixture_safe(client):
     body = allowed.json()
     assert body["automatic_paid_provider_calls"] is False
     assert body["result"]["fixture_mode"] is True
+
+
+def test_feedback_is_optional_token_scoped_and_url_free(client):
+    comparison = client.post("/api/v1/compare", json=SONY_REQUEST).json()
+    payload = {
+        "comparison_id": comparison["comparison_id"],
+        "event": "wrong_match_feedback",
+        "offer_observation_id": comparison["best_offer"]["observation_id"],
+    }
+    assert client.post("/api/v1/feedback", json=payload).status_code == 404
+    accepted = client.post(
+        "/api/v1/feedback",
+        json=payload,
+        headers={"X-Jacobi-Access-Token": comparison["comparison_access_token"]},
+    )
+    assert accepted.status_code == 200
+    events = service.repository.list_events(comparison["comparison_id"])
+    assert events[-1].payload["event"] == "wrong_match_feedback"
+    assert "source_url" not in events[-1].payload
 
 
 def test_untrusted_structured_inputs_are_bounded(client):

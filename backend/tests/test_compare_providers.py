@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
@@ -54,6 +55,29 @@ def test_provider_kind_contract_covers_every_pdr_plugin_kind():
 
 
 def test_default_registry_is_fixture_only_and_honestly_described():
+    reset_registry_for_tests()
+
+
+def test_uae_fixture_and_policy_matrix_is_complete_without_live_claims():
+    reset_registry_for_tests()
+    adapters = {adapter.merchant_id: adapter for adapter in get_adapters()}
+    assert {"amazon_ae", "noon_ae", "sharafdg", "jumbo_ae", "sony_ae"} <= set(adapters)
+    offers = asyncio.run(adapters["jumbo_ae"].search_offers(
+        ProductIdentity(
+            brand="Sony",
+            model="WH-1000XM6",
+            mpn="WH-1000XM6/B",
+            gtins=["4548736158801"],
+        ),
+        "AE",
+    ))
+    assert offers and all(offer.fixture for offer in offers)
+
+    policy_path = Path(__file__).resolve().parents[1] / "compare" / "provider_policies.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    assert policy["default"]["captcha_or_stealth"] == "prohibited"
+    assert {"amazon.ae", "noon.com", "sharafdg.com", "jumbo.ae", "sony-mea.com"} <= set(policy["retailers"])
+    assert not any(item["independent_live_support"] for item in policy["retailers"].values())
     reset_registry_for_tests()
     descriptions = [adapter.describe() for adapter in get_adapters()]
     assert descriptions

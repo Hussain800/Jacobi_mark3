@@ -6,6 +6,7 @@ import os
 import time
 import uuid
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -23,12 +24,16 @@ from .schemas import (
     DeepAuditRequest,
     DeepAuditResult,
     DiscoveryResult,
+    FeedbackEvent,
+    FeedbackRequest,
+    FeedbackResult,
     IdentifyProductRequest,
     OptimizationResult,
     ProductIdentity,
     ProviderCapabilitiesResult,
     ProviderHealthResult,
 )
+from .telemetry import MetricEvent
 from .service import (
     get_comparison_manifest,
     get_result,
@@ -215,6 +220,46 @@ async def deep_audit(
         automatic_paid_provider_calls=False,
         result=payload,
     )
+
+
+@router.post(
+    "/feedback",
+    response_model=FeedbackResult,
+    summary="Record optional privacy-conscious comparison feedback",
+)
+def record_feedback(
+    body: FeedbackRequest,
+    request: Request,
+    response: Response,
+    x_jacobi_access_token: Optional[str] = Header(
+        default=None, alias="X-Jacobi-Access-Token"
+    ),
+) -> FeedbackResult:
+    _enforce_rate_limit(request)
+    _request_id(response, request)
+    if not verify_comparison_access(body.comparison_id, x_jacobi_access_token):
+        raise HTTPException(status_code=404, detail="comparison not found")
+    event_id = f"evt_{uuid.uuid4().hex[:16]}"
+    service.repository.append_event(
+        event_id,
+        body.comparison_id,
+        {
+            "event": body.event.value,
+            "offer_observation_id": body.offer_observation_id,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    metric = {
+        FeedbackEvent.alternative_opened: MetricEvent.alternative_opened,
+        FeedbackEvent.false_match_report: MetricEvent.false_match_report,
+        FeedbackEvent.wrong_match_feedback: MetricEvent.wrong_match_feedback,
+    }[body.event]
+    result = get_result(body.comparison_id)
+    service.metrics.record(
+        metric,
+        dimensions={"market": result.market if result else "unknown"},
+    )
+    return FeedbackResult(event_id=event_id)
 
 
 @router.get("/comparisons/{comparison_id}", response_model=OptimizationResult)

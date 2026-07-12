@@ -147,6 +147,32 @@ const CASES = [
   { name: "Wireless Headphones",    host: "www.amazon.com",  url: "https://www.amazon.com/s?k=wireless+headphones", base: 65 },
 ];
 
+// Booking.com prices only exist WITH dates + occupancy — the backend's
+// pre-flight gate (extractors.travel_context) rejects dateless booking URLs
+// with needs_context before launching a single agent. Complete the query
+// here, at the one point every probe launch routes through (case studies,
+// the default target, pasted URLs, retries). All 24 agents fetch the SAME
+// completed URL, so the price comparison stays valid, and the dates are
+// visible in the probe bar — nothing is added silently.
+function withTravelContext(raw: string): string {
+  try {
+    const u = new URL(raw);
+    const h = u.hostname.toLowerCase();
+    if (h !== "booking.com" && !h.endsWith(".booking.com")) return raw;
+    if (u.searchParams.get("checkin") && u.searchParams.get("checkout")) return raw;
+    const day = (offset: number) =>
+      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    u.searchParams.set("checkin", day(30));
+    u.searchParams.set("checkout", day(32));
+    if (!u.searchParams.get("group_adults"))   u.searchParams.set("group_adults", "2");
+    if (!u.searchParams.get("no_rooms"))       u.searchParams.set("no_rooms", "1");
+    if (!u.searchParams.get("group_children")) u.searchParams.set("group_children", "0");
+    return u.toString();
+  } catch {
+    return raw; // not a parseable URL — let the backend's guards answer
+  }
+}
+
 const WAVES = [
   { label: "Wave 1 · datacenter",  r: 150 },
   { label: "Wave 2 · residential", r: 250 },
@@ -358,6 +384,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   }, [apiBase]);
 
   const startProbe = useCallback((url: string, name: string) => {
+    url = withTravelContext(url);
     cancelledRef.current = false;
     setPhase("deploying");
     setDeckPhaseLabel("deploying");

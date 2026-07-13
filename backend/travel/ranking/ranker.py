@@ -14,7 +14,7 @@ from .policy import EQUIVALENCE_PRIORITY, UNKNOWN_REVALIDATION_AGE_SECONDS
 class RankKey(BaseModel):
     """Named form of the exact PRD tuple; lower values rank first."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     equivalence_priority: int
     hard_preference_violations: int
@@ -41,7 +41,7 @@ class RankKey(BaseModel):
 
 
 class RankableCandidate(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     offer_id: str = Field(min_length=1, max_length=128)
     equivalence: EquivalenceClass
@@ -82,4 +82,3 @@ def rank_candidates(
 ) -> list[RankableCandidate]:
     eligible = candidates if include_ineligible else [item for item in candidates if item.eligible]
     return sorted(eligible, key=lambda item: build_rank_key(item).as_tuple())
-

@@ -3,6 +3,7 @@
 from .models import SearchEvent, SearchEventType, SearchJob, SearchStatus
 from .runtime import MemoryTravelRuntime, RedisTravelRuntime, get_travel_runtime
 from .access import issue_capability, verify_capability
+from .fingerprint import intent_fingerprint
 
 __all__ = [
     "MemoryTravelRuntime",
@@ -13,5 +14,6 @@ __all__ = [
     "SearchStatus",
     "get_travel_runtime",
     "issue_capability",
+    "intent_fingerprint",
     "verify_capability",
 ]

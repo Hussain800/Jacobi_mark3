@@ -49,8 +49,8 @@ class ProviderEnvironment(str, Enum):
     """Server-derived provider environment; never accept this from a client."""
 
     FIXTURE = "fixture"
-    TEST = "test"
-    PRODUCTION = "production"
+    SANDBOX_API = "sandbox_api"
+    LIVE_OFFICIAL_API = "live_official_api"
 
 
 class ObservationMethod(str, Enum):
@@ -143,4 +143,3 @@ class RedirectFriction(IntEnum):
     INTERMEDIATE = 1
     MANUAL = 2
     UNAVAILABLE = 3
-

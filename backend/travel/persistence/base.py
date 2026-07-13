@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from .access import (
     AccessContext,
     AccessDeniedError,
+    TravelPersistenceError,
     capability_matches,
     hash_capability_token,
     normalize_identifier,
@@ -26,6 +27,26 @@ DEFAULT_MAX_RECORDS = 500
 DEFAULT_MAX_PAYLOAD_BYTES = 256 * 1024
 MAX_SEARCH_PAYLOAD_BYTES = 32 * 1024
 
+# Delete user-linked records from leaves to roots so the contract is valid for
+# both the memory repository and relational stores with restrictive foreign
+# keys. Service-owned canonical catalogues are deliberately outside this list.
+USER_OWNED_COLLECTIONS: tuple[str, ...] = (
+    "redirects",
+    "revalidations",
+    "feedback",
+    "evidence",
+    "cost_components",
+    "offers",
+    "provider_attempts",
+    "searches",
+    "preferences",
+)
+DEIDENTIFIED_MARKET_COLLECTIONS: tuple[str, ...] = (
+    "flight_itineraries",
+    "hotel_properties",
+    "hotel_crosswalks",
+)
+
 
 @dataclass(frozen=True)
 class TravelStoredRecord:
@@ -35,6 +56,18 @@ class TravelStoredRecord:
     payload: dict[str, Any]
     owner_id: Optional[str] = None
     links: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class UserDataDeletionResult:
+    """Auditable result for one owner-scoped deletion request."""
+
+    deleted_by_collection: Mapping[str, int]
+    preserved_deidentified_collections: tuple[str, ...]
+
+    @property
+    def total_deleted(self) -> int:
+        return sum(self.deleted_by_collection.values())
 
 
 @dataclass(frozen=True)
@@ -231,6 +264,22 @@ _SENSITIVE_PAYLOAD_KEYS = {
     "token",
 }
 
+_MARKET_LINKAGE_KEYS = {
+    "account_id",
+    "capability_hash",
+    "email",
+    "full_url",
+    "guest_identity",
+    "owner_id",
+    "page_reference",
+    "passenger_identity",
+    "search_id",
+    "session_id",
+    "source_url",
+    "user_id",
+    "url",
+}
+
 
 def json_safe(value: Any) -> Any:
     """Return a JSON-compatible value while preserving Decimal precision."""
@@ -286,6 +335,28 @@ def validate_sanitized_payload(payload: Mapping[str, Any]) -> None:
                     )
                 if normalized_key in {"error", "error_message"} and len(str(item)) > 2000:
                     raise ValueError("persisted provider errors must be 2000 characters or fewer")
+                walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                walk(item)
+
+    walk(payload)
+
+
+def validate_deidentified_market_payload(payload: Mapping[str, Any]) -> None:
+    """Reject user/session linkage from catalogues retained after deletion."""
+
+    validate_sanitized_payload(payload)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                normalized_key = str(key).strip().lower()
+                if normalized_key in _MARKET_LINKAGE_KEYS:
+                    raise ValueError(
+                        f"user-linked field {normalized_key!r} cannot be retained "
+                        "as a de-identified market observation"
+                    )
                 walk(item)
         elif isinstance(value, (list, tuple)):
             for item in value:
@@ -601,8 +672,10 @@ class TravelRepository(ABC):
         access: AccessContext,
     ) -> TravelStoredRecord:
         self._require_service(access)
+        payload = normalize_payload(itinerary)
+        validate_deidentified_market_payload(payload)
         return public_record(
-            self._put_raw("flight_itineraries", itinerary_id, itinerary)
+            self._put_raw("flight_itineraries", itinerary_id, payload)
         )
 
     def get_flight_itinerary(
@@ -630,8 +703,10 @@ class TravelRepository(ABC):
         access: AccessContext,
     ) -> TravelStoredRecord:
         self._require_service(access)
+        payload = normalize_payload(property_data)
+        validate_deidentified_market_payload(payload)
         return public_record(
-            self._put_raw("hotel_properties", property_id, property_data)
+            self._put_raw("hotel_properties", property_id, payload)
         )
 
     def get_hotel_property(
@@ -651,11 +726,13 @@ class TravelRepository(ABC):
         self._require_service(access)
         if self._get_raw("hotel_properties", property_id) is None:
             raise ValueError("hotel property does not exist")
+        payload = normalize_payload(crosswalk)
+        validate_deidentified_market_payload(payload)
         return public_record(
             self._put_raw(
                 "hotel_crosswalks",
                 crosswalk_id,
-                crosswalk,
+                payload,
                 links={"property_id": normalize_identifier(property_id)},
             )
         )
@@ -915,6 +992,50 @@ class TravelRepository(ABC):
         if record is None or record.owner_id != owner:
             return None
         return public_record(record)
+
+    def delete_owner_data(
+        self,
+        owner_id: str,
+        access: AccessContext,
+    ) -> UserDataDeletionResult:
+        """Delete user history/preferences without touching market catalogues.
+
+        Only records whose persisted ``owner_id`` matches the requested owner
+        are eligible. Capability-scoped callers cannot invoke this operation.
+        A storage adapter that does not acknowledge a discovered deletion raises
+        instead of returning a misleading success count.
+        """
+
+        owner = normalize_identifier(owner_id, "owner id")
+        self._require_owner(access, owner)
+        deleted: dict[str, int] = {}
+        for collection in USER_OWNED_COLLECTIONS:
+            spec = COLLECTION_SPECS[collection]
+            if spec.owner_column is None:  # pragma: no cover - invariant guard
+                raise TravelPersistenceError(
+                    f"owner deletion cannot target service collection {collection!r}"
+                )
+            records = self._list_raw(
+                collection,
+                owner_id=owner,
+                scope_owner=True,
+            )
+            count = 0
+            for record in records:
+                if record.owner_id != owner:  # pragma: no cover - adapter invariant
+                    raise TravelPersistenceError(
+                        f"owner-scoped list returned mismatched {collection} record"
+                    )
+                if not self._delete_raw(collection, record.record_id):
+                    raise TravelPersistenceError(
+                        f"storage did not acknowledge deletion of {collection} record"
+                    )
+                count += 1
+            deleted[collection] = count
+        return UserDataDeletionResult(
+            deleted_by_collection=deleted,
+            preserved_deidentified_collections=DEIDENTIFIED_MARKET_COLLECTIONS,
+        )
 
     @staticmethod
     def _require_owner(access: AccessContext, owner_id: str) -> None:

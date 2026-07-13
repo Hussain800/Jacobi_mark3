@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
 import pytest
 
+from agentcore.storage import get_repo as get_agentcore_repository
 from travel.costing import CostComponent
 from travel.domain import (
     BaselineOffer,
@@ -27,6 +29,7 @@ from travel.domain import (
     TripType,
 )
 from travel.persistence import InMemoryTravelRepository
+from travel.persistence import AccessContext
 from travel.providers import (
     AmadeusConfig,
     AmadeusProvider,
@@ -40,6 +43,7 @@ from travel.providers import (
     normalize_flight_offers,
 )
 from travel.search import FlightSearchInput, HotelSearchInput
+from travel.search.schemas import TravelPreferences
 from travel.search.runtime import MemoryTravelRuntime
 from travel.search.service import RedirectNotAvailable, TravelSearchService
 from travel.search.worker import TravelSearchWorker
@@ -187,6 +191,13 @@ def test_flight_search_streams_ranks_and_revalidates_official_sandbox_results() 
         assert snapshot.offers[0]["provider_environment"] == "sandbox_api"
         assert snapshot.offers[0]["equivalence"]["classification"] == "exact"
         assert snapshot.offers[0]["saving"]["claim"] == "conditional"
+        manifest_id = snapshot.offers[0]["evidence_manifest_id"]
+        manifest = service.evidence_manifest(accepted.search_id, manifest_id)
+        assert manifest is not None
+        assert manifest.extractions[0].value == {
+            "amount": "1210.00",
+            "currency": "AED",
+        }
         events = await service.runtime.events_after(accepted.search_id, None)
         assert events[0].event.value == "search.accepted"
         assert events[-1].event.value == "search.completed"
@@ -207,6 +218,67 @@ def test_flight_search_streams_ranks_and_revalidates_official_sandbox_results() 
                 result.revalidation_id,
                 capability_token=accepted.capability_token,
             )
+        await provider.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_travel_evidence_preserves_decimal_text_and_rejects_tampering() -> None:
+    offer = normalize_flight_offers(_fixture("flight_search_success.json")).offers[0]
+    offer = offer.model_copy(
+        update={"grand_total_amount": Decimal("9007199254740993.01")}
+    )
+    manifest_id, _ = TravelSearchWorker._evidence(
+        "precision-search",
+        "precision-offer",
+        offer,
+        True,
+        (),
+    )
+    service = _service()
+    manifest = service.evidence_manifest("precision-search", manifest_id)
+    assert manifest is not None
+    assert manifest.extractions[0].value == {
+        "amount": "9007199254740993.01",
+        "currency": "AED",
+    }
+
+    stored = get_agentcore_repository().get_manifest(
+        manifest_id,
+        "travel:precision-search",
+    )
+    assert stored is not None
+    stored.limitations.append("tampered after creation")
+    assert service.evidence_manifest("precision-search", manifest_id) is None
+
+
+def test_authenticated_hard_preferences_are_snapshotted_and_explained() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/token"):
+            return _token_response()
+        return httpx.Response(200, json=_fixture("flight_search_success.json"))
+
+    async def scenario() -> None:
+        provider = _provider(handler)
+        service = _service(provider)
+        service.save_preferences(
+            "traveller-1",
+            TravelPreferences(flight_checked_bags=3),
+        )
+        accepted = await service.create_search(
+            flight_input(),
+            idempotency_key="flight-owner-preferences-0001",
+            owner_id="traveller-1",
+        )
+        await TravelSearchWorker(service).process_one()
+        snapshot = service.get_snapshot(
+            accepted.search_id,
+            owner_id="traveller-1",
+        )
+        offer = snapshot.offers[0]
+        assert offer["hard_preference_violations"] == ["flight_checked_bags"]
+        assert offer["rank_key"]["hard_preference_violations"] == 1
+        assert "HARD_PREFERENCE_VIOLATION" in offer["saving"]["reason_codes"]
         await provider.aclose()
 
     asyncio.run(scenario())
@@ -264,6 +336,31 @@ def test_no_configured_provider_is_an_honest_degraded_terminal_result() -> None:
         assert snapshot.status == "degraded"
         assert snapshot.degraded_reasons == ["no_configured_independent_provider"]
         assert snapshot.offers == []
+
+    asyncio.run(scenario())
+
+
+def test_worker_lifecycle_persists_terminal_search_expiry() -> None:
+    async def scenario() -> None:
+        service = _service()
+        accepted = await service.create_search(
+            flight_input(),
+            idempotency_key="flight-expiry-lifecycle-0001",
+        )
+        await TravelSearchWorker(service).process_one()
+        service_access = AccessContext.for_service()
+        record = service.repository.get_search(accepted.search_id, service_access)
+        assert record is not None
+        payload = dict(record.payload)
+        payload["expires_at"] = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+        service.repository.update_search(accepted.search_id, payload, service_access)
+
+        assert await service.expire_due_searches(now=NOW) == 1
+        expired = service.repository.get_search(accepted.search_id, service_access)
+        assert expired is not None
+        assert expired.payload["status"] == "expired"
+        events = await service.runtime.events_after(accepted.search_id, None)
+        assert events[-1].event.value == "search.expired"
 
     asyncio.run(scenario())
 

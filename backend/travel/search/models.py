@@ -75,6 +75,7 @@ class SearchEventType(str, Enum):
     SEARCH_COMPLETED = "search.completed"
     SEARCH_FAILED = "search.failed"
     SEARCH_CANCELLED = "search.cancelled"
+    SEARCH_EXPIRED = "search.expired"
     HEARTBEAT = "heartbeat"
 
 

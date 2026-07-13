@@ -9,6 +9,8 @@ import shutil
 import subprocess
 from typing import Any
 
+from validate_travel_policy import validate_policy_contract
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SERVICES = {"postgres", "redis", "api", "worker", "frontend"}
@@ -18,6 +20,7 @@ REQUIRED_ENVIRONMENT = {
     "JACOBI_TRAVEL_INLINE_WORKER",
     "JACOBI_TRAVEL_CAPABILITY_SECRET",
     "JACOBI_TRAVEL_TELEMETRY_ENABLED",
+    "JACOBI_TRAVEL_OTEL_ENABLED",
     "JACOBI_AGENT_STORAGE",
     "JACOBI_MANIFEST_SIGNING_KEY",
     "REDIS_URL",
@@ -90,6 +93,7 @@ def validate_static_contract() -> list[str]:
         "JACOBI_TRAVEL_CAPABILITY_SECRET",
         "JACOBI_MANIFEST_SIGNING_KEY",
         "JACOBI_TRAVEL_TELEMETRY_ENABLED",
+        "JACOBI_TRAVEL_OTEL_ENABLED",
         "REDIS_URL",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_KEY",
@@ -113,6 +117,7 @@ def validate_static_contract() -> list[str]:
         "JACOBI_TRAVEL_CAPABILITY_SECRET",
         "JACOBI_MANIFEST_SIGNING_KEY",
         "JACOBI_TRAVEL_TELEMETRY_ENABLED",
+        "JACOBI_TRAVEL_OTEL_ENABLED",
         "REDIS_URL",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_KEY",
@@ -138,6 +143,18 @@ def validate_static_contract() -> list[str]:
             errors.append(f"travel deployment runbook missing command: {required}")
     _read("docs/travel/PROVIDER_POLICY.md")
     _read("docs/travel/LIMITATIONS.md")
+    validation = _read("docs/travel/VALIDATION_AND_DEMO.md")
+    application_review = _read("docs/travel/APPLICATION_VALIDATION_REVIEW.md")
+    for required in (
+        "node extension/tests/chromium-extension-test.mjs",
+        "python -m jacobi travel eval --dataset flight_equivalence_v1",
+        "Production-only validation",
+        "BLOCKED_EXTERNAL",
+    ):
+        if required not in validation and required not in application_review:
+            errors.append(f"travel validation/review docs missing: {required}")
+    for policy_error in validate_policy_contract():
+        errors.append(f"travel policy contract: {policy_error}")
     return errors
 
 

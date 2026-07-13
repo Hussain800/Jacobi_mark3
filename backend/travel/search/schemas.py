@@ -155,3 +155,29 @@ class TravelPreferences(BaseModel):
     require_refundable_hotel: bool = False
     meaningful_saving_amount: str = Field(default="25.00", max_length=32)
     telemetry_enabled: bool = False
+
+
+class UserDataDeletionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deleted_records: int = Field(ge=0)
+    deleted_by_collection: dict[str, int]
+    preserved_deidentified_collections: tuple[str, ...]
+
+
+class TravelAPIErrorDetail(BaseModel):
+    """Stable redacted error metadata returned by the travel API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=256)
+    retryable: bool = False
+    request_id: str = Field(min_length=1, max_length=128)
+    search_id: str | None = Field(default=None, max_length=128)
+
+
+class TravelAPIErrorResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    detail: TravelAPIErrorDetail

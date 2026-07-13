@@ -199,6 +199,7 @@ def test_redis_runtime_contract_survives_runtime_restart() -> None:
         # A new API/worker process receives only a fresh runtime wrapper. All
         # coordination state below must come from the shared Redis contract.
         after_restart = RedisTravelRuntime(redis, namespace="test:travel")
+        assert await after_restart.worker_healthy()
 
         assert await after_restart.claim(timeout_seconds=0.01) == job
         assert await after_restart.claim(timeout_seconds=0.01) is None
@@ -251,6 +252,7 @@ def test_redis_runtime_contract_survives_runtime_restart() -> None:
 
         redis.advance(31)
         assert await redis.get(heartbeat_key) is None
+        assert not await after_restart.worker_healthy()
         assert await after_restart.cache_get("flight:fingerprint") is None
         assert (
             await after_restart.remember_idempotency(

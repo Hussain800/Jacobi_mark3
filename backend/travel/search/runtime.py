@@ -55,6 +55,7 @@ class TravelRuntime(Protocol):
     async def release_lease(self, key: str, token: str) -> bool: ...
     async def allow_rate(self, key: str, *, limit: int, window_seconds: int) -> bool: ...
     async def heartbeat(self, worker_id: str, *, ttl_seconds: int = 30) -> None: ...
+    async def worker_healthy(self) -> bool: ...
     async def healthy(self) -> bool: ...
     async def close(self) -> None: ...
 
@@ -220,6 +221,10 @@ class MemoryTravelRuntime:
 
     async def heartbeat(self, worker_id: str, *, ttl_seconds: int = 30) -> None:
         self._heartbeats[worker_id] = _ExpiringValue(True, self._now() + ttl_seconds)
+
+    async def worker_healthy(self) -> bool:
+        now = self._now()
+        return any(self._active(item, now) for item in self._heartbeats.values())
 
     async def healthy(self) -> bool:
         return True
@@ -389,11 +394,15 @@ class RedisTravelRuntime:
         return int(count) <= limit
 
     async def heartbeat(self, worker_id: str, *, ttl_seconds: int = 30) -> None:
-        await self._client.set(
-            self._key("worker", worker_id),
-            datetime.now(timezone.utc).isoformat(),
-            ex=ttl_seconds,
-        )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        await self._client.set(self._key("worker", worker_id), timestamp, ex=ttl_seconds)
+        await self._client.set(self._key("worker", "active"), timestamp, ex=ttl_seconds)
+
+    async def worker_healthy(self) -> bool:
+        try:
+            return await self._client.get(self._key("worker", "active")) is not None
+        except Exception:
+            return False
 
     async def healthy(self) -> bool:
         try:

@@ -281,6 +281,14 @@ class _FakeQuery:
             for row in self.rows.get(self.table, [])
             if all(row.get(column) == value for column, value in self.filters)
         ]
+        if self.operation == "delete":
+            self.rows[self.table] = [
+                row
+                for row in self.rows.get(self.table, [])
+                if not all(
+                    row.get(column) == value for column, value in self.filters
+                )
+            ]
         return SimpleNamespace(data=selected)
 
 
@@ -308,3 +316,35 @@ def test_supabase_adapter_projects_columns_and_never_persists_raw_capability():
     assert row["capability_hash"] != "search-secret"
     assert len(row["capability_hash"]) == 64
     assert saved.links == {}
+
+
+def test_supabase_owner_deletion_preserves_service_market_catalogue():
+    fake = _FakeSupabase()
+    repo = SupabaseTravelRepository(client=fake)
+    owner_access = AccessContext.for_owner(OWNER_A)
+    other_access = AccessContext.for_owner(OWNER_B)
+    repo.create_search("owned", _search_payload(), owner_id=OWNER_A)
+    repo.save_preferences(OWNER_A, {"currency": "AED"}, owner_access)
+    repo.create_search(
+        "other",
+        _search_payload(fingerprint="b" * 64),
+        owner_id=OWNER_B,
+    )
+    repo.save_flight_itinerary(
+        "market-itinerary",
+        {
+            "canonical_hash": "c" * 64,
+            "origin": "DXB",
+            "destination": "LHR",
+            "departure_date": "2027-01-01",
+            "segments": [],
+        },
+        SERVICE,
+    )
+
+    result = repo.delete_owner_data(OWNER_A, owner_access)
+
+    assert result.total_deleted == 2
+    assert repo.get_search("owned", owner_access) is None
+    assert repo.get_search("other", other_access) is not None
+    assert repo.get_flight_itinerary("market-itinerary", SERVICE) is not None

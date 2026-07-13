@@ -16,6 +16,7 @@ from .schemas import (
     SearchSnapshot,
     TravelPreferences,
     TravelSearchInput,
+    UserDataDeletionResponse,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "SearchSnapshot",
     "TravelPreferences",
     "TravelSearchInput",
+    "UserDataDeletionResponse",
 ]

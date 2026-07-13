@@ -125,7 +125,13 @@ def test_manifest_signature_from_env(monkeypatch):
     ob = PriceObligation(source_url_or_api_route="https://demo.jacobi.local/x")
     m = build_manifest(ob, [], [])
     assert m.signature and len(m.signature) == 64
-    assert verify_manifest(m)  # signature excluded from hash
+    assert verify_manifest(m)
+
+    tampered_signature = m.model_copy(update={"signature": "0" * 64})
+    assert verify_manifest(tampered_signature) is False
+
+    monkeypatch.delenv("JACOBI_MANIFEST_SIGNING_KEY")
+    assert verify_manifest(m) is False
 
 
 # ── Extractor + fixtures ────────────────────────────────────────────────────

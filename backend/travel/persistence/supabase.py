@@ -128,10 +128,15 @@ class SupabaseTravelRepository(TravelRepository):
 
     def _delete_raw(self, collection: str, record_id: str) -> bool:
         spec = COLLECTION_SPECS[collection]
+        key = normalize_identifier(record_id)
         response = (
             self._client.table(spec.table)
             .delete()
-            .eq(spec.id_column, normalize_identifier(record_id))
+            .eq(spec.id_column, key)
             .execute()
         )
-        return bool(response.data)
+        if response.data:
+            return True
+        # Some PostgREST client configurations return no representation for a
+        # successful DELETE. Verify absence before acknowledging completion.
+        return self._get_raw(collection, key) is None

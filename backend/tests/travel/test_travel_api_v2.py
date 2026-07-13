@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timezone
+import logging
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from travel.providers import ProviderRegistry
 from travel.search.runtime import MemoryTravelRuntime
 from travel.search.service import TravelSearchService, get_travel_search_service
 from travel.search.worker import TravelSearchWorker
+from travel.telemetry import TRAVEL_LOGGER_NAME, TravelObservability
 
 
 def flight_payload() -> dict:
@@ -70,7 +72,19 @@ def test_create_get_sse_replay_and_capability_boundary() -> None:
         snapshot = client.get(accepted["result_url"], headers=headers)
         assert snapshot.status_code == 200
         assert snapshot.json()["status"] == "degraded"
-        assert client.get(accepted["result_url"]).status_code == 404
+        denied = client.get(
+            accepted["result_url"],
+            headers={"X-Request-ID": "req_capability_boundary_0001"},
+        )
+        assert denied.status_code == 404
+        assert denied.headers["X-Request-ID"] == "req_capability_boundary_0001"
+        assert denied.json()["detail"] == {
+            "code": "travel_search_not_found",
+            "message": "Travel search not found.",
+            "retryable": False,
+            "request_id": "req_capability_boundary_0001",
+            "search_id": accepted["search_id"],
+        }
 
         events = client.get(
             accepted["events_url"],
@@ -80,6 +94,34 @@ def test_create_get_sse_replay_and_capability_boundary() -> None:
         assert events.headers["content-type"].startswith("text/event-stream")
         assert "event: search.degraded" in events.text
         assert "id: 1\n" not in events.text
+
+
+def test_create_search_emits_redacted_request_log_without_capability(caplog) -> None:
+    app, service = _app_and_service()
+    service.observability = TravelObservability(enabled=True)
+    with caplog.at_level(logging.INFO, logger=TRAVEL_LOGGER_NAME), TestClient(app) as client:
+        response = client.post(
+            "/api/v2/travel/searches",
+            headers={
+                "Idempotency-Key": "api-observability-search-0001",
+                "X-Request-ID": "req_api_observability_0001",
+            },
+            json=flight_payload(),
+        )
+
+    assert response.status_code == 202
+    accepted = response.json()
+    event = next(
+        record.travel
+        for record in caplog.records
+        if hasattr(record, "travel")
+        and record.travel["stage"] == "api.create_search.accepted"
+    )
+    assert event["correlation_id"] == "req_api_observability_0001"
+    assert event["search_id"] == accepted["search_id"]
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert accepted["capability_token"] not in rendered
+    assert "api-observability-search-0001" not in rendered
 
 
 def test_provider_labels_and_preferences_auth_boundary() -> None:

@@ -34,6 +34,8 @@ services:
         value: "30"
       - key: JACOBI_TRAVEL_TELEMETRY_ENABLED
         value: "false"
+      - key: JACOBI_TRAVEL_OTEL_ENABLED
+        value: "false"
       - key: REDIS_URL
         sync: false
       - key: SUPABASE_URL
@@ -90,6 +92,11 @@ services:
           type: web
           name: jacobi-api
           envVarKey: JACOBI_TRAVEL_TELEMETRY_ENABLED
+      - key: JACOBI_TRAVEL_OTEL_ENABLED
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_TRAVEL_OTEL_ENABLED
       - key: REDIS_URL
         fromService:
           type: web

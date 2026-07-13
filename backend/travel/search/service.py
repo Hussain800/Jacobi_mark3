@@ -9,14 +9,21 @@ import hmac
 import ipaddress
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from agentcore.evidence import verify_manifest
 from agentcore.storage import get_repo as get_agentcore_repository
 
-from ..persistence import AccessContext, AccessDeniedError, TravelRepository
+from ..persistence import (
+    AccessContext,
+    AccessDeniedError,
+    TravelRepository,
+    UserDataDeletionResult,
+)
 from ..providers import (
     NormalizedFlightOffer,
     ProviderRegistry,
@@ -24,7 +31,14 @@ from ..providers import (
     configured_provider_registry,
     provider_catalog,
 )
-from ..telemetry import MetricEvent, MetricsRecorder, travel_metrics_from_env
+from ..telemetry import (
+    MetricEvent,
+    MetricsRecorder,
+    TravelMetricName,
+    TravelObservability,
+    travel_metrics_from_env,
+    travel_observability_from_env,
+)
 from .fingerprint import intent_fingerprint
 from .models import (
     SearchEvent,
@@ -88,6 +102,21 @@ def _capability_secret(explicit: bytes | None = None) -> bytes:
     return _DEV_SECRET
 
 
+def _require_production_agent_storage() -> None:
+    """Travel evidence must never degrade to process memory in production."""
+
+    if not _production_like():
+        return
+    configured = os.getenv("JACOBI_AGENT_STORAGE", "").strip().lower()
+    if configured != "supabase":
+        raise RuntimeError(
+            "production travel evidence requires JACOBI_AGENT_STORAGE=supabase"
+        )
+    # Construction validates the service credential instead of deferring a
+    # persistence failure until the first evidence write.
+    get_agentcore_repository()
+
+
 def _hmac_token(secret: bytes, purpose: str, value: str) -> str:
     digest = hmac.new(secret, f"{purpose}:{value}".encode("utf-8"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -131,11 +160,13 @@ class TravelSearchService:
         providers: ProviderRegistry,
         capability_secret: bytes | None = None,
         metrics: MetricsRecorder | None = None,
+        observability: TravelObservability | None = None,
     ) -> None:
         self.repository = repository
         self.runtime = runtime
         self.providers = providers
         self.metrics = metrics or travel_metrics_from_env()
+        self.observability = observability or travel_observability_from_env()
         self._secret = _capability_secret(capability_secret)
 
     async def create_search(
@@ -145,6 +176,10 @@ class TravelSearchService:
         idempotency_key: str | None,
         owner_id: str | None = None,
     ) -> AcceptedSearch:
+        self.observability.metrics.record(
+            TravelMetricName.searches_total,
+            attributes={"vertical": str(search_input.vertical)},
+        )
         fingerprint = intent_fingerprint(search_input.intent)
         supplied_key = (idempotency_key or "").strip()
         if supplied_key and not 16 <= len(supplied_key) <= 256:
@@ -153,16 +188,31 @@ class TravelSearchService:
         scope = f"{owner_id or 'anonymous'}:{request_key}"
         search_id = f"ts_{_hmac_token(self._secret, 'search', scope)[:28]}"
         capability_token = None if owner_id else f"cap_{_hmac_token(self._secret, 'capability', scope)}"
-        existing_id = await self.runtime.remember_idempotency(
-            scope,
-            search_id,
-            ttl_seconds=IDEMPOTENCY_TTL_SECONDS,
-        )
+        with self.observability.span(
+            "cache",
+            correlation_id=search_id,
+            search_id=search_id,
+        ):
+            existing_id = await self.runtime.remember_idempotency(
+                scope,
+                search_id,
+                ttl_seconds=IDEMPOTENCY_TTL_SECONDS,
+            )
         expires_at = _utcnow() + timedelta(seconds=CAPABILITY_TTL_SECONDS)
         access = _access(owner_id, capability_token)
         existing = self.repository.get_search(existing_id, access)
         if existing is not None:
             payload = existing.payload
+            self.observability.log(
+                correlation_id=existing_id,
+                search_id=existing_id,
+                provider_id=None,
+                stage="search.replayed",
+                duration_ms=0,
+                result_count=0,
+                environment="api",
+                observation_method="api",
+            )
             return AcceptedSearch(
                 search_id=existing_id,
                 status=payload["status"],
@@ -193,6 +243,11 @@ class TravelSearchService:
         )
 
         now = _utcnow()
+        preference_snapshot = (
+            self.get_preferences(owner_id).model_dump(mode="json")
+            if owner_id is not None
+            else {}
+        )
         payload = {
             "fingerprint": fingerprint,
             "vertical": search_input.vertical,
@@ -201,6 +256,7 @@ class TravelSearchService:
             "intent": search_input.intent.model_dump(mode="json"),
             "baseline_costs": [item.model_dump(mode="json") for item in search_input.baseline_costs],
             "requested_providers": list(search_input.requested_providers),
+            "preferences": preference_snapshot,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
@@ -210,26 +266,36 @@ class TravelSearchService:
             "degraded_reasons": [],
         }
         try:
-            self.repository.create_search(
-                search_id,
-                payload,
-                owner_id=owner_id,
-                capability_token=capability_token,
-            )
+            with self.observability.span(
+                "persistence",
+                correlation_id=search_id,
+                search_id=search_id,
+            ):
+                self.repository.create_search(
+                    search_id,
+                    payload,
+                    owner_id=owner_id,
+                    capability_token=capability_token,
+                )
         except ValueError as exc:
             existing = self.repository.get_search(search_id, access)
             if existing is None:
                 raise
             payload = existing.payload
         hard_deadline = now + timedelta(seconds=15)
-        await self.runtime.enqueue(
-            SearchJob(
-                search_id=search_id,
-                intent_fingerprint=fingerprint,
-                requested_providers=search_input.requested_providers,
-                hard_deadline_at=hard_deadline,
+        with self.observability.span(
+            "queue",
+            correlation_id=search_id,
+            search_id=search_id,
+        ):
+            await self.runtime.enqueue(
+                SearchJob(
+                    search_id=search_id,
+                    intent_fingerprint=fingerprint,
+                    requested_providers=search_input.requested_providers,
+                    hard_deadline_at=hard_deadline,
+                )
             )
-        )
         await self.runtime.publish(
             search_id,
             SearchEventType.SEARCH_ACCEPTED,
@@ -346,6 +412,40 @@ class TravelSearchService:
             capability_token=capability_token,
         )
 
+    async def expire_due_searches(self, *, now: datetime | None = None) -> int:
+        """Persist terminal-result expiry from the trusted worker lifecycle."""
+
+        cutoff = now or _utcnow()
+        access = AccessContext.for_service()
+        expired = 0
+        for record in self.repository.list_searches(access):
+            payload = dict(record.payload)
+            current = SearchStatus(payload["status"])
+            if current == SearchStatus.EXPIRED or current not in TERMINAL_STATUSES:
+                continue
+            raw_expiry = payload.get("expires_at")
+            if not isinstance(raw_expiry, str):
+                continue
+            try:
+                expires_at = datetime.fromisoformat(raw_expiry.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at > cutoff:
+                continue
+            validate_transition(current, SearchStatus.EXPIRED)
+            payload["status"] = SearchStatus.EXPIRED.value
+            payload["updated_at"] = cutoff.isoformat()
+            self.repository.update_search(record.record_id, payload, access)
+            await self.runtime.publish(
+                record.record_id,
+                SearchEventType.SEARCH_EXPIRED,
+                {"status": SearchStatus.EXPIRED.value},
+            )
+            expired += 1
+        return expired
+
     async def revalidate_offer(
         self,
         search_id: str,
@@ -354,6 +454,8 @@ class TravelSearchService:
         owner_id: str | None = None,
         capability_token: str | None = None,
     ) -> RevalidationResponse:
+        revalidation_started = time.monotonic()
+        sanitized_code: str | None = None
         access = self.access(owner_id, capability_token)
         search = self.repository.get_search(search_id, access)
         offer_record = self.repository.get_offer(offer_id, access)
@@ -383,11 +485,20 @@ class TravelSearchService:
         elif offer_payload.get("vertical") == "flight" and hasattr(provider, "revalidate_flight"):
             raw_offer = cached.get("raw_provider_offer")
             try:
-                async with asyncio.timeout(8):
-                    result = await provider.revalidate_flight(raw_offer)
+                with self.observability.span(
+                    "revalidation",
+                    correlation_id=search_id,
+                    search_id=search_id,
+                    provider_id=provider_id,
+                    environment=str(offer_payload["provider_environment"]),
+                    observation_method=str(offer_payload.get("observation_method", "provider_api")),
+                ):
+                    async with asyncio.timeout(8):
+                        result = await provider.revalidate_flight(raw_offer)
             except Exception as exc:
                 status = "unavailable"
                 reason = f"Provider revalidation failed: {type(exc).__name__}"
+                sanitized_code = "provider_revalidation_failed"
             else:
                 status = result.status.value
                 available = result.status in {RevalidationStatus.confirmed, RevalidationStatus.changed}
@@ -438,6 +549,25 @@ class TravelSearchService:
             response,
             access,
         )
+        if changes or status == RevalidationStatus.changed.value:
+            self.observability.metrics.record(
+                TravelMetricName.revalidation_changes_total,
+                attributes={
+                    "provider": provider_id,
+                    "environment": str(offer_payload["provider_environment"]),
+                },
+            )
+        self.observability.log(
+            correlation_id=search_id,
+            search_id=search_id,
+            provider_id=provider_id,
+            stage="revalidation.completed",
+            duration_ms=(time.monotonic() - revalidation_started) * 1000,
+            result_count=len(changes),
+            sanitized_error_code=sanitized_code,
+            environment=str(offer_payload["provider_environment"]),
+            observation_method=str(offer_payload.get("observation_method", "provider_api")),
+        )
         return response
 
     async def authorize_redirect(
@@ -449,6 +579,7 @@ class TravelSearchService:
         owner_id: str | None = None,
         capability_token: str | None = None,
     ) -> RedirectResponse:
+        redirect_started = time.monotonic()
         access = self.access(owner_id, capability_token)
         revalidation = self.repository.get_revalidation(revalidation_id, access)
         if revalidation is None or (revalidation.links or {}).get("offer_id") != offer_id:
@@ -495,6 +626,23 @@ class TravelSearchService:
                 ),
                 "provider": str(offer.payload["provider"]),
             },
+        )
+        self.observability.metrics.record(
+            TravelMetricName.redirects_total,
+            attributes={
+                "provider": str(offer.payload["provider"]),
+                "environment": str(offer.payload.get("provider_environment", "unknown")),
+            },
+        )
+        self.observability.log(
+            correlation_id=search_id,
+            search_id=search_id,
+            provider_id=str(offer.payload["provider"]),
+            stage="redirect.authorized",
+            duration_ms=(time.monotonic() - redirect_started) * 1000,
+            result_count=1,
+            environment=str(offer.payload.get("provider_environment", "unknown")),
+            observation_method=str(offer.payload.get("observation_method", "provider_api")),
         )
         return RedirectResponse(
             redirect_id=redirect_id,
@@ -558,17 +706,38 @@ class TravelSearchService:
         )
         return preferences
 
+    def delete_user_data(self, owner_id: str) -> UserDataDeletionResult:
+        """Delete account-linked travel history and preferences only."""
+
+        access = AccessContext.for_owner(owner_id)
+        for search in self.repository.list_searches(access):
+            get_agentcore_repository().delete_org(f"travel:{search.record_id}")
+        return self.repository.delete_owner_data(
+            owner_id,
+            access,
+        )
+
     def provider_capabilities(self) -> list[dict[str, object]]:
         return provider_catalog(self.providers)
 
     async def provider_health(self) -> dict[str, object]:
+        runtime_healthy = await self.runtime.healthy()
+        inline_worker = os.getenv("JACOBI_TRAVEL_INLINE_WORKER", "").strip() == "1"
+        worker_healthy = inline_worker or await self.runtime.worker_healthy()
         return {
-            "runtime": "healthy" if await self.runtime.healthy() else "unhealthy",
+            "runtime": "healthy" if runtime_healthy else "unhealthy",
+            "worker": "inline" if inline_worker else ("healthy" if worker_healthy else "unhealthy"),
             "providers": self.provider_capabilities(),
         }
 
     def evidence_manifest(self, search_id: str, manifest_id: str):
-        return get_agentcore_repository().get_manifest(manifest_id, f"travel:{search_id}")
+        manifest = get_agentcore_repository().get_manifest(
+            manifest_id,
+            f"travel:{search_id}",
+        )
+        if manifest is None or not verify_manifest(manifest):
+            return None
+        return manifest
 
 
 _SERVICE: TravelSearchService | None = None
@@ -579,6 +748,7 @@ def get_travel_search_service() -> TravelSearchService:
     if _SERVICE is None:
         from ..persistence import create_travel_repository
 
+        _require_production_agent_storage()
         runtime = get_travel_runtime()
         _SERVICE = TravelSearchService(
             repository=create_travel_repository(),

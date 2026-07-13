@@ -6,6 +6,15 @@ import os
 
 from compare.telemetry import MetricEvent, MetricsRecorder, OptionalMetricsRecorder
 
+from .observability import (
+    TRAVEL_LOGGER_NAME,
+    TravelMetricName,
+    TravelMetricObservation,
+    TravelObservability,
+    TravelOperationalMetrics,
+    travel_observability_from_env,
+)
+
 
 def travel_metrics_from_env() -> OptionalMetricsRecorder:
     """Telemetry is disabled unless the literal travel opt-in is ``true``."""
@@ -21,5 +30,11 @@ __all__ = [
     "MetricEvent",
     "MetricsRecorder",
     "OptionalMetricsRecorder",
+    "TRAVEL_LOGGER_NAME",
+    "TravelMetricName",
+    "TravelMetricObservation",
+    "TravelObservability",
+    "TravelOperationalMetrics",
+    "travel_observability_from_env",
     "travel_metrics_from_env",
 ]

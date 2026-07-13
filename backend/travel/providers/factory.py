@@ -7,6 +7,7 @@ from typing import Mapping
 
 from .amadeus import AmadeusProvider, OAuthTokenCache, amadeus_descriptor
 from .base import ProviderEnvironment, ProviderRegistry
+from .policy import disabled_future_provider_states
 
 
 def configured_provider_registry(
@@ -42,5 +43,6 @@ def provider_catalog(
             "health": "available" if "amadeus" in configured else "unconfigured",
             "data_label": descriptor.current_environment.value,
             "fixture": False,
-        }
+        },
+        *disabled_future_provider_states(),
     ]

@@ -59,6 +59,9 @@ def test_memory_runtime_queue_idempotency_cache_lease_and_rate_contract() -> Non
         assert await runtime.allow_rate("amadeus", limit=2, window_seconds=60)
         assert await runtime.allow_rate("amadeus", limit=2, window_seconds=60)
         assert not await runtime.allow_rate("amadeus", limit=2, window_seconds=60)
+        assert await runtime.worker_healthy() is False
+        await runtime.heartbeat("worker-test", ttl_seconds=30)
+        assert await runtime.worker_healthy() is True
 
     asyncio.run(scenario())
 

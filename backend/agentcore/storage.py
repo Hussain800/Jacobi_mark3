@@ -51,6 +51,11 @@ class ProvenanceRepo(ABC):
     @abstractmethod
     def get_manifest(self, manifest_id: str, org: str) -> Optional[EvidenceManifest]: ...
 
+    @abstractmethod
+    def delete_org(self, org: str) -> None:
+        """Delete every provenance record inside one exact org namespace."""
+        ...
+
 
 class MemoryRepo(ProvenanceRepo):
     """Bounded in-memory store, FIFO evict at 500 per kind (mirrors engine._store).
@@ -86,6 +91,11 @@ class MemoryRepo(ProvenanceRepo):
 
     def get_manifest(self, manifest_id: str, org: str) -> Optional[EvidenceManifest]:
         return self._get(self._manifests, manifest_id, org)
+
+    def delete_org(self, org: str) -> None:
+        for store in (self._decisions, self._manifests):
+            for record_id in [key for key, row in store.items() if row[0] == org]:
+                del store[record_id]
 
 
 class SupabaseRepo(ProvenanceRepo):
@@ -144,6 +154,9 @@ class SupabaseRepo(ProvenanceRepo):
     def get_manifest(self, manifest_id: str, org: str) -> Optional[EvidenceManifest]:
         payload = self._get(manifest_id, "manifest", org)
         return EvidenceManifest.model_validate(payload) if payload else None
+
+    def delete_org(self, org: str) -> None:
+        self._client.table(_TABLE).delete().eq("org", org).execute()
 
 
 _repo: Optional[ProvenanceRepo] = None

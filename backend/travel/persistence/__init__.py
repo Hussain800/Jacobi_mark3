@@ -15,9 +15,12 @@ from .access import (
 )
 from .base import (
     COLLECTION_SPECS,
+    DEIDENTIFIED_MARKET_COLLECTIONS,
     DEFAULT_MAX_RECORDS,
     TravelRepository,
     TravelStoredRecord,
+    USER_OWNED_COLLECTIONS,
+    UserDataDeletionResult,
     json_safe,
 )
 from .factory import (
@@ -33,6 +36,7 @@ __all__ = [
     "AccessContext",
     "AccessDeniedError",
     "COLLECTION_SPECS",
+    "DEIDENTIFIED_MARKET_COLLECTIONS",
     "DEFAULT_MAX_RECORDS",
     "InMemoryTravelRepository",
     "PersistenceConfigurationError",
@@ -41,6 +45,8 @@ __all__ = [
     "TravelPersistenceError",
     "TravelRepository",
     "TravelStoredRecord",
+    "USER_OWNED_COLLECTIONS",
+    "UserDataDeletionResult",
     "capability_matches",
     "create_repository",
     "create_travel_repository",

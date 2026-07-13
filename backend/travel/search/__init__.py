@@ -2,6 +2,7 @@
 
 from .models import SearchEvent, SearchEventType, SearchJob, SearchStatus
 from .runtime import MemoryTravelRuntime, RedisTravelRuntime, get_travel_runtime
+from .access import issue_capability, verify_capability
 
 __all__ = [
     "MemoryTravelRuntime",
@@ -11,4 +12,6 @@ __all__ = [
     "SearchJob",
     "SearchStatus",
     "get_travel_runtime",
+    "issue_capability",
+    "verify_capability",
 ]

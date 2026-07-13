@@ -3454,8 +3454,13 @@ async def get_schedules():
 
 @app.get("/_next/static/{rest:path}")
 async def serve_next_static(rest: str):
-    file_path = os.path.join(FRONTEND_DIR, "_next", "static", rest)
-    if os.path.isfile(file_path):
+    static_root = os.path.realpath(os.path.join(FRONTEND_DIR, "_next", "static"))
+    file_path = os.path.realpath(os.path.join(static_root, rest))
+    try:
+        contained = os.path.commonpath((static_root, file_path)) == static_root
+    except ValueError:
+        contained = False
+    if contained and os.path.isfile(file_path):
         return FileResponse(file_path)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
 

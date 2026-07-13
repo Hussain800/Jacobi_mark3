@@ -314,6 +314,8 @@ def test_deep_audit_route_is_explicit_and_fixture_safe(client):
     assert allowed.status_code == 200
     body = allowed.json()
     assert body["automatic_paid_provider_calls"] is False
+    assert body["managed_provider_explicitly_allowed"] is False
+    assert body["paid_provider_usage"] == "not_performed"
     assert body["result"]["fixture_mode"] is True
 
 

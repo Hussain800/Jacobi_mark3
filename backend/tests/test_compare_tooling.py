@@ -120,7 +120,7 @@ def test_provider_catalog_is_descriptive_and_zero_cost():
     assert health["default_provider_ids"] == ["current_page_context"]
 
 
-def test_deep_audit_requires_explicit_opt_in_and_fixture_is_hermetic():
+def test_deep_audit_requires_explicit_opt_in_and_fixture_is_hermetic(monkeypatch):
     denied = asyncio.run(tooling.deep_audit(explicit=False, demo="fee_drift"))
     assert denied["error"] == "deep audit requires explicit=true"
 
@@ -128,9 +128,28 @@ def test_deep_audit_requires_explicit_opt_in_and_fixture_is_hermetic():
     assert result["fixture_mode"] is True
     assert result["budget"]["estimated_cost_usd"] == 0.0
     assert result["managed_provider_explicitly_allowed"] is False
+    assert result["paid_provider_usage"] == "not_performed"
 
     live_denied = asyncio.run(tooling.deep_audit(
         explicit=True, url="https://example.com/product"
     ))
     assert live_denied["automatic_paid_provider_calls"] is False
+    assert live_denied["paid_provider_usage"] == "not_performed"
     assert "allow_managed_provider=true" in live_denied["error"]
+
+    async def fake_full_probe(url: str, name: str, tier: str = "free") -> dict:
+        assert url == name == "https://example.com/product"
+        assert tier == "free"
+        return {"status": "complete", "real_probes_executed": 24}
+
+    monkeypatch.setattr("main.run_full_probe", fake_full_probe)
+    managed = asyncio.run(
+        tooling.deep_audit(
+            explicit=True,
+            url="https://example.com/product",
+            allow_managed_provider=True,
+        )
+    )
+    assert managed["automatic_paid_provider_calls"] is False
+    assert managed["managed_provider_explicitly_allowed"] is True
+    assert managed["paid_provider_usage"] == "performed"

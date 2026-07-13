@@ -5,6 +5,7 @@ from .amadeus import (
     AMADEUS_SANDBOX_ORIGIN,
     AmadeusConfig,
     AmadeusProvider,
+    amadeus_descriptor,
     normalize_flight_offers,
     normalize_hotel_offers,
 )
@@ -29,12 +30,14 @@ from .models import (
     NormalizedHotelOffer,
     RevalidationStatus,
 )
+from .factory import configured_provider_registry, provider_catalog
 
 __all__ = [
     "AMADEUS_PRODUCTION_ORIGIN",
     "AMADEUS_SANDBOX_ORIGIN",
     "AmadeusConfig",
     "AmadeusProvider",
+    "amadeus_descriptor",
     "FlightOfferBatch",
     "FlightRevalidationResult",
     "FlightSearchRequest",
@@ -54,4 +57,6 @@ __all__ = [
     "TravelVertical",
     "normalize_flight_offers",
     "normalize_hotel_offers",
+    "configured_provider_registry",
+    "provider_catalog",
 ]

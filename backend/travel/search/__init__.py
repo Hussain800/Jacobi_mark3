@@ -4,6 +4,19 @@ from .models import SearchEvent, SearchEventType, SearchJob, SearchStatus
 from .runtime import MemoryTravelRuntime, RedisTravelRuntime, get_travel_runtime
 from .access import issue_capability, verify_capability
 from .fingerprint import intent_fingerprint
+from .schemas import (
+    AcceptedSearch,
+    FeedbackRequest,
+    FlightSearchInput,
+    HotelSearchInput,
+    RedirectRequest,
+    RedirectResponse,
+    RevalidationRequest,
+    RevalidationResponse,
+    SearchSnapshot,
+    TravelPreferences,
+    TravelSearchInput,
+)
 
 __all__ = [
     "MemoryTravelRuntime",
@@ -16,4 +29,15 @@ __all__ = [
     "issue_capability",
     "intent_fingerprint",
     "verify_capability",
+    "AcceptedSearch",
+    "FeedbackRequest",
+    "FlightSearchInput",
+    "HotelSearchInput",
+    "RedirectRequest",
+    "RedirectResponse",
+    "RevalidationRequest",
+    "RevalidationResponse",
+    "SearchSnapshot",
+    "TravelPreferences",
+    "TravelSearchInput",
 ]

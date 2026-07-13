@@ -66,6 +66,43 @@ FLIGHT_LIMITATIONS = (
 )
 
 
+def amadeus_descriptor(
+    environment: ProviderEnvironment = ProviderEnvironment.sandbox_api,
+) -> ProviderDescriptor:
+    """Describe Amadeus without constructing credentials or performing I/O."""
+
+    production = environment == ProviderEnvironment.live_official_api
+    return ProviderDescriptor(
+        provider_id="amadeus",
+        display_name="Amadeus Self-Service APIs",
+        verticals=(TravelVertical.flight, TravelVertical.hotel),
+        capabilities=(
+            ProviderCapability.flight_search,
+            ProviderCapability.flight_price_revalidation,
+            ProviderCapability.hotel_list,
+            ProviderCapability.hotel_search,
+        ),
+        current_environment=environment,
+        observation_method=environment,
+        fixed_origins=(AMADEUS_PRODUCTION_ORIGIN if production else AMADEUS_SANDBOX_ORIGIN,),
+        official=True,
+        independently_queries_market=True,
+        supports_progressive_results=False,
+        supports_deeplinks=False,
+        credentials_required=True,
+        credential_requirements=("AMADEUS_CLIENT_ID", "AMADEUS_CLIENT_SECRET"),
+        production_approval_required=True,
+        default_enabled=True,
+        estimated_cost_per_search=None,
+        legal_policy_reference="docs/travel/PROVIDER_POLICY.md#amadeus-self-service",
+        reviewed_at=date(2026, 7, 13),
+        rate_limit_per_second=40 if production else 10,
+        flight_revalidation_supported=True,
+        hotel_revalidation_supported=False,
+        limitations=FLIGHT_LIMITATIONS + HOTEL_LIMITATIONS,
+    )
+
+
 @dataclass(frozen=True)
 class AmadeusConfig:
     client_id: str
@@ -770,39 +807,7 @@ class AmadeusProvider:
 
     @property
     def descriptor(self) -> ProviderDescriptor:
-        return ProviderDescriptor(
-            provider_id=self.provider_id,
-            display_name="Amadeus Self-Service APIs",
-            verticals=(TravelVertical.flight, TravelVertical.hotel),
-            capabilities=(
-                ProviderCapability.flight_search,
-                ProviderCapability.flight_price_revalidation,
-                ProviderCapability.hotel_list,
-                ProviderCapability.hotel_search,
-            ),
-            current_environment=self.config.environment,
-            observation_method=self.config.environment,
-            fixed_origins=(self.config.base_url,),
-            official=True,
-            independently_queries_market=True,
-            supports_progressive_results=False,
-            supports_deeplinks=False,
-            credentials_required=True,
-            credential_requirements=("AMADEUS_CLIENT_ID", "AMADEUS_CLIENT_SECRET"),
-            production_approval_required=True,
-            default_enabled=True,
-            estimated_cost_per_search=None,
-            legal_policy_reference="docs/travel/PROVIDER_POLICY.md#amadeus-self-service",
-            reviewed_at=date(2026, 7, 13),
-            rate_limit_per_second=(
-                40
-                if self.config.environment == ProviderEnvironment.live_official_api
-                else 10
-            ),
-            flight_revalidation_supported=True,
-            hotel_revalidation_supported=False,
-            limitations=FLIGHT_LIMITATIONS + HOTEL_LIMITATIONS,
-        )
+        return amadeus_descriptor(self.config.environment)
 
     async def aclose(self) -> None:
         await self.client.aclose()

@@ -78,6 +78,7 @@ class ProviderDescriptor(BaseModel):
     independently_queries_market: bool
     supports_progressive_results: bool = False
     supports_deeplinks: bool = False
+    redirect_origins: tuple[str, ...] = ()
     credentials_required: bool = True
     credential_requirements: tuple[str, ...] = ()
     production_approval_required: bool = True
@@ -134,7 +135,9 @@ class ProviderRegistry:
     def descriptors(self) -> list[ProviderDescriptor]:
         return [self._providers[key].descriptor for key in sorted(self._providers)]
 
+    def provider_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._providers))
+
     async def aclose(self) -> None:
         for provider in self._providers.values():
             await provider.aclose()
-

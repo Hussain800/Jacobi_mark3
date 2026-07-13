@@ -2249,6 +2249,10 @@ app.include_router(agent_router)
 # Deep Audit path).
 from compare.api import router as compare_router
 app.include_router(compare_router)
+# Travel Price Guardian: one-page flight/hotel intent to independent provider
+# search, progressive SSE results, and revalidation-gated redirect authorization.
+from api.v2_travel import router as travel_v2_router
+app.include_router(travel_v2_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None

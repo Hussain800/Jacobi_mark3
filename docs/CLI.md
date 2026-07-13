@@ -99,6 +99,39 @@ The output distinguishes fixtures from live browser/direct-HTTP capabilities,
 shows which providers require explicit invocation, and reports the mandatory
 collection cost as zero.
 
+## Travel tooling
+
+Travel commands are namespaced so the existing retail comparison CLI remains
+compatible:
+
+```powershell
+python -m jacobi travel eval --dataset flight_equivalence_v1
+python -m jacobi travel eval --dataset hotel_equivalence_v1 --json
+python -m jacobi travel benchmark --iterations 5 --warmups 1 --json
+python -m jacobi travel providers --json
+python -m jacobi travel health --json
+```
+
+Evaluation and benchmark results are explicitly labelled `fixture`; they are
+hermetic corpus measurements, not live-provider latency or real-user
+validation. The current equivalence corpora do not contain cost/ranking labels,
+so those metrics are returned as unsupported rather than invented.
+
+Intent validation and configured-provider search use the same travel tooling
+facade as MCP:
+
+```powershell
+python -m jacobi travel intent --input travel-intent.json --json
+python -m jacobi travel search --input travel-search.json --json
+```
+
+`travel search` validates and enqueues the same durable search job used by the
+travel application service. It returns a capability token for `status`,
+`revalidate`, `explain`, and `evidence`; the CLI never persists that token for
+you. Local memory mode lasts only for the current process, while production
+uses the configured Market Graph and runtime. Provider and health commands
+perform no provider network probes.
+
 ## Deep Audit
 
 Deep Audit preserves the original price-context workflow and is separate from
@@ -130,4 +163,5 @@ Errors go to standard error. With `--json`, errors are JSON objects.
 ```powershell
 cd backend
 python -m pytest -q tests/test_compare_tooling.py tests/test_jacobi_cli.py
+python -m pytest -q tests/travel/test_travel_tooling_surfaces.py
 ```

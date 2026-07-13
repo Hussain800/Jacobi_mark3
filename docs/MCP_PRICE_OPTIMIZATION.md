@@ -48,6 +48,32 @@ The legacy `health_check`, `verify_purchase_context`, `compare_total_price`,
 `check_platform_policy`, `create_evidence_manifest`, and `explain_decision`
 tools remain available for backward compatibility.
 
+## Travel tool catalog
+
+The travel tools reuse `travel.tooling.TravelToolingProtocol`, the same
+injectable facade used by the CLI:
+
+| Tool | Purpose | Network behavior |
+| --- | --- | --- |
+| `parse_travel_intent` | Validate a typed flight/hotel intent and return its fingerprint | None |
+| `search_travel` | Search explicitly configured official providers | Configured fixed-origin providers only |
+| `get_travel_search_status` | Read a capability-authorized durable search | None |
+| `revalidate_travel_offer` | Run official flight price revalidation | The selected offer's configured official provider |
+| `explain_travel_search` | Explain offers, provider failures, and limitations | None |
+| `fetch_travel_evidence` | Fetch sanitized hashed offer and revalidation evidence | None |
+
+`search_travel` accepts a JSON string containing `vertical`, `intent`, optional
+`requested_providers`, and optional provider-specific bounded options. It
+returns `search_id` and an unguessable `capability_token`; the other stateful tools
+require both. Raw provider payloads and credentials are never returned.
+
+The tooling facade enqueues the same durable job used by REST and workers and
+reads results from the Market Graph. In local memory mode, state lasts only for
+the current process. Hotel price revalidation is refused because the initial
+hotel provider does not expose a guaranteed equivalent price-check contract.
+Missing baggage or mandatory hotel fees stay unknown and visible in
+evidence/limitations.
+
 ## Comparison request
 
 `discover_offers`, `compare_offers`, and `find_cheapest_route` take a
@@ -128,4 +154,5 @@ absent. Jacobi never supplies provider credentials.
 ```powershell
 cd backend
 python -m pytest -q tests/test_compare_tooling.py tests/test_price_optimization_mcp.py
+python -m pytest -q tests/travel/test_travel_tooling_surfaces.py
 ```

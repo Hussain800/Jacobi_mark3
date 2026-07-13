@@ -24,6 +24,7 @@ from . import engine
 from . import policy as policy_mod
 from .schemas import ConsentScope
 from compare import tooling as price_tools
+from travel import tooling as travel_tools
 
 mcp = FastMCP("jacobi")
 
@@ -240,6 +241,78 @@ async def deep_audit_price(
         consent_scope=consent_scope,
         tier=tier,
         allow_managed_provider=allow_managed_provider,
+    )
+
+
+# Travel Price Guardian tools ----------------------------------------------
+
+
+@mcp.tool()
+def parse_travel_intent(intent_json: str) -> Dict[str, Any]:
+    """Validate a flight or hotel intent and return its stable fingerprint.
+
+    The JSON may contain a top-level ``vertical`` and nested ``intent`` object,
+    or a directly inferable FlightIntent/HotelIntent object. No network request
+    is performed.
+    """
+    return travel_tools.get_travel_tooling_service().parse_intent(
+        _json_object(intent_json, "intent_json")
+    )
+
+
+@mcp.tool()
+async def search_travel(search_json: str) -> Dict[str, Any]:
+    """Search configured official travel providers through the shared facade.
+
+    Returns an accepted durable search plus a capability token for subsequent
+    status, revalidation, explanation and evidence calls.
+    """
+    return await travel_tools.get_travel_tooling_service().search(
+        _json_object(search_json, "search_json")
+    )
+
+
+@mcp.tool()
+async def get_travel_search_status(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Read an authorized durable travel search and normalized offers."""
+    return await travel_tools.get_travel_tooling_service().status(
+        search_id, capability_token
+    )
+
+
+@mcp.tool()
+async def revalidate_travel_offer(
+    search_id: str, offer_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Revalidate an authorized flight offer before any redirect decision.
+
+    Hotel revalidation is refused because the first hotel provider does not
+    expose a guaranteed equivalent price-check contract.
+    """
+    return await travel_tools.get_travel_tooling_service().revalidate(
+        search_id, offer_id, capability_token
+    )
+
+
+@mcp.tool()
+async def explain_travel_search(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Explain travel search outcome, provider failures and limitations."""
+    return await travel_tools.get_travel_tooling_service().explain(
+        search_id, capability_token
+    )
+
+
+@mcp.tool()
+async def fetch_travel_evidence(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Fetch sanitized hashed offer/revalidation evidence for a travel search."""
+    return await travel_tools.get_travel_tooling_service().evidence(
+        search_id, capability_token
     )
 
 

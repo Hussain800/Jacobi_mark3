@@ -13,7 +13,7 @@
     .lead,.help { color:var(--dim); } .lead { margin:0 0 24px; }
     section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin:14px 0; }
     label { display:block; font-weight:650; margin:0 0 6px; }
-    input[type=url] { width:100%; padding:10px; border:1px solid var(--line); border-radius:7px; background:#08090c; color:var(--text); }
+    input[type=url],input[type=number],input[type=text],select { width:100%; padding:10px; border:1px solid var(--line); border-radius:7px; background:#08090c; color:var(--text); }
     input:focus { outline:2px solid rgba(0,255,102,.25); border-color:var(--green); }
     .field + .field { margin-top:16px; }
     .check { display:flex; gap:10px; align-items:flex-start; font-weight:400; }
@@ -42,11 +42,30 @@
       </div>
     </section>
     <section>
+      <h2>Travel Savings Mode</h2>
+      <label class="check"><input name="travel-mode" value="privacy" type="radio"> <span><strong>Privacy Mode</strong><br><span class="help">Parse a supported page locally. Nothing is sent until you click Search independently.</span></span></label>
+      <label class="check"><input name="travel-mode" value="automatic" type="radio"> <span><strong>Automatic Savings Mode</strong><br><span class="help">On supported demo pages, send the sanitized itinerary or stay to your configured API automatically.</span></span></label>
+      <p><label class="check"><input id="automatic-consent" type="checkbox"> <span>I explicitly consent to automatic network submission on the supported localhost demo origins. Jacobi never opens the side panel or books automatically.</span></label></p>
+      <div class="field">
+        <label for="display-currency">Display currency</label>
+        <input id="display-currency" type="text" maxlength="3" value="USD">
+      </div>
+      <div class="field">
+        <label for="meaningful-amount">Meaningful saving amount</label>
+        <input id="meaningful-amount" type="number" min="0" max="999999" step="0.01">
+      </div>
+      <div class="field">
+        <label for="meaningful-percent">Meaningful saving percent</label>
+        <input id="meaningful-percent" type="number" min="0" max="100" step="0.1">
+      </div>
+      <p class="help">The badge stays passive; a saving is meaningful at the larger of the configured amount or percentage. Current automatic page support is intentionally limited to the versioned local flight and hotel demos.</p>
+    </section>
+    <section>
       <label class="check"><input id="telemetry-enabled" type="checkbox"> <span>Enable privacy-conscious self-hosted telemetry. Disabled by default. Product-page text and browsing history are not sent as telemetry.</span></label>
       <p class="help">Normal comparison sends only the extracted product fields you preview, the source URL, and extraction provenance to your configured API.</p>
     </section>
     <section class="actions">
-      <button id="save" class="primary">Save and grant API access</button>
+      <button id="save" class="primary">Save and grant scoped access</button>
       <button id="clear" class="danger">Clear local extension data</button>
       <span id="status" role="status" aria-live="polite"></span>
     </section>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Jacobi — Verified Price Comparison",
-  "version": "0.5.0",
-  "description": "Find the cheapest verified way to buy the exact product you are viewing. Exact-match, all-in totals, evidence-backed.",
+  "name": "Jacobi — Travel Savings Guardian",
+  "version": "0.6.0",
+  "description": "Compare a supported flight or hotel page against independent evidence, with explicit privacy consent and revalidation before opening a route.",
   "permissions": [
     "contextMenus",
     "activeTab",
@@ -11,8 +11,8 @@
     "sidePanel"
   ],
   "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
   "optional_permissions": [
     "tabs"
@@ -21,7 +21,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Jacobi — compare this price"
+    "default_title": "Jacobi — check this travel price"
   },
   "side_panel": {
     "default_path": "sidepanel/index.html"

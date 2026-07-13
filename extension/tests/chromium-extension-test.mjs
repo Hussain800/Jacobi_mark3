@@ -71,6 +71,18 @@ async function waitForTarget(port, predicate, timeoutMs = 15000) {
   throw new Error("Timed out waiting for Chromium target. Visible targets: " + targets.map((target) => `${target.type}:${target.url}`).join(", "));
 }
 
+async function waitForValue(page, expression, predicate, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  let value = null;
+  while (Date.now() < deadline) {
+    const evaluation = await page.send("Runtime.evaluate", { expression, returnByValue: true });
+    value = evaluation.result.value;
+    if (predicate(value)) return value;
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for page value from ${expression}; last value: ${String(value)}`);
+}
+
 async function waitForExtensionId(profilePath, port, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   const preferencesPath = join(profilePath, "Default", "Preferences");
@@ -95,12 +107,18 @@ async function waitForExtensionId(profilePath, port, timeoutMs = 15000) {
 }
 
 const fixture = readFileSync(join(here, "fixture-product.html"));
+const flightFixture = readFileSync(join(here, "fixtures", "fixture-flight-v1.html"));
+const hotelFixture = readFileSync(join(here, "fixtures", "fixture-hotel-v1.html"));
 const server = createServer((request, response) => {
   response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-  response.end(fixture);
+  if (request.url === "/fixture-flight-v1.html") response.end(flightFixture);
+  else if (request.url === "/fixture-hotel-v1.html") response.end(hotelFixture);
+  else response.end(fixture);
 });
 await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
 const fixtureUrl = `http://127.0.0.1:${server.address().port}/product`;
+const flightFixtureUrl = `http://127.0.0.1:${server.address().port}/fixture-flight-v1.html`;
+const hotelFixtureUrl = `http://127.0.0.1:${server.address().port}/fixture-hotel-v1.html`;
 
 const profile = mkdtempSync(join(tmpdir(), "jacobi-extension-"));
 const processHandle = spawn(chromePath, [
@@ -123,14 +141,14 @@ try {
   await browser.send("Target.createTarget", { url: fixtureUrl });
   const fixtureTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === fixtureUrl);
   const fixturePage = await connect(fixtureTarget.webSocketDebuggerUrl);
-  const fixtureCheck = await fixturePage.send("Runtime.evaluate", { expression: "document.querySelector('h1')?.textContent", returnByValue: true });
-  assert.match(fixtureCheck.result.value, /WH-1000XM6/);
+  const fixtureHeading = await waitForValue(fixturePage, "document.querySelector('h1')?.textContent || ''", (value) => /WH-1000XM6/.test(value));
+  assert.match(fixtureHeading, /WH-1000XM6/);
   const panelUrl = `chrome-extension://${extensionId}/sidepanel/index.html?demo=1`;
   await browser.send("Target.createTarget", { url: panelUrl });
   const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
   const panel = await connect(panelTarget.webSocketDebuggerUrl);
   const manifestCheck = await panel.send("Runtime.evaluate", { expression: "({ version: chrome.runtime.getManifest().version, permissions: chrome.permissions.getAll() })", awaitPromise: true, returnByValue: true });
-  assert.equal(manifestCheck.result.value.version, "0.5.0");
+  assert.equal(manifestCheck.result.value.version, "0.6.0");
   assert.deepEqual(manifestCheck.result.value.permissions.origins || [], []);
   assert.ok(!(manifestCheck.result.value.permissions.permissions || []).includes("tabs"));
   await panel.send("Page.enable");
@@ -148,8 +166,48 @@ try {
   const artifactDir = join(extensionDir, "artifacts");
   mkdirSync(artifactDir, { recursive: true });
   writeFileSync(join(artifactDir, "sidepanel-saving.png"), Buffer.from(screenshot.data, "base64"));
-  console.log(`PASS unpacked Chromium extension (${extensionId}); fixture target ${fixtureTarget.id}; screenshot extension/artifacts/sidepanel-saving.png`);
+
+  await browser.send("Target.createTarget", { url: flightFixtureUrl });
+  await browser.send("Target.createTarget", { url: hotelFixtureUrl });
+  const flightTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === flightFixtureUrl);
+  const hotelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === hotelFixtureUrl);
+  const flightFixturePage = await connect(flightTarget.webSocketDebuggerUrl);
+  const hotelFixturePage = await connect(hotelTarget.webSocketDebuggerUrl);
+  const flightMarker = await waitForValue(flightFixturePage, "document.querySelector('meta[name=jacobi-travel-adapter]')?.content || ''", (value) => value === "flight-demo-v1");
+  const hotelMarker = await waitForValue(hotelFixturePage, "document.querySelector('meta[name=jacobi-travel-adapter]')?.content || ''", (value) => value === "hotel-demo-v1");
+  assert.equal(flightMarker, "flight-demo-v1");
+  assert.equal(hotelMarker, "hotel-demo-v1");
+
+  async function captureTravelDemo(vertical, expectedText) {
+    const url = `chrome-extension://${extensionId}/sidepanel/index.html?travelDemo=${vertical}`;
+    await browser.send("Target.createTarget", { url });
+    const target = await waitForTarget(port, (item) => item.type === "page" && item.url === url);
+    const page = await connect(target.webSocketDebuggerUrl);
+    await page.send("Page.enable");
+    const deadline = Date.now() + 10000;
+    let state = null;
+    while (Date.now() < deadline) {
+      const evaluation = await page.send("Runtime.evaluate", { expression: "document.querySelector('[data-state]')?.dataset.state || null", returnByValue: true });
+      state = evaluation.result.value;
+      if (state) break;
+      await delay(100);
+    }
+    assert.equal(state, "saving");
+    const textCheck = await page.send("Runtime.evaluate", { expression: "document.body.innerText", returnByValue: true });
+    assert.match(textCheck.result.value, expectedText);
+    assert.match(textCheck.result.value, /Fixture data/);
+    await page.send("Emulation.setDeviceMetricsOverride", { width: 420, height: 760, deviceScaleFactor: 1, mobile: false });
+    const image = await page.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+    writeFileSync(join(artifactDir, `sidepanel-travel-${vertical}.png`), Buffer.from(image.data, "base64"));
+    page.socket.close();
+  }
+
+  await captureTravelDemo("flight", /DXB/);
+  await captureTravelDemo("hotel", /Jacobi Marina Hotel/);
+  console.log(`PASS unpacked Chromium extension (${extensionId}); retail + versioned flight/hotel fixture panels; screenshots extension/artifacts/sidepanel-*.png`);
   fixturePage.socket.close();
+  flightFixturePage.socket.close();
+  hotelFixturePage.socket.close();
   panel.socket.close();
   browser.socket.close();
 } finally {

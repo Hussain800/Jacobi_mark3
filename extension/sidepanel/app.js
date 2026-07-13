@@ -80,7 +80,11 @@ function hasOriginPermission(origin) {
 }
 
 function requestOriginPermission(origin) {
-  return new Promise(function (resolve) { chrome.permissions.request({ origins: [origin] }, resolve); });
+  return new Promise(function (resolve) {
+    chrome.permissions.request({ origins: [origin] }, function (granted) {
+      resolve(chrome.runtime.lastError ? false : Boolean(granted));
+    });
+  });
 }
 
 function apiUrl(base, path) {
@@ -142,7 +146,11 @@ function hasOptionalPermission(request) {
 }
 
 function requestOptionalPermission(request) {
-  return new Promise(function (resolve) { chrome.permissions.request(request, resolve); });
+  return new Promise(function (resolve) {
+    chrome.permissions.request(request, function (granted) {
+      resolve(chrome.runtime.lastError ? false : Boolean(granted));
+    });
+  });
 }
 
 function queryWindowTabs() {
@@ -189,6 +197,12 @@ async function compareOpenTabs() {
     const origins = [...new Set(openTabCandidates.map(function (tab) {
       return JacobiConfig.permissionOrigin(tab.url);
     }).filter(Boolean))];
+    const predeclared = new Set(JacobiConfig.TRAVEL_SITE_ORIGINS);
+    if (origins.some(function (origin) { return !predeclared.has(origin); })) {
+      status.textContent = "This narrow-permission build cannot inject arbitrary retailer origins. Use the active-page comparison or Deep Audit.";
+      openTabCandidates = null;
+      return;
+    }
     button.textContent = "Grant " + origins.length + " origin" + (origins.length === 1 ? "" : "s");
     status.textContent = "Click again to grant access only to these open-tab origins. Tabs without verified price fields are ignored.";
     return;
@@ -197,6 +211,13 @@ async function compareOpenTabs() {
   const origins = [...new Set(openTabCandidates.map(function (tab) {
     return JacobiConfig.permissionOrigin(tab.url);
   }).filter(Boolean))];
+  const predeclared = new Set(JacobiConfig.TRAVEL_SITE_ORIGINS);
+  if (origins.some(function (origin) { return !predeclared.has(origin); })) {
+    status.textContent = "This narrow-permission build cannot inject arbitrary retailer origins. Use the active-page comparison or Deep Audit.";
+    openTabCandidates = null;
+    button.textContent = "Open tabs";
+    return;
+  }
   const originsGranted = !origins.length || await hasOptionalPermission({ origins: origins }) ||
     await requestOptionalPermission({ origins: origins });
   if (!originsGranted) {
@@ -309,13 +330,17 @@ async function run() {
   });
 }
 
-document.getElementById("refresh").addEventListener("click", run);
-document.getElementById("open-tabs").addEventListener("click", compareOpenTabs);
-document.getElementById("settings").addEventListener("click", openSettings);
-document.getElementById("deep-audit").addEventListener("click", function () {
-  if (!lastContext || !lastContext.source_url) return;
-  if (IS_EXTENSION) chrome.runtime.sendMessage({ type: JacobiMessages.TYPES.OPEN_DEEP_AUDIT, url: lastContext.source_url });
-  else openSafeUrl("http://localhost:3000/chat?url=" + encodeURIComponent(lastContext.source_url));
-});
+async function boot() {
+  if (!DEMO_MODE && globalThis.JacobiTravelPanel && await globalThis.JacobiTravelPanel.tryStart()) return;
+  document.getElementById("refresh").addEventListener("click", run);
+  document.getElementById("open-tabs").addEventListener("click", compareOpenTabs);
+  document.getElementById("settings").addEventListener("click", openSettings);
+  document.getElementById("deep-audit").addEventListener("click", function () {
+    if (!lastContext || !lastContext.source_url) return;
+    if (IS_EXTENSION) chrome.runtime.sendMessage({ type: JacobiMessages.TYPES.OPEN_DEEP_AUDIT, url: lastContext.source_url });
+    else openSafeUrl("http://localhost:3000/chat?url=" + encodeURIComponent(lastContext.source_url));
+  });
+  run();
+}
 
-run();
+boot();

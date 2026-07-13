@@ -58,6 +58,34 @@ def test_missing_baggage_stays_unknown_and_blocks_cost_completeness() -> None:
     assert offer.unknown_costs == ["checked_baggage"]
 
 
+def test_partial_flight_payload_keeps_valid_offer_and_rejects_duplicate() -> None:
+    batch = normalize_flight_offers(
+        _fixture("flight_search_partial_duplicate.json")
+    )
+
+    assert batch.raw_offer_count == 3
+    assert [offer.provider_offer_id for offer in batch.offers] == ["FLIGHT-PARTIAL-1"]
+    assert batch.offers[0].grand_total_amount == Decimal("1210.00")
+    assert batch.warnings == [
+        "flight_offer_0: missing flight price",
+        "flight_offer_2: duplicate provider offer id",
+    ]
+
+
+def test_partial_hotel_payload_keeps_valid_offer_and_rejects_duplicate() -> None:
+    batch = normalize_hotel_offers(
+        _fixture("hotel_offers_partial_duplicate.json")
+    )
+
+    assert batch.raw_offer_count == 3
+    assert [offer.provider_offer_id for offer in batch.offers] == ["HOTEL-PARTIAL-1"]
+    assert batch.offers[0].total_amount == Decimal("900.00")
+    assert batch.warnings == [
+        "hotel_0_offer_0: missing hotel price",
+        "hotel_0_offer_2: duplicate offer",
+    ]
+
+
 def test_config_uses_only_fixed_official_origins_and_gates_production() -> None:
     sandbox = AmadeusConfig(client_id="id", client_secret="secret")
     assert sandbox.base_url == AMADEUS_SANDBOX_ORIGIN

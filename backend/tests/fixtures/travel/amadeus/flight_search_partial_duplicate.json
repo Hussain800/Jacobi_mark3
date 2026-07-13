@@ -1,0 +1,87 @@
+{
+  "data": [
+    {"type": "flight-offer", "id": "BROKEN"},
+    {
+      "type": "flight-offer",
+      "id": "FLIGHT-PARTIAL-1",
+      "source": "GDS",
+      "instantTicketingRequired": false,
+      "oneWay": true,
+      "lastTicketingDate": "2027-01-02",
+      "numberOfBookableSeats": 4,
+      "itineraries": [
+        {
+          "duration": "PT7H45M",
+          "segments": [
+            {
+              "departure": {"iataCode": "DXB", "at": "2027-02-01T09:00:00"},
+              "arrival": {"iataCode": "LHR", "at": "2027-02-01T13:45:00"},
+              "carrierCode": "EK",
+              "number": "1",
+              "operating": {"carrierCode": "EK"},
+              "id": "1"
+            }
+          ]
+        }
+      ],
+      "price": {
+        "currency": "AED",
+        "total": "1210.00",
+        "base": "1000.00",
+        "grandTotal": "1210.00"
+      },
+      "travelerPricings": [
+        {
+          "travelerId": "1",
+          "fareDetailsBySegment": [
+            {
+              "segmentId": "1",
+              "cabin": "BUSINESS",
+              "fareBasis": "CLEAN",
+              "includedCheckedBags": {"quantity": 2}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "flight-offer",
+      "id": "FLIGHT-PARTIAL-1",
+      "source": "GDS",
+      "instantTicketingRequired": false,
+      "oneWay": true,
+      "itineraries": [
+        {
+          "segments": [
+            {
+              "departure": {"iataCode": "DXB", "at": "2027-02-01T09:00:00"},
+              "arrival": {"iataCode": "LHR", "at": "2027-02-01T13:45:00"},
+              "carrierCode": "EK",
+              "number": "1",
+              "operating": {"carrierCode": "EK"},
+              "id": "1"
+            }
+          ]
+        }
+      ],
+      "price": {
+        "currency": "AED",
+        "total": "999.00",
+        "base": "900.00",
+        "grandTotal": "999.00"
+      },
+      "travelerPricings": [
+        {
+          "travelerId": "1",
+          "fareDetailsBySegment": [
+            {
+              "segmentId": "1",
+              "cabin": "BUSINESS",
+              "includedCheckedBags": {"quantity": 2}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

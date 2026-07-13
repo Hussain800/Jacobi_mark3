@@ -131,11 +131,16 @@ def validate_workflow() -> list[str]:
 
     chromium = _commands(jobs["extension-chromium"])
     for required in (
-        "test -n \"$CHROME_PATH\"",
+        "test -x \"$CHROME_PATH\"",
         "xvfb-run -a node extension/tests/chromium-extension-test.mjs",
     ):
         if required not in chromium:
             errors.append(f"Chromium gate missing: {required}")
+    chromium_uses = _uses(jobs["extension-chromium"])
+    if "browser-actions/setup-chrome@v2" not in chromium_uses:
+        errors.append("Chromium gate must install Chrome for Testing")
+    if "command -v google-chrome" in chromium:
+        errors.append("Chromium gate must not use branded runner Chrome for unpacked extensions")
     chromium_node_steps = [
         step
         for step in jobs["extension-chromium"].get("steps", [])

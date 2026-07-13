@@ -95,6 +95,8 @@ def validate_workflow() -> list[str]:
     ):
         if required not in backend:
             errors.append(f"backend travel job missing: {required}")
+    if jobs["backend-travel"].get("env", {}).get("JACOBI_TRAVEL_INLINE_WORKER") != "0":
+        errors.append("backend travel job must mirror separate-worker mode")
 
     frontend = _commands(jobs["frontend-build"])
     for required in ("npm ci", "npm run build"):
@@ -134,6 +136,13 @@ def validate_workflow() -> list[str]:
     ):
         if required not in chromium:
             errors.append(f"Chromium gate missing: {required}")
+    chromium_node_steps = [
+        step
+        for step in jobs["extension-chromium"].get("steps", [])
+        if isinstance(step, dict) and step.get("uses") == "actions/setup-node@v4"
+    ]
+    if not chromium_node_steps or chromium_node_steps[0].get("with", {}).get("node-version") != "22":
+        errors.append("Chromium gate requires Node 22 for the DevTools WebSocket client")
 
     for forbidden in ("<all_urls>", "http://*/*", "https://*/*"):
         if forbidden in raw:

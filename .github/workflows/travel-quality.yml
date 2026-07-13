@@ -26,7 +26,7 @@ jobs:
     env:
       JACOBI_TRAVEL_RUNTIME: memory
       JACOBI_TRAVEL_STORAGE: memory
-      JACOBI_TRAVEL_INLINE_WORKER: "1"
+      JACOBI_TRAVEL_INLINE_WORKER: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -134,7 +134,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Locate installed Chrome
         shell: bash
         run: |

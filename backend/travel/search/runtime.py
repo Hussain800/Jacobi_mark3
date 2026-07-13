@@ -29,6 +29,7 @@ TERMINAL_EVENT_TYPES = frozenset(
         SearchEventType.SEARCH_COMPLETED,
         SearchEventType.SEARCH_DEGRADED,
         SearchEventType.SEARCH_FAILED,
+        SearchEventType.SEARCH_CANCELLED,
     }
 )
 

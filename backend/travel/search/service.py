@@ -25,7 +25,14 @@ from ..providers import (
     provider_catalog,
 )
 from .fingerprint import intent_fingerprint
-from .models import SearchEvent, SearchEventType, SearchJob, SearchStatus
+from .models import (
+    SearchEvent,
+    SearchEventType,
+    SearchJob,
+    SearchStatus,
+    TERMINAL_STATUSES,
+    validate_transition,
+)
 from .runtime import TravelRuntime, get_travel_runtime
 from .schemas import (
     AcceptedSearch,
@@ -288,6 +295,36 @@ class TravelSearchService:
         ):
             yield event
 
+    async def cancel_search(
+        self,
+        search_id: str,
+        *,
+        owner_id: str | None = None,
+        capability_token: str | None = None,
+    ) -> SearchSnapshot:
+        access = self.access(owner_id, capability_token)
+        record = self.repository.get_search(search_id, access)
+        if record is None:
+            raise TravelSearchNotFound("travel search not found")
+        payload = dict(record.payload)
+        current = SearchStatus(payload["status"])
+        if current not in TERMINAL_STATUSES:
+            validate_transition(current, SearchStatus.CANCELLED)
+            payload["status"] = SearchStatus.CANCELLED.value
+            payload["updated_at"] = _utcnow().isoformat()
+            payload["degraded_reasons"] = ["cancelled_by_client"]
+            self.repository.update_search(search_id, payload, access)
+            await self.runtime.publish(
+                search_id,
+                SearchEventType.SEARCH_CANCELLED,
+                {"status": SearchStatus.CANCELLED.value},
+            )
+        return self.get_snapshot(
+            search_id,
+            owner_id=owner_id,
+            capability_token=capability_token,
+        )
+
     async def revalidate_offer(
         self,
         search_id: str,
@@ -492,10 +529,11 @@ def get_travel_search_service() -> TravelSearchService:
     if _SERVICE is None:
         from ..persistence import create_travel_repository
 
+        runtime = get_travel_runtime()
         _SERVICE = TravelSearchService(
             repository=create_travel_repository(),
-            runtime=get_travel_runtime(),
-            providers=configured_provider_registry(),
+            runtime=runtime,
+            providers=configured_provider_registry(token_cache=runtime),
         )
     return _SERVICE
 

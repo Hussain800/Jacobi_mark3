@@ -77,6 +77,37 @@ def _translate_error(exc: Exception) -> HTTPException:
     raise exc
 
 
+@router.get("/health/live", summary="Travel API process liveness")
+def travel_liveness() -> dict[str, str]:
+    """Process-only liveness; it deliberately performs no provider calls."""
+
+    return {"status": "live", "service": "travel-api"}
+
+
+@router.get("/health/ready", summary="Travel API runtime readiness")
+async def travel_readiness(
+    response: Response,
+    service: Annotated[TravelSearchService, Depends(get_travel_search_service)],
+) -> dict[str, object]:
+    """Fail readiness only for required runtime coordination, not optional supply."""
+
+    health = await service.provider_health()
+    runtime_ready = health.get("runtime") == "healthy"
+    if not runtime_ready:
+        response.status_code = 503
+    return {
+        "status": "ready" if runtime_ready else "not_ready",
+        "runtime": health.get("runtime", "unknown"),
+        "storage": os.getenv("JACOBI_TRAVEL_STORAGE", "automatic") or "automatic",
+        "worker_mode": (
+            "inline_development"
+            if os.getenv("JACOBI_TRAVEL_INLINE_WORKER", "").strip() == "1"
+            else "separate"
+        ),
+        "providers": health.get("providers", []),
+    }
+
+
 @router.post(
     "/searches",
     response_model=AcceptedSearch,
@@ -180,6 +211,30 @@ async def search_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post(
+    "/searches/{search_id}/cancel",
+    response_model=SearchSnapshot,
+    summary="Cancel a stale SPA search without cancelling unrelated searches",
+)
+async def cancel_search(
+    search_id: str,
+    service: Annotated[TravelSearchService, Depends(get_travel_search_service)],
+    user: Annotated[dict[str, Any] | None, Depends(get_optional_user)],
+    capability: Annotated[
+        str | None,
+        Header(alias="X-Jacobi-Search-Capability"),
+    ] = None,
+) -> SearchSnapshot:
+    try:
+        return await service.cancel_search(
+            search_id,
+            owner_id=_owner_id(user),
+            capability_token=capability,
+        )
+    except Exception as exc:
+        raise _translate_error(exc) from exc
 
 
 @router.post(

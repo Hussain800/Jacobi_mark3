@@ -42,6 +42,8 @@ from ..persistence import AccessContext
 from ..providers import (
     FlightSearchRequest,
     HotelSearchRequest,
+    FlightOfferBatch,
+    HotelOfferBatch,
     NormalizedFlightOffer,
     NormalizedHotelOffer,
     ProviderBatch,
@@ -58,6 +60,7 @@ from .models import (
     TERMINAL_STATUSES,
     validate_transition,
 )
+from .deduplication import deduplicate_normalized_offers
 from .normalization import (
     flight_costs,
     flight_domain_offer,
@@ -94,10 +97,16 @@ class TravelSearchWorker:
         service: TravelSearchService,
         *,
         worker_id: str | None = None,
+        soft_deadline_seconds: float = SOFT_DEADLINE_SECONDS,
+        provider_timeout_seconds: float = PROVIDER_TIMEOUT_SECONDS,
+        max_provider_attempts: int = MAX_PROVIDER_ATTEMPTS,
     ) -> None:
         self.service = service
         self.worker_id = worker_id or f"worker_{uuid4().hex[:12]}"
         self._service_access = AccessContext.for_service()
+        self.soft_deadline_seconds = max(0.001, soft_deadline_seconds)
+        self.provider_timeout_seconds = max(0.01, provider_timeout_seconds)
+        self.max_provider_attempts = max(1, min(max_provider_attempts, 5))
 
     async def process_one(self, *, claim_timeout_seconds: float = 0.1) -> bool:
         job = await self.service.runtime.claim(timeout_seconds=claim_timeout_seconds)
@@ -140,6 +149,8 @@ class TravelSearchWorker:
         lease = await self.service.runtime.acquire_lease(lease_key, ttl_seconds=20)
         if lease is None:
             return
+        tasks: list[asyncio.Task] = []
+        soft_deadline_task: asyncio.Task | None = None
         try:
             record = self.service.repository.get_search(job.search_id, self._service_access)
             if record is None or SearchStatus(record.payload["status"]) in TERMINAL_STATUSES:
@@ -169,11 +180,20 @@ class TravelSearchWorker:
                 asyncio.create_task(self._query_provider(job, search_input, provider_id))
                 for provider_id in provider_ids
             ]
+            soft_deadline_task = asyncio.create_task(
+                self._publish_soft_deadline(job.search_id, tasks)
+            )
             candidates: list[RankableCandidate] = []
             offer_payloads: dict[str, dict[str, Any]] = {}
             degraded: list[str] = []
             first_offer = True
             for completed in asyncio.as_completed(tasks):
+                current = self.service.repository.get_search(
+                    job.search_id,
+                    self._service_access,
+                )
+                if current is None or SearchStatus(current.payload["status"]) == SearchStatus.CANCELLED:
+                    return
                 provider_id, attempt_id, batch, error = await completed
                 if error is not None:
                     degraded.append(f"{provider_id}:{error[0]}")
@@ -184,17 +204,19 @@ class TravelSearchWorker:
                     )
                     continue
                 assert batch is not None
+                provider_offers = deduplicate_normalized_offers(batch.offers)
                 await self.service.runtime.publish(
                     job.search_id,
                     SearchEventType.PROVIDER_COMPLETED,
                     {
                         "provider_id": provider_id,
                         "environment": batch.environment.value,
-                        "offer_count": len(batch.offers),
+                        "offer_count": len(provider_offers),
+                        "duplicate_offer_count": len(batch.offers) - len(provider_offers),
                         "warnings": batch.warnings,
                     },
                 )
-                for provider_offer in batch.offers:
+                for provider_offer in provider_offers:
                     normalized = await self._persist_offer(
                         job.search_id,
                         search_input,
@@ -217,6 +239,16 @@ class TravelSearchWorker:
                             "status": SearchStatus.PARTIAL.value,
                         },
                     )
+            soft_deadline_task.cancel()
+            await asyncio.gather(soft_deadline_task, return_exceptions=True)
+            soft_deadline_task = None
+
+            current = self.service.repository.get_search(
+                job.search_id,
+                self._service_access,
+            )
+            if current is None or SearchStatus(current.payload["status"]) == SearchStatus.CANCELLED:
+                return
 
             await self._transition(job.search_id, SearchStatus.VERIFYING)
             ranked = rank_candidates(candidates)
@@ -270,7 +302,33 @@ class TravelSearchWorker:
             except Exception:
                 pass
         finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if soft_deadline_task is not None:
+                soft_deadline_task.cancel()
+                await asyncio.gather(soft_deadline_task, return_exceptions=True)
             await self.service.runtime.release_lease(lease_key, lease)
+
+    async def _publish_soft_deadline(
+        self,
+        search_id: str,
+        tasks: list[asyncio.Task],
+    ) -> None:
+        await asyncio.sleep(self.soft_deadline_seconds)
+        pending = sum(not task.done() for task in tasks)
+        if pending:
+            await self.service.runtime.publish(
+                search_id,
+                SearchEventType.SEARCH_SOFT_DEADLINE,
+                {
+                    "status": SearchStatus.RUNNING.value,
+                    "pending_provider_count": pending,
+                    "soft_deadline_seconds": self.soft_deadline_seconds,
+                },
+            )
 
     async def _finish_degraded(self, search_id: str, reasons: list[str]) -> None:
         await self._transition(
@@ -317,9 +375,38 @@ class TravelSearchWorker:
             SearchEventType.PROVIDER_STARTED,
             {"provider_id": provider_id, "environment": descriptor.current_environment.value},
         )
+        cached_batch = await self._cached_provider_batch(
+            provider_id,
+            job.intent_fingerprint,
+            search_input.vertical,
+        )
+        if cached_batch is not None:
+            payload = {
+                "provider": provider_id,
+                "provider_environment": cached_batch.environment.value,
+                "status": "cache_hit",
+                "started_at": started.isoformat(),
+                "finished_at": _utcnow().isoformat(),
+                "duration_ms": int((time.monotonic() - started_clock) * 1000),
+                "rate_limited": False,
+                "request_count": 0,
+            }
+            self.service.repository.save_provider_attempt(
+                attempt_id,
+                job.search_id,
+                payload,
+                self._service_access,
+            )
+            await self.service.runtime.publish(
+                job.search_id,
+                SearchEventType.CACHE_HIT,
+                {"provider_id": provider_id, "environment": cached_batch.environment.value},
+            )
+            return provider_id, attempt_id, cached_batch, None
         error: tuple[str, str] | None = None
         batch: ProviderBatch | None = None
-        for attempt in range(MAX_PROVIDER_ATTEMPTS):
+        request_count = 0
+        for attempt in range(self.max_provider_attempts):
             remaining = (job.hard_deadline_at - _utcnow()).total_seconds()
             if remaining <= 0:
                 error = (ProviderErrorCode.timeout.value, "Search hard deadline exceeded.")
@@ -334,7 +421,8 @@ class TravelSearchWorker:
                 await asyncio.sleep(min(0.1 * (attempt + 1), remaining))
                 continue
             try:
-                async with asyncio.timeout(min(PROVIDER_TIMEOUT_SECONDS, remaining)):
+                request_count += 1
+                async with asyncio.timeout(min(self.provider_timeout_seconds, remaining)):
                     if isinstance(search_input, FlightSearchInput):
                         batch = await provider.search_flights(self._flight_request(search_input))
                     else:
@@ -349,7 +437,7 @@ class TravelSearchWorker:
                     ProviderErrorCode.unavailable.value,
                     ProviderErrorCode.upstream.value,
                 }
-                if not retryable or attempt + 1 >= MAX_PROVIDER_ATTEMPTS:
+                if not retryable or attempt + 1 >= self.max_provider_attempts:
                     break
                 await asyncio.sleep(0.1 * (attempt + 1))
         duration_ms = int((time.monotonic() - started_clock) * 1000)
@@ -363,7 +451,7 @@ class TravelSearchWorker:
             "error_code": error[0] if error else None,
             "error_message": error[1] if error else None,
             "rate_limited": bool(error and error[0] == ProviderErrorCode.rate_limited.value),
-            "request_count": MAX_PROVIDER_ATTEMPTS if error else 1,
+            "request_count": request_count,
         }
         self.service.repository.save_provider_attempt(
             attempt_id,
@@ -371,7 +459,53 @@ class TravelSearchWorker:
             payload,
             self._service_access,
         )
+        if batch is not None:
+            await self._cache_provider_batch(
+                provider_id,
+                job.intent_fingerprint,
+                batch,
+            )
         return provider_id, attempt_id, batch, error
+
+    async def _cache_provider_batch(
+        self,
+        provider_id: str,
+        fingerprint: str,
+        batch: ProviderBatch,
+    ) -> None:
+        await self.service.runtime.cache_set(
+            f"provider-result:{provider_id}:{fingerprint}",
+            {
+                "batch": batch.model_dump(mode="json"),
+                "raw_provider_offers": [
+                    dict(getattr(offer, "provider_payload", {}))
+                    for offer in batch.offers
+                ],
+            },
+            ttl_seconds=OFFER_CACHE_TTL_SECONDS,
+        )
+
+    async def _cached_provider_batch(
+        self,
+        provider_id: str,
+        fingerprint: str,
+        vertical: str,
+    ) -> ProviderBatch | None:
+        cached = await self.service.runtime.cache_get(
+            f"provider-result:{provider_id}:{fingerprint}"
+        )
+        if not cached or not isinstance(cached.get("batch"), dict):
+            return None
+        batch_type = FlightOfferBatch if vertical == "flight" else HotelOfferBatch
+        try:
+            batch = batch_type.model_validate(cached["batch"])
+        except Exception:
+            return None
+        raw_offers = cached.get("raw_provider_offers") or []
+        for offer, raw in zip(batch.offers, raw_offers):
+            if isinstance(raw, dict):
+                offer.provider_payload.update(raw)
+        return batch
 
     def _save_attempt(
         self,

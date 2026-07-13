@@ -71,8 +71,10 @@ class SearchEventType(str, Enum):
     OFFER_REJECTED = "offer.rejected"
     RANKING_UPDATED = "ranking.updated"
     SEARCH_DEGRADED = "search.degraded"
+    SEARCH_SOFT_DEADLINE = "search.soft_deadline"
     SEARCH_COMPLETED = "search.completed"
     SEARCH_FAILED = "search.failed"
+    SEARCH_CANCELLED = "search.cancelled"
     HEARTBEAT = "heartbeat"
 
 

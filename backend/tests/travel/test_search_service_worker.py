@@ -369,3 +369,117 @@ def test_redirect_requires_confirmed_revalidation_and_provider_allowlist() -> No
         assert redirect.target_url.startswith("https://book.example.test/")
 
     asyncio.run(scenario())
+
+
+def test_equivalent_second_search_uses_fresh_provider_cache_without_network() -> None:
+    flight_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal flight_requests
+        if request.url.path.endswith("/token"):
+            return _token_response()
+        flight_requests += 1
+        return httpx.Response(200, json=_fixture("flight_search_success.json"))
+
+    async def scenario() -> None:
+        provider = _provider(handler)
+        service = _service(provider)
+        first = await service.create_search(
+            flight_input(),
+            idempotency_key="cache-flight-search-00001",
+        )
+        await TravelSearchWorker(service).process_one()
+        second = await service.create_search(
+            flight_input(),
+            idempotency_key="cache-flight-search-00002",
+        )
+        await TravelSearchWorker(service).process_one()
+        snapshot = service.get_snapshot(
+            second.search_id,
+            capability_token=second.capability_token,
+        )
+        assert snapshot.status == "completed"
+        assert snapshot.provider_attempts[0]["status"] == "cache_hit"
+        events = await service.runtime.events_after(second.search_id, None)
+        assert any(event.event.value == "cache.hit" for event in events)
+        await provider.aclose()
+
+    asyncio.run(scenario())
+    assert flight_requests == 1
+
+
+def test_client_cancellation_is_terminal_and_worker_does_not_call_provider() -> None:
+    async def scenario() -> None:
+        service = _service()
+        accepted = await service.create_search(
+            flight_input(),
+            idempotency_key="cancel-flight-search-0001",
+        )
+        snapshot = await service.cancel_search(
+            accepted.search_id,
+            capability_token=accepted.capability_token,
+        )
+        assert snapshot.status == "cancelled"
+        await TravelSearchWorker(service).process_one()
+        events = await service.runtime.events_after(accepted.search_id, None)
+        assert events[-1].event.value == "search.cancelled"
+
+    asyncio.run(scenario())
+
+
+def test_soft_deadline_is_progress_event_and_provider_timeout_is_isolated() -> None:
+    class SlowProvider:
+        @property
+        def descriptor(self) -> ProviderDescriptor:
+            return ProviderDescriptor(
+                provider_id="amadeus",
+                display_name="Slow provider",
+                verticals=(TravelVertical.flight,),
+                capabilities=(ProviderCapability.flight_search,),
+                current_environment=ProviderEnvironment.sandbox_api,
+                observation_method=ProviderEnvironment.sandbox_api,
+                fixed_origins=("https://api.example.test",),
+                official=True,
+                independently_queries_market=True,
+            )
+
+        async def search_flights(self, request):
+            del request
+            await asyncio.sleep(0.05)
+            return normalize_flight_offers(
+                _fixture("flight_search_success.json"),
+                environment=ProviderEnvironment.sandbox_api,
+            )
+
+        async def aclose(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        registry = ProviderRegistry()
+        registry.register(SlowProvider())
+        service = TravelSearchService(
+            repository=InMemoryTravelRepository(),
+            runtime=MemoryTravelRuntime(),
+            providers=registry,
+            capability_secret=b"timeout-test-secret-that-is-long-enough",
+        )
+        accepted = await service.create_search(
+            flight_input(),
+            idempotency_key="timeout-flight-search-0001",
+        )
+        await TravelSearchWorker(
+            service,
+            soft_deadline_seconds=0.005,
+            provider_timeout_seconds=0.01,
+            max_provider_attempts=1,
+        ).process_one()
+        snapshot = service.get_snapshot(
+            accepted.search_id,
+            capability_token=accepted.capability_token,
+        )
+        assert snapshot.status == "degraded"
+        assert snapshot.provider_attempts[0]["error_code"] == "timeout"
+        events = await service.runtime.events_after(accepted.search_id, None)
+        assert any(event.event.value == "search.soft_deadline" for event in events)
+
+    asyncio.run(scenario())

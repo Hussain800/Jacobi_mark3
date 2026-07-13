@@ -9,12 +9,13 @@ hotel price revalidation that Amadeus does not prove.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import time
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 import httpx
 
@@ -64,6 +65,20 @@ FLIGHT_LIMITATIONS = (
     "Missing checked-baggage evidence remains unknown and blocks mandatory-cost completeness.",
     "A Flight Offers Price response is required before any offer can be treated as freshly revalidated.",
 )
+
+
+class OAuthTokenCache(Protocol):
+    """Small async cache surface implemented by the travel runtime."""
+
+    async def cache_get(self, key: str) -> dict[str, Any] | None: ...
+
+    async def cache_set(
+        self,
+        key: str,
+        value: dict[str, Any],
+        *,
+        ttl_seconds: int,
+    ) -> None: ...
 
 
 def amadeus_descriptor(
@@ -182,12 +197,18 @@ class AmadeusClient:
         *,
         http_client: httpx.AsyncClient | None = None,
         clock: Callable[[], float] = time.monotonic,
+        token_cache: OAuthTokenCache | None = None,
     ) -> None:
         self.config = config
         self._clock = clock
         self._token: str | None = None
         self._token_expires_at = 0.0
         self._token_lock = asyncio.Lock()
+        self._token_cache = token_cache
+        client_key = hashlib.sha256(config.client_id.encode("utf-8")).hexdigest()[:24]
+        self._token_cache_key = (
+            f"provider-token:amadeus:{config.environment.value}:{client_key}"
+        )
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(config.timeout_seconds),
@@ -279,9 +300,15 @@ class AmadeusClient:
     async def access_token(self) -> str:
         if self._token and self._clock() < self._token_expires_at - 30:
             return self._token
+        shared = await self._shared_access_token()
+        if shared is not None:
+            return shared
         async with self._token_lock:
             if self._token and self._clock() < self._token_expires_at - 30:
                 return self._token
+            shared = await self._shared_access_token()
+            if shared is not None:
+                return shared
             response = await self._send(
                 "POST",
                 TOKEN_PATH,
@@ -309,7 +336,44 @@ class AmadeusClient:
                 )
             self._token = token
             self._token_expires_at = self._clock() + expires_in
+            await self._cache_access_token(token, expires_in)
             return token
+
+    async def _shared_access_token(self) -> str | None:
+        if self._token_cache is None:
+            return None
+        try:
+            cached = await self._token_cache.cache_get(self._token_cache_key)
+        except Exception:
+            return None
+        token = cached.get("access_token") if isinstance(cached, dict) else None
+        return token if isinstance(token, str) and 0 < len(token) <= 4096 else None
+
+    async def _cache_access_token(self, token: str, expires_in: int) -> None:
+        if self._token_cache is None or expires_in <= 30:
+            return
+        try:
+            await self._token_cache.cache_set(
+                self._token_cache_key,
+                {"access_token": token},
+                ttl_seconds=expires_in - 30,
+            )
+        except Exception:
+            # Runtime health is reported separately; an OAuth cache failure must
+            # not turn an otherwise valid provider response into a false outage.
+            return
+
+    async def _invalidate_cached_token(self) -> None:
+        if self._token_cache is None:
+            return
+        try:
+            await self._token_cache.cache_set(
+                self._token_cache_key,
+                {},
+                ttl_seconds=1,
+            )
+        except Exception:
+            return
 
     async def request_json(
         self,
@@ -332,6 +396,7 @@ class AmadeusClient:
             if response.status_code == 401 and attempt == 0:
                 self._token = None
                 self._token_expires_at = 0
+                await self._invalidate_cached_token()
                 continue
             if response.status_code < 200 or response.status_code >= 300:
                 self._raise_status(response)
@@ -787,9 +852,15 @@ class AmadeusProvider:
         *,
         http_client: httpx.AsyncClient | None = None,
         clock: Callable[[], float] = time.monotonic,
+        token_cache: OAuthTokenCache | None = None,
     ) -> None:
         self.config = config
-        self.client = AmadeusClient(config, http_client=http_client, clock=clock)
+        self.client = AmadeusClient(
+            config,
+            http_client=http_client,
+            clock=clock,
+            token_cache=token_cache,
+        )
 
     @classmethod
     def from_env(
@@ -798,11 +869,13 @@ class AmadeusProvider:
         *,
         http_client: httpx.AsyncClient | None = None,
         clock: Callable[[], float] = time.monotonic,
+        token_cache: OAuthTokenCache | None = None,
     ) -> "AmadeusProvider":
         return cls(
             AmadeusConfig.from_env(environ),
             http_client=http_client,
             clock=clock,
+            token_cache=token_cache,
         )
 
     @property

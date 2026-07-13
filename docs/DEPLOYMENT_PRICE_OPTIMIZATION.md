@@ -9,7 +9,7 @@ Deployment of the comparison path does not require Bright Data or another paid c
 - Supabase when durable production persistence is selected.
 - Manifest V3 extension configured for the deployed backend and web origin.
 
-`render.yaml` provides a free-plan Docker Blueprint for the API with the comparison health check and zero-cost defaults. There is no Docker Compose file, Redis queue, or production merchant-search service; configure those explicitly rather than assuming they exist.
+`render.yaml` preserves the free-plan single-process API Blueprint and zero-cost defaults. The travel pivot also adds `compose.yaml` with Postgres schema validation, Redis, API, a profile-gated separate worker, and frontend. See [`travel/DEPLOYMENT.md`](travel/DEPLOYMENT.md) for the travel runtime modes and their durability limits. No production merchant-search service is implied by that local topology.
 
 ## Backend container
 
@@ -70,13 +70,13 @@ Sentry is opt-in. The backend removes request headers, cookies, bodies, and quer
 
 ## Render Blueprint
 
-The committed Blueprint deploys the root Dockerfile and prompts for `ALLOWED_ORIGINS`. Validate it when the Render CLI is installed:
+The committed Blueprint deploys the root Dockerfile as a durable Supabase/Redis API plus a separate travel background worker. It prompts once for external Redis, Supabase, Amadeus and CORS values; generated capability/evidence secrets and external credentials are shared with the worker through Blueprint service references. Validate it when the Render CLI is installed:
 
 ```powershell
 render blueprints validate
 ```
 
-The local verification environment did not include the Render CLI, so the Blueprint received YAML/static schema checks only. Durable Supabase storage remains an explicit environment change described above.
+The local verification environment did not include the Render CLI. The Blueprint instead received static tests plus validation against Render's official JSON Schema. External Redis/Supabase reachability, hosted migrations and credentials still require target-environment validation.
 
 ## Bright Data isolation
 

@@ -23,6 +23,7 @@ from travel.providers import (
     normalize_flight_offers,
     normalize_hotel_offers,
 )
+from travel.search.runtime import MemoryTravelRuntime
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "travel" / "amadeus"
@@ -129,6 +130,46 @@ def test_oauth_is_cached_and_flight_search_uses_sandbox_origin() -> None:
     asyncio.run(scenario())
     assert calls.count("/v1/security/oauth2/token") == 1
     assert calls.count("/v2/shopping/flight-offers") == 2
+
+
+def test_oauth_cache_is_shared_across_provider_process_instances() -> None:
+    token_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_calls
+        if request.url.path.endswith("/token"):
+            token_calls += 1
+            return _token_response()
+        assert request.headers["authorization"] == "Bearer sanitized-token"
+        return httpx.Response(200, json=_fixture("flight_search_success.json"))
+
+    async def scenario() -> None:
+        runtime = MemoryTravelRuntime()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as first_http:
+            first = AmadeusProvider(
+                AmadeusConfig(client_id="shared-id", client_secret="secret"),
+                http_client=first_http,
+                token_cache=runtime,
+            )
+            await first.search_flights(
+                FlightSearchRequest(
+                    origin="DXB", destination="LHR", departure_date="2027-02-01"
+                )
+            )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as second_http:
+            second = AmadeusProvider(
+                AmadeusConfig(client_id="shared-id", client_secret="secret"),
+                http_client=second_http,
+                token_cache=runtime,
+            )
+            await second.search_flights(
+                FlightSearchRequest(
+                    origin="DXB", destination="LHR", departure_date="2027-02-01"
+                )
+            )
+
+    asyncio.run(scenario())
+    assert token_calls == 1
 
 
 @pytest.mark.parametrize(

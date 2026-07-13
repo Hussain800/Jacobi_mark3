@@ -119,3 +119,22 @@ def test_feedback_rejects_complete_urls_before_persistence() -> None:
             },
         )
         assert response.status_code == 422
+
+
+def test_cancel_endpoint_terminates_sse_stream() -> None:
+    app, _ = _app_and_service()
+    with TestClient(app) as client:
+        accepted = client.post(
+            "/api/v2/travel/searches",
+            headers={"Idempotency-Key": "api-cancel-search-00001"},
+            json=flight_payload(),
+        ).json()
+        headers = {"X-Jacobi-Search-Capability": accepted["capability_token"]}
+        cancelled = client.post(
+            f"/api/v2/travel/searches/{accepted['search_id']}/cancel",
+            headers=headers,
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelled"
+        events = client.get(accepted["events_url"], headers=headers)
+        assert "event: search.cancelled" in events.text

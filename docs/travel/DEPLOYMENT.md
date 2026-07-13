@@ -178,8 +178,19 @@ Run deterministic extension checks and package the reviewed MV3 files:
 ```powershell
 node --test extension/tests/*.test.js
 node extension/tests/chromium-extension-test.mjs
-pwsh -File scripts/package-extension.ps1 -Output dist/jacobi-travel-extension.zip
+./scripts/test-package-extension.ps1
+./scripts/package-extension.ps1 `
+  -ApiOrigin "https://api.example.com" `
+  -SupportedSiteOrigin @(
+    "https://flights.example.com",
+    "https://hotels.example.com"
+  ) `
+  -Output "dist/jacobi-travel-extension.zip"
 ```
+
+Replace every example origin with the exact reviewed deployment origin. The
+packager deliberately has no production defaults and rejects wildcards,
+`<all_urls>`, path-bearing origins and insecure public HTTP.
 
 Load `extension/` unpacked in Chrome developer mode. The browser harness uses
 versioned local flight and hotel fixtures and writes screenshots under

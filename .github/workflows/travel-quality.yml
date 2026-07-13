@@ -1,0 +1,153 @@
+name: Travel Quality
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - pivot/travel-price-guardian-v1
+  pull_request:
+    branches:
+      - main
+      - pivot/price-optimization-mvp
+      - pivot/travel-price-guardian-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: travel-quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-travel:
+    name: Backend travel, CLI, and MCP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JACOBI_TRAVEL_RUNTIME: memory
+      JACOBI_TRAVEL_STORAGE: memory
+      JACOBI_TRAVEL_INLINE_WORKER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest
+      - name: Run travel, CLI, and MCP contracts
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/travel
+          tests/test_jacobi_cli.py
+          tests/test_price_optimization_mcp.py
+
+  frontend-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  extension-node:
+    name: Extension Node contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run extension unit and static tests
+        run: node --test extension/tests/*.test.js
+
+  deployment-contract:
+    name: Deployment and migration contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install deployment test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest pyyaml
+      - name: Validate travel deployment files
+        run: python scripts/validate_travel_deployment.py
+      - name: Validate travel workflow contract
+        run: python scripts/validate_travel_quality_workflow.py
+      - name: Run migration and deployment tests
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/travel/test_travel_migration.py
+          tests/travel/test_deployment_config.py
+
+  extension-package:
+    name: Deterministic reviewed extension package
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test deterministic packaging and origin rejection
+        shell: pwsh
+        run: ./scripts/test-package-extension.ps1
+      - name: Create CI review package
+        shell: pwsh
+        run: >-
+          ./scripts/package-extension.ps1
+          -ApiOrigin "https://api.release.invalid"
+          -SupportedSiteOrigin @("https://flights.release.invalid", "https://hotels.release.invalid")
+          -Output "dist/jacobi-travel-extension-ci.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jacobi-travel-extension-review
+          path: dist/jacobi-travel-extension-ci.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  extension-chromium:
+    name: Extension Chromium gate
+    needs: extension-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Locate installed Chrome
+        shell: bash
+        run: |
+          CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
+          test -n "$CHROME_PATH"
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+          "$CHROME_PATH" --version
+      - name: Run unpacked MV3 Chromium test
+        run: xvfb-run -a node extension/tests/chromium-extension-test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacobi-travel-extension-chromium
+          path: extension/artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 7

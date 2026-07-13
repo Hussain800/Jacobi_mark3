@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Mapping, Optional
@@ -394,6 +394,17 @@ class TravelRepository(ABC):
         if capability_matches(
             access.capability_token, (search.links or {}).get("capability_hash")
         ):
+            raw_expiry = search.payload.get("expires_at")
+            if not isinstance(raw_expiry, str):
+                return None
+            try:
+                expires_at = datetime.fromisoformat(raw_expiry.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= datetime.now(timezone.utc):
+                return None
             return search
         return None
 

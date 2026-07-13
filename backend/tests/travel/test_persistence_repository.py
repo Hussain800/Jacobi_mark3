@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -56,6 +57,33 @@ def test_owner_and_capability_access_are_isolated_and_hashes_are_hidden():
     ) is None
     with pytest.raises(AccessDeniedError, match="cannot enumerate"):
         repo.list_searches(AccessContext.for_capability("anonymous-secret"))
+
+
+def test_anonymous_capability_expires_but_owner_history_remains_accessible():
+    repo = InMemoryTravelRepository()
+    expired = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    repo.create_search(
+        "search-expired-anon",
+        _search_payload(expires_at=expired),
+        capability_token="expired-secret",
+    )
+    repo.create_search(
+        "search-expired-owner",
+        _search_payload(expires_at=expired),
+        owner_id=OWNER_A,
+    )
+
+    assert (
+        repo.get_search(
+            "search-expired-anon",
+            AccessContext.for_capability("expired-secret"),
+        )
+        is None
+    )
+    assert (
+        repo.get_search("search-expired-owner", AccessContext.for_owner(OWNER_A))
+        is not None
+    )
 
 
 def test_repository_contract_persists_complete_market_graph():

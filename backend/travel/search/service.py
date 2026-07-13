@@ -24,6 +24,7 @@ from ..providers import (
     configured_provider_registry,
     provider_catalog,
 )
+from ..telemetry import MetricEvent, MetricsRecorder, travel_metrics_from_env
 from .fingerprint import intent_fingerprint
 from .models import (
     SearchEvent,
@@ -129,10 +130,12 @@ class TravelSearchService:
         runtime: TravelRuntime,
         providers: ProviderRegistry,
         capability_secret: bytes | None = None,
+        metrics: MetricsRecorder | None = None,
     ) -> None:
         self.repository = repository
         self.runtime = runtime
         self.providers = providers
+        self.metrics = metrics or travel_metrics_from_env()
         self._secret = _capability_secret(capability_secret)
 
     async def create_search(
@@ -170,6 +173,24 @@ class TravelSearchService:
                 result_url=f"/api/v2/travel/searches/{existing_id}",
                 idempotent_replay=True,
             )
+
+        identity_certain = (
+            getattr(search_input.intent, "selected_itinerary", None) is not None
+            if search_input.vertical == "flight"
+            else any(
+                (
+                    search_input.intent.property_hint.canonical_property_id,
+                    search_input.intent.property_hint.official_property_id,
+                    search_input.intent.property_hint.provider_property_id,
+                )
+            )
+        )
+        self.metrics.record(
+            MetricEvent.identity_success
+            if identity_certain
+            else MetricEvent.identity_uncertainty,
+            dimensions={"market": search_input.intent.market},
+        )
 
         now = _utcnow()
         payload = {
@@ -463,6 +484,18 @@ class TravelSearchService:
             },
             access,
         )
+        search = self.repository.get_search(search_id, access)
+        self.metrics.record(
+            MetricEvent.alternative_opened,
+            dimensions={
+                "market": str(
+                    search.payload.get("market", "unknown")
+                    if search is not None
+                    else "unknown"
+                ),
+                "provider": str(offer.payload["provider"]),
+            },
+        )
         return RedirectResponse(
             redirect_id=redirect_id,
             target_url=target_url,
@@ -494,6 +527,23 @@ class TravelSearchService:
             access,
             offer_id=body.offer_id,
         )
+        feedback_metric = {
+            "false_match": MetricEvent.false_match_report,
+            "wrong_match": MetricEvent.wrong_match_feedback,
+            "alternative_opened": MetricEvent.alternative_opened,
+        }.get(body.feedback_type)
+        if feedback_metric is not None:
+            search = self.repository.get_search(body.search_id, access)
+            self.metrics.record(
+                feedback_metric,
+                dimensions={
+                    "market": str(
+                        search.payload.get("market", "unknown")
+                        if search is not None
+                        else "unknown"
+                    )
+                },
+            )
         return feedback_id
 
     def get_preferences(self, owner_id: str) -> TravelPreferences:

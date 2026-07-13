@@ -32,6 +32,8 @@ services:
         generateValue: true
       - key: JACOBI_TRAVEL_RATE_LIMIT_PER_MIN
         value: "30"
+      - key: JACOBI_TRAVEL_TELEMETRY_ENABLED
+        value: "false"
       - key: REDIS_URL
         sync: false
       - key: SUPABASE_URL
@@ -83,6 +85,11 @@ services:
           type: web
           name: jacobi-api
           envVarKey: JACOBI_MANIFEST_SIGNING_KEY
+      - key: JACOBI_TRAVEL_TELEMETRY_ENABLED
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_TRAVEL_TELEMETRY_ENABLED
       - key: REDIS_URL
         fromService:
           type: web

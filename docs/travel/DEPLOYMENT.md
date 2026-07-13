@@ -31,6 +31,7 @@ Important settings:
 - `JACOBI_TRAVEL_RUNTIME=memory|redis`; distributed mode uses `redis` plus `REDIS_URL`.
 - `JACOBI_TRAVEL_INLINE_WORKER=1` is development-only; set `0` with a separate worker.
 - `JACOBI_TRAVEL_CAPABILITY_SECRET` must be a stable, high-entropy server secret shared by API and workers.
+- `JACOBI_TRAVEL_TELEMETRY_ENABLED=false` is the privacy default. Literal `true` enables only bounded outcome metrics without URLs, search IDs or traveller identity.
 - `JACOBI_AGENT_STORAGE=supabase` is also required in distributed mode so worker-written evidence is visible to the API; share one `JACOBI_MANIFEST_SIGNING_KEY` across both roles.
 - `ALLOWED_ORIGINS` is an explicit comma-separated frontend/extension allowlist.
 - `AMADEUS_ENVIRONMENT=sandbox` uses the fixed test origin. Production additionally requires `AMADEUS_PRODUCTION_APPROVED=1` and externally approved credentials.

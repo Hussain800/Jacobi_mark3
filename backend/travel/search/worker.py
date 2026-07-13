@@ -52,6 +52,7 @@ from ..providers import (
     TravelVertical,
 )
 from ..ranking import RankableCandidate, rank_candidates
+from ..telemetry import MetricEvent
 from ..costing import classify_saving
 from .models import (
     SearchEventType,
@@ -145,16 +146,19 @@ class TravelSearchWorker:
         return payload
 
     async def process_job(self, job: SearchJob) -> None:
+        search_started = time.monotonic()
         lease_key = f"search:{job.search_id}"
         lease = await self.service.runtime.acquire_lease(lease_key, ttl_seconds=20)
         if lease is None:
             return
         tasks: list[asyncio.Task] = []
         soft_deadline_task: asyncio.Task | None = None
+        metric_market = "unknown"
         try:
             record = self.service.repository.get_search(job.search_id, self._service_access)
             if record is None or SearchStatus(record.payload["status"]) in TERMINAL_STATUSES:
                 return
+            metric_market = str(record.payload.get("market", "unknown"))
             search_input = _SEARCH_INPUT_ADAPTER.validate_python(
                 {
                     "vertical": record.payload["vertical"],
@@ -173,8 +177,40 @@ class TravelSearchWorker:
             await self._transition(job.search_id, SearchStatus.RUNNING)
 
             provider_ids = list(job.requested_providers or self.service.providers.provider_ids())
+            self.service.metrics.record(
+                MetricEvent.providers_attempted,
+                value=len(provider_ids),
+                dimensions={"market": search_input.intent.market},
+            )
             if not provider_ids:
                 await self._finish_degraded(job.search_id, ["no_configured_independent_provider"])
+                self.service.metrics.record(
+                    MetricEvent.providers_successful,
+                    value=0,
+                    dimensions={"market": search_input.intent.market},
+                )
+                self.service.metrics.record(
+                    MetricEvent.partial_failure,
+                    dimensions={
+                        "market": search_input.intent.market,
+                        "reason_code": "no_configured_provider",
+                    },
+                )
+                self.service.metrics.record(
+                    MetricEvent.no_saving,
+                    dimensions={
+                        "market": search_input.intent.market,
+                        "outcome": "degraded",
+                    },
+                )
+                self.service.metrics.record(
+                    MetricEvent.latency_ms,
+                    value=(time.monotonic() - search_started) * 1000,
+                    dimensions={
+                        "market": search_input.intent.market,
+                        "outcome": "degraded",
+                    },
+                )
                 return
             tasks = [
                 asyncio.create_task(self._query_provider(job, search_input, provider_id))
@@ -186,6 +222,7 @@ class TravelSearchWorker:
             candidates: list[RankableCandidate] = []
             offer_payloads: dict[str, dict[str, Any]] = {}
             degraded: list[str] = []
+            successful_providers = 0
             first_offer = True
             for completed in asyncio.as_completed(tasks):
                 current = self.service.repository.get_search(
@@ -204,6 +241,7 @@ class TravelSearchWorker:
                     )
                     continue
                 assert batch is not None
+                successful_providers += 1
                 provider_offers = deduplicate_normalized_offers(batch.offers)
                 await self.service.runtime.publish(
                     job.search_id,
@@ -257,6 +295,17 @@ class TravelSearchWorker:
             selected_saving = (
                 offer_payloads[selected_id].get("saving") if selected_id else None
             )
+            self.service.metrics.record(
+                MetricEvent.providers_successful,
+                value=successful_providers,
+                dimensions={"market": search_input.intent.market},
+            )
+            if degraded:
+                self.service.metrics.record(
+                    MetricEvent.partial_failure,
+                    value=len(degraded),
+                    dimensions={"market": search_input.intent.market},
+                )
             updates = {
                 "ranking": ranking,
                 "selected_offer_id": selected_id,
@@ -284,8 +333,41 @@ class TravelSearchWorker:
                     "degraded_reasons": degraded,
                 },
             )
+            saving_claim = (
+                str(selected_saving.get("claim", "none"))
+                if isinstance(selected_saving, dict)
+                else "none"
+            )
+            self.service.metrics.record(
+                (
+                    MetricEvent.saving_found
+                    if saving_claim in {"verified", "conditional", "potential"}
+                    else MetricEvent.no_saving
+                ),
+                dimensions={
+                    "market": search_input.intent.market,
+                    "outcome": saving_claim,
+                },
+            )
+            self.service.metrics.record(
+                MetricEvent.latency_ms,
+                value=(time.monotonic() - search_started) * 1000,
+                dimensions={
+                    "market": search_input.intent.market,
+                    "outcome": terminal.value,
+                },
+            )
         except Exception as exc:
             code, _ = _sanitized_error(exc)
+            self.service.metrics.record(
+                MetricEvent.partial_failure,
+                dimensions={"market": metric_market, "reason_code": code},
+            )
+            self.service.metrics.record(
+                MetricEvent.latency_ms,
+                value=(time.monotonic() - search_started) * 1000,
+                dimensions={"market": metric_market, "outcome": "failed"},
+            )
             try:
                 record = self.service.repository.get_search(job.search_id, self._service_access)
                 if record and SearchStatus(record.payload["status"]) not in TERMINAL_STATUSES:

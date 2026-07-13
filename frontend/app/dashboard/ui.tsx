@@ -50,7 +50,7 @@ export function DemoModeBanner() {
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 
 const TABS = [
-  { label: "Price optimizer", href: "/compare" },
+  { label: "Travel Guardian", href: "/travel" },
   { label: "Overview", href: "/dashboard/overview" },
   { label: "Portfolio", href: "/dashboard/portfolio" },
   { label: "Findings", href: "/dashboard/findings" },

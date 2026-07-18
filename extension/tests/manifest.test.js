@@ -19,4 +19,5 @@ test("MV3 host access is optional and restricted to the supported local demo gro
 test("travel access does not add checkout, debugger, cookies, or browsing-history permissions", function () {
   const disallowed = ["debugger", "cookies", "history", "webRequest", "webRequestBlocking"];
   assert.deepEqual(manifest.permissions.filter(function (item) { return disallowed.includes(item); }), []);
+  assert.equal(manifest.permissions.includes("notifications"), true);
 });

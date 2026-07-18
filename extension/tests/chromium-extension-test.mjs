@@ -147,10 +147,11 @@ try {
   await browser.send("Target.createTarget", { url: panelUrl });
   const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
   const panel = await connect(panelTarget.webSocketDebuggerUrl);
-  const manifestCheck = await panel.send("Runtime.evaluate", { expression: "({ version: chrome.runtime.getManifest().version, permissions: chrome.permissions.getAll() })", awaitPromise: true, returnByValue: true });
+  const manifestCheck = await panel.send("Runtime.evaluate", { expression: "({ version: chrome.runtime.getManifest().version, manifestPermissions: chrome.runtime.getManifest().permissions, permissions: chrome.permissions.getAll() })", awaitPromise: true, returnByValue: true });
   assert.equal(manifestCheck.result.value.version, "0.6.0");
   assert.deepEqual(manifestCheck.result.value.permissions.origins || [], []);
   assert.ok(!(manifestCheck.result.value.permissions.permissions || []).includes("tabs"));
+  assert.ok((manifestCheck.result.value.manifestPermissions || []).includes("notifications"));
   await panel.send("Page.enable");
   const deadline = Date.now() + 10000;
   let state = null;
@@ -178,7 +179,7 @@ try {
   assert.equal(flightMarker, "flight-demo-v1");
   assert.equal(hotelMarker, "hotel-demo-v1");
 
-  async function captureTravelDemo(vertical, expectedText) {
+  async function captureTravelDemo(vertical, expectedText, expectedState = "saving") {
     const url = `chrome-extension://${extensionId}/sidepanel/index.html?travelDemo=${vertical}`;
     await browser.send("Target.createTarget", { url });
     const target = await waitForTarget(port, (item) => item.type === "page" && item.url === url);
@@ -192,10 +193,16 @@ try {
       if (state) break;
       await delay(100);
     }
-    assert.equal(state, "saving");
+    assert.equal(state, expectedState);
     const textCheck = await page.send("Runtime.evaluate", { expression: "document.body.innerText", returnByValue: true });
     assert.match(textCheck.result.value, expectedText);
     assert.match(textCheck.result.value, /Fixture data/);
+    if (expectedState === "saving") assert.match(textCheck.result.value, /Immutable evidence manifest/);
+    if (expectedState === "degraded") {
+      assert.match(textCheck.result.value, /provider_timeout/);
+      const unsafeAction = await page.send("Runtime.evaluate", { expression: "Boolean(document.querySelector('#travel-revalidate, a[href^=\"javascript:\"]'))", returnByValue: true });
+      assert.equal(unsafeAction.result.value, false);
+    }
     await page.send("Emulation.setDeviceMetricsOverride", { width: 420, height: 760, deviceScaleFactor: 1, mobile: false });
     const image = await page.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
     writeFileSync(join(artifactDir, `sidepanel-travel-${vertical}.png`), Buffer.from(image.data, "base64"));
@@ -204,7 +211,8 @@ try {
 
   await captureTravelDemo("flight", /DXB/);
   await captureTravelDemo("hotel", /Jacobi Marina Hotel/);
-  console.log(`PASS unpacked Chromium extension (${extensionId}); retail + versioned flight/hotel fixture panels; screenshots extension/artifacts/sidepanel-*.png`);
+  await captureTravelDemo("degraded", /Partial provider result/, "degraded");
+  console.log(`PASS unpacked Chromium extension (${extensionId}); retail + versioned flight/hotel/degraded fixture panels; screenshots extension/artifacts/sidepanel-*.png`);
   fixturePage.socket.close();
   flightFixturePage.socket.close();
   hotelFixturePage.socket.close();

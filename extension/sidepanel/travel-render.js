@@ -55,11 +55,23 @@
     return `<div class="row"><span>${esc(label)}</span><strong>${esc(value == null ? "Unknown" : value)}</strong></div>`;
   }
 
+  function evidenceBlock(offer) {
+    const manifestId = offer && offer.evidence_manifest_id;
+    if (!manifestId) return "";
+    const validReference = typeof manifestId === "string" && /^[A-Za-z0-9._:-]{1,256}$/.test(manifestId);
+    return `<div class="evidence-manifest">
+      ${row("Immutable evidence manifest", manifestId)}
+      ${validReference ? `<button class="travel-evidence-load" data-manifest-id="${esc(manifestId)}">Load immutable evidence details</button><pre class="evidence-output" hidden></pre>` : '<div class="notice warn">The evidence reference is malformed and was not requested.</div>'}
+    </div>`;
+  }
+
   function offerCard(offer, selected) {
     if (!offer) return "";
     const equivalence = offer.equivalence || {};
     const saving = offer.saving || {};
     const limitations = Array.isArray(offer.limitations) ? offer.limitations : [];
+    const reasons = Array.isArray(equivalence.reason_codes) ? equivalence.reason_codes : [];
+    const hardPreferences = Array.isArray(offer.hard_preference_violations) ? offer.hard_preference_violations : [];
     const fixture = (offer.provider_environment || offer.observation_method) === "fixture";
     return `<section class="card ${selected ? "best" : ""}">
       <div class="eyebrow">${selected ? (fixture ? "Fixture candidate" : "Best independently queried route") : "Candidate route"}</div>
@@ -67,9 +79,12 @@
       <div class="big-price">${money(offer, offer.currency)}</div>
       ${row("Data origin", environment(offer.provider_environment || offer.observation_method))}
       ${row("Equivalence", String(equivalence.classification || "insufficient_evidence").replace(/_/g, " "))}
+      ${row("Why included or excluded", equivalence.explanation || (reasons.length ? reasons.join(", ") : "No material mismatch was reported."))}
       ${row("Saving claim", String(saving.claim || "cannot_compare").replace(/_/g, " "))}
+      ${hardPreferences.length ? row("Hard preference conflicts", hardPreferences.join(", ")) : ""}
       ${row("Mandatory costs", offer.total_complete === true ? "complete" : "incomplete or unknown")}
       ${row("Observed", offer.observed_at ? new Date(offer.observed_at).toLocaleString() : "Unknown")}
+      ${evidenceBlock(offer)}
       ${limitations.length ? `<div class="notice warn">Limitations: ${esc(limitations.join(", "))}</div>` : ""}
     </section>`;
   }
@@ -124,6 +139,7 @@
       error: "The independent check failed",
     };
     const rejected = offers.filter(function (offer) { return !offer.eligible; });
+    const resultEnvironment = selected && (selected.provider_environment || selected.observation_method) || result.provider_environment;
     const recheck = selected && selected.revalidation_supported !== false && extracted.vertical === "flight" && !["failed", "expired"].includes(current.status)
       ? '<button class="primary" id="travel-revalidate">Recheck price &amp; open supplier route</button>'
       : "";
@@ -132,12 +148,13 @@
       <h1 class="headline ${esc(mode)}">${esc(titles[mode] || titles.uncertainty)}</h1>
       <p class="subline">${esc(current.error || (result.saving && result.saving.explanation) || "Jacobi separates exactness, total-cost completeness, freshness, and provider limitations." )}</p>
       ${selected ? offerCard(selected, true) : '<div class="notice warn">No independently queried offer is available.</div>'}
+      ${!selected ? `<div class="tags"><span>${esc(environment(resultEnvironment))}</span></div>` : ""}
       ${recheck}
       ${selected && selected.revalidation_supported === false && extracted.vertical === "flight" ? '<div class="notice warn">This fixture demonstrates rendering only. It cannot authorize a supplier redirect without a configured provider revalidation.</div>' : ""}
       ${extracted.vertical === "hotel" && selected ? '<div class="notice warn">This hotel provider does not expose a guaranteed equivalent price-check endpoint, so Jacobi does not authorize a supplier redirect.</div>' : ""}
       ${rejected.length ? `<details><summary>Rejected or ineligible candidates (${rejected.length})</summary>${rejected.map(function (item) { return offerCard(item, false); }).join("")}</details>` : ""}
       ${Array.isArray(result.degraded_reasons) && result.degraded_reasons.length ? `<div class="notice warn">Degraded: ${esc(result.degraded_reasons.join(", "))}</div>` : ""}
-      <details><summary>Search details</summary>${row("Search ID", current.searchId || "Unavailable")}${row("Status", current.status)}${row("Adapter", `${extracted.adapterId} ${extracted.adapterVersion}`)}</details>
+      <details><summary>Search details</summary>${row("Search ID", current.searchId || "Unavailable")}${row("Status", current.status)}${row("Result environment", environment(resultEnvironment))}${row("Adapter", `${extracted.adapterId} ${extracted.adapterVersion}`)}</details>
     </div>`;
   }
 

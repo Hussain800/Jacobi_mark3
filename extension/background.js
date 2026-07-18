@@ -2,7 +2,7 @@
 
 importScripts("shared/config.js", "shared/messages.js");
 
-const { SETTINGS_KEY, DEFAULT_SETTINGS, TRAVEL_SITE_ORIGINS, normalizeSettings, safeHttpUrl, permissionOrigin } = JacobiConfig;
+const { SETTINGS_KEY, DEFAULT_SETTINGS, TRAVEL_SITE_ORIGINS, normalizeSettings, safeHttpUrl, permissionOrigin, meaningfulTravelSaving } = JacobiConfig;
 const { TYPES, validMessage, trustedSender } = JacobiMessages;
 const TRAVEL_SCRIPT_ID = "jacobi-travel-supported-v1";
 const TRAVEL_STATE_KEY = "jacobi_travel_states_v1";
@@ -26,12 +26,22 @@ async function loadState() {
   settings = normalizeSettings(result[SETTINGS_KEY]);
   if (chrome.storage.session) {
     const session = await storageGet(chrome.storage.session, TRAVEL_STATE_KEY);
-    travelStates = session[TRAVEL_STATE_KEY] && typeof session[TRAVEL_STATE_KEY] === "object" ? session[TRAVEL_STATE_KEY] : {};
+    const restored = session[TRAVEL_STATE_KEY] && typeof session[TRAVEL_STATE_KEY] === "object" ? session[TRAVEL_STATE_KEY] : {};
+    // Merge, don't clobber: on a cold start travelStates is empty so this
+    // fills from session; on a warm worker live in-memory entries are
+    // authoritative and must survive a re-run.
+    for (const key of Object.keys(restored)) {
+      if (!(key in travelStates)) travelStates[key] = restored[key];
+    }
   }
   await queueTravelContentScriptConfiguration();
 }
 
-loadState().catch(function () {});
+// A cold service worker restores travelStates from session storage
+// asynchronously. Capture the promise so request handlers can wait for the
+// restore before reading state — otherwise a duplicate search on wake-up
+// sees empty state, skips dedup, and re-extracts the page (TR-703).
+let readyPromise = loadState().catch(function () {});
 
 chrome.storage.onChanged.addListener(function (changes, area) {
   if (area !== "sync" || !changes[SETTINGS_KEY]) return;
@@ -112,7 +122,7 @@ function badge(tabId, state) {
     detected: ["TR", "#315a8a", "Travel page detected"],
     consent: ["!", "#9a681c", "Privacy Mode: click Jacobi to send"],
     checking: ["…", "#315a8a", "Checking independent travel prices"],
-    saving: ["$", "#008a3b", "Cheaper route found; click to review"],
+    saving: ["$", "#008a3b", "Meaningful verified saving; click to review"],
     checked: ["✓", "#4b596a", "Independent travel check complete"],
     degraded: ["!", "#9a681c", "Travel check completed with limitations"],
     stale: ["↻", "#9a681c", "Travel result is stale; recheck required"],
@@ -131,6 +141,7 @@ function publicState(state) {
   const result = { ...state };
   delete result.capabilityToken;
   delete result.lastRevalidation;
+  delete result.interruptionKey;
   return result;
 }
 
@@ -202,17 +213,40 @@ function responseStatus(value) {
   return ALLOWED_PROGRESS.has(candidate) ? candidate : "accepted";
 }
 
-function savingClaim(result) {
-  const claim = result && (result.saving_claim || result.claim || (result.saving && result.saving.claim) || (result.best_offer && result.best_offer.saving_claim));
-  return ["verified", "conditional", "potential"].includes(claim) ? claim : null;
+function selectedTravelOffer(result) {
+  const offers = result && Array.isArray(result.offers) ? result.offers : [];
+  return offers.find(function (item) { return item && item.offer_id === result.selected_offer_id; }) || offers[0] || null;
+}
+
+function notifyMeaningfulSaving(tabId, state, decision) {
+  const automatic = settings.travel.mode === "automatic" && settings.travel.automaticSavingsConsent === true;
+  if (!automatic || !chrome.notifications || typeof chrome.notifications.create !== "function") return;
+  const offer = selectedTravelOffer(state.result);
+  const manifestId = offer && offer.evidence_manifest_id || "no-manifest";
+  const interruptionKey = [state.searchId || "no-search", offer && offer.offer_id || "no-offer", manifestId, decision.savingUsd].join(":");
+  if (state.interruptionKey === interruptionKey) return;
+  state.interruptionKey = interruptionKey;
+  persistStates().catch(function () {});
+  const notificationId = ("jacobi-travel-" + tabId + "-" + String(state.searchId || "saving"))
+    .replace(/[^A-Za-z0-9._:-]/g, "-")
+    .slice(0, 180);
+  chrome.notifications.create(notificationId, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon128.svg"),
+    title: "Meaningful verified travel saving",
+    message: `${decision.savingCurrency} ${decision.savingAmount} saved (USD ${decision.savingUsd} with explicit FX evidence). Click Jacobi to review and revalidate.`,
+    priority: 1,
+  }, function () {});
 }
 
 function resultBadge(tabId, state) {
-  if (state.status === "expired") badge(tabId, "stale");
-  else if (state.status === "failed") badge(tabId, "error");
-  else if (state.status === "degraded") badge(tabId, "degraded");
-  else if (savingClaim(state.result)) badge(tabId, "saving");
-  else badge(tabId, "checked");
+  if (state.status === "expired") { badge(tabId, "stale"); return null; }
+  if (state.status === "failed") { badge(tabId, "error"); return null; }
+  if (state.status === "degraded") { badge(tabId, "degraded"); return null; }
+  const decision = meaningfulTravelSaving(state.result, state.baseline, settings);
+  badge(tabId, decision.badge);
+  if (decision.interrupt) notifyMeaningfulSaving(tabId, state, decision);
+  return decision;
 }
 
 async function fetchResult(tabId, state) {
@@ -292,6 +326,7 @@ function beginProgress(tabId, state) {
 }
 
 async function startTravelSearch(tabId, fingerprint) {
+  await readyPromise;  // wait for cold-start session restore before dedup
   const existing = travelStates[stateKey(tabId)];
   if (existing && existing.fingerprint === fingerprint && existing.searchId) {
     beginProgress(tabId, existing);
@@ -299,12 +334,24 @@ async function startTravelSearch(tabId, fingerprint) {
   }
   const response = boundedContext(await contextFromTab(tabId, fingerprint), fingerprint);
   if (!response) throw new Error("travel_context_changed");
+  const pageBaseline = response.context
+    && response.context.intent
+    && response.context.intent.baseline_offer
+    && response.context.intent.baseline_offer.visible_price;
+  const baseline = pageBaseline
+    && typeof pageBaseline.amount === "string"
+    && /^\d+(?:\.\d+)?$/.test(pageBaseline.amount)
+    && typeof pageBaseline.currency === "string"
+    && /^[A-Za-z]{3}$/.test(pageBaseline.currency)
+      ? { amount: pageBaseline.amount, currency: pageBaseline.currency.toUpperCase() }
+      : null;
   badge(tabId, "checking");
   await updateTravelState(tabId, {
     fingerprint,
     vertical: response.vertical,
     adapterId: response.adapterId,
     adapterVersion: response.adapterVersion,
+    baseline,
     status: "accepted",
     result: null,
     error: null,
@@ -335,6 +382,21 @@ async function startTravelSearch(tabId, fingerprint) {
   });
   if (TERMINAL.has(state.status)) resultBadge(tabId, state); else beginProgress(tabId, state);
   return publicState(state);
+}
+
+async function fetchTravelEvidence(tabId, searchId, manifestId) {
+  const state = travelStates[stateKey(tabId)];
+  if (!state || state.searchId !== searchId || !state.capabilityToken) throw new Error("travel_search_access_unavailable");
+  const references = new Set((state.result && Array.isArray(state.result.offers) ? state.result.offers : []).map(function (offer) {
+    return offer && offer.evidence_manifest_id;
+  }).filter(Boolean));
+  if (!references.has(manifestId)) throw new Error("travel_evidence_reference_unavailable");
+  const response = await apiFetch(`/api/v2/travel/searches/${encodeURIComponent(searchId)}/evidence/${encodeURIComponent(manifestId)}`, { method: "GET" }, state.capabilityToken);
+  const manifest = await safeJson(response);
+  if (!manifest || manifest.manifest_id !== manifestId || typeof manifest.manifest_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(manifest.manifest_sha256)) {
+    throw new Error("travel_evidence_manifest_invalid");
+  }
+  return manifest;
 }
 
 function revalidationStatus(value) {
@@ -396,7 +458,7 @@ chrome.runtime.onInstalled.addListener(function () {
   queueTravelContentScriptConfiguration().catch(function () {});
 });
 
-chrome.runtime.onStartup.addListener(function () { loadState().catch(function () {}); });
+chrome.runtime.onStartup.addListener(function () { readyPromise = loadState().catch(function () {}); });
 
 chrome.contextMenus.onClicked.addListener(function (info, tab) {
   if (info.menuItemId !== "deep-audit") return;
@@ -456,6 +518,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     if (state && state.fingerprint === message.fingerprint) beginProgress(message.tabId, state);
     sendResponse({ ok: true, state: state && (!message.fingerprint || state.fingerprint === message.fingerprint) ? publicState(state) : null });
     return false;
+  }
+
+  if (message.type === TYPES.GET_TRAVEL_EVIDENCE) {
+    if (!extensionPageSender(sender)) { sendResponse({ ok: false, error: "extension_page_sender_required" }); return false; }
+    fetchTravelEvidence(message.tabId, message.searchId, message.manifestId)
+      .then(function (manifest) { sendResponse({ ok: true, manifest }); })
+      .catch(function (error) { sendResponse({ ok: false, error: String(error.message || error).slice(0, 200) }); });
+    return true;
   }
 
   if (message.type === TYPES.REVALIDATE_TRAVEL_OFFER) {

@@ -35,15 +35,47 @@
   }
 
   async function demoContext(vertical) {
-    const file = vertical === "hotel" ? "fixture-hotel-v1.html" : "fixture-flight-v1.html";
+    const degraded = vertical === "degraded";
+    const fixtureVertical = vertical === "hotel" ? "hotel" : "flight";
+    const file = fixtureVertical === "hotel" ? "fixture-hotel-v1.html" : "fixture-flight-v1.html";
     const html = await (await fetch(`../tests/fixtures/${file}`)).text();
     const documentValue = new DOMParser().parseFromString(html, "text/html");
     const extracted = await JacobiTravel.extract(documentValue, {
       href: `http://127.0.0.1:4173/${file}`,
       hostname: "127.0.0.1",
     }, new Date("2026-07-13T10:00:00Z"));
-    const amount = vertical === "hotel" ? "2600.00" : "2899.00";
-    const offerId = `fixture-${vertical}-offer-v1`;
+    const amount = fixtureVertical === "hotel" ? "2600.00" : "2899.00";
+    const offerId = `fixture-${fixtureVertical}-offer-v1`;
+    const result = degraded ? {
+      selected_offer_id: null,
+      saving: null,
+      provider_environment: "fixture",
+      degraded_reasons: ["provider_timeout"],
+      offers: [],
+    } : {
+      selected_offer_id: offerId,
+      saving: { claim: "potential", explanation: "Fixture saving for deterministic UI verification; a real supplier route would still require fresh revalidation." },
+      degraded_reasons: [],
+      offers: [{
+        offer_id: offerId,
+        provider: "amadeus-fixture",
+        supplier_id: "fixture-supplier",
+        currency: "AED",
+        total_amount: amount,
+        total_complete: true,
+        provider_environment: "fixture",
+        observation_method: "fixture",
+        observed_at: "2026-07-13T10:00:02Z",
+        eligible: true,
+        equivalence: { classification: "exact" },
+        saving: { claim: "potential" },
+        evidence_manifest_id: `man_fixture_${fixtureVertical}_offer_v1`,
+        revalidation_supported: false,
+        limitations: fixtureVertical === "hotel"
+          ? ["hotel revalidation unavailable in the initial provider contract"]
+          : ["fixture rendering does not call a provider revalidation endpoint"],
+      }],
+    };
     return {
       extracted: {
         ok: true,
@@ -58,31 +90,10 @@
         tabId: 0,
         fingerprint: extracted.fingerprint,
         searchId: `fixture-${vertical}-search-v1`,
-        status: "completed",
+        status: degraded ? "degraded" : "completed",
+        error: degraded ? "Fixture provider timed out; no independent offer was returned." : null,
         updatedAt: "2026-07-13T10:00:03Z",
-        result: {
-          selected_offer_id: offerId,
-          saving: { claim: "potential", explanation: "Fixture saving for deterministic UI verification; a real supplier route would still require fresh revalidation." },
-          degraded_reasons: [],
-          offers: [{
-            offer_id: offerId,
-            provider: "amadeus-fixture",
-            supplier_id: "fixture-supplier",
-            currency: "AED",
-            total_amount: amount,
-            total_complete: true,
-            provider_environment: "fixture",
-            observation_method: "fixture",
-            observed_at: "2026-07-13T10:00:02Z",
-            eligible: true,
-            equivalence: { classification: "exact" },
-            saving: { claim: "potential" },
-            revalidation_supported: false,
-            limitations: vertical === "hotel"
-              ? ["hotel revalidation unavailable in the initial provider contract"]
-              : ["fixture rendering does not call a provider revalidation endpoint"],
-          }],
-        },
+        result,
       },
     };
   }
@@ -94,6 +105,37 @@
     if (start) start.addEventListener("click", startSearch);
     const revalidate = document.getElementById("travel-revalidate");
     if (revalidate) revalidate.addEventListener("click", revalidateOffer);
+    document.querySelectorAll(".travel-evidence-load").forEach(function (button) {
+      button.addEventListener("click", loadEvidence);
+    });
+  }
+
+  async function loadEvidence(event) {
+    const button = event.currentTarget;
+    const output = button.parentElement && button.parentElement.querySelector(".evidence-output");
+    const manifestId = button.dataset.manifestId;
+    if (!output || !state || !state.searchId || !/^[A-Za-z0-9._:-]{1,256}$/.test(manifestId || "")) return;
+    button.disabled = true;
+    output.hidden = false;
+    output.textContent = "Loading immutable evidence manifest...";
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({
+        type: JacobiMessages.TYPES.GET_TRAVEL_EVIDENCE,
+        tabId: active.tab.id,
+        searchId: state.searchId,
+        manifestId,
+      });
+    } catch (error) {
+      response = { ok: false, error: String(error && error.message || "background_unavailable") };
+    }
+    if (!response || !response.ok || !response.manifest) {
+      output.textContent = "Evidence details unavailable: " + String(response && response.error || "unknown_error");
+      button.disabled = false;
+      return;
+    }
+    output.textContent = JSON.stringify(response.manifest, null, 2);
+    button.textContent = "Immutable evidence loaded";
   }
 
   async function startSearch() {
@@ -176,7 +218,7 @@
     const query = new URLSearchParams(location.search);
     if (!chrome || !chrome.runtime || !chrome.runtime.id || query.has("demo")) return false;
     const requestedDemo = query.get("travelDemo");
-    if (requestedDemo === "flight" || requestedDemo === "hotel") {
+    if (requestedDemo === "flight" || requestedDemo === "hotel" || requestedDemo === "degraded") {
       const demo = await demoContext(requestedDemo);
       active = { tab: { id: 0, url: `http://127.0.0.1/${requestedDemo}-fixture` }, extracted: demo.extracted };
       settings = JacobiConfig.normalizeSettings(null);

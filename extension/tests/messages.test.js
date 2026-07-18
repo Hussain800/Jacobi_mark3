@@ -38,4 +38,7 @@ test("travel messages are field-bounded and do not carry page HTML or intent pay
   assert.equal(messages.validMessage({ type: messages.TYPES.START_TRAVEL_SEARCH, tabId: 3, fingerprint: "b".repeat(64) }), true);
   assert.equal(messages.validMessage({ type: messages.TYPES.START_TRAVEL_SEARCH, tabId: 3, fingerprint: "bad" }), false);
   assert.equal(messages.validMessage({ type: messages.TYPES.REVALIDATE_TRAVEL_OFFER, tabId: 3, searchId: "search_1", offerId: "offer_1" }), true);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "man_offer_1" }), true);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "../../secret" }), false);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "man_offer_1", capabilityToken: "secret" }), false);
 });

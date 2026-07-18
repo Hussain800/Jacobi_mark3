@@ -27,4 +27,5 @@ details { border:1px solid var(--line); border-radius:8px; padding:9px; } summar
 .candidate { display:grid; grid-template-columns:1fr auto; gap:4px 8px; padding:9px 0; border-top:1px solid var(--line); } .candidate p { grid-column:1/-1; color:var(--dim); font-size:11px; }
 .action-row { display:flex; gap:8px; } .action-row button { flex:1; }
 .evidence-output { white-space:pre-wrap; max-height:260px; overflow:auto; padding:9px; border:1px solid var(--line); border-radius:8px; color:#c7fbd4; font:10px/1.45 ui-monospace,monospace; }
+.evidence-manifest { display:flex; flex-direction:column; gap:7px; padding-top:7px; border-top:1px solid var(--line); }
 code { color:#c7fbd4; overflow-wrap:anywhere; }

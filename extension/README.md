@@ -24,4 +24,4 @@ node --test extension/tests/*.test.js
 node extension/tests/chromium-extension-test.mjs
 ```
 
-The Chromium harness loads the unpacked MV3 extension, verifies the retail compatibility panel plus both versioned travel fixtures, and writes retail, flight, and hotel screenshots under `extension/artifacts/`. It skips cleanly when compatible Chrome, Edge, or Playwright Chromium is unavailable.
+The Chromium harness loads the unpacked MV3 extension, verifies the retail compatibility panel plus versioned flight, hotel, and degraded travel fixtures, and writes their screenshots under `extension/artifacts/`. It skips cleanly when compatible Chrome, Edge, or Playwright Chromium is unavailable. The Linux CI gate deliberately installs Chrome for Testing because branded runner Chrome no longer provides a reliable unpacked-extension command-line contract.

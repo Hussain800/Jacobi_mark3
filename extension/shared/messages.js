@@ -18,6 +18,7 @@
     TRAVEL_PAGE_DETECTED: "TRAVEL_PAGE_DETECTED",
     START_TRAVEL_SEARCH: "START_TRAVEL_SEARCH",
     GET_TRAVEL_STATE: "GET_TRAVEL_STATE",
+    GET_TRAVEL_EVIDENCE: "GET_TRAVEL_EVIDENCE",
     TRAVEL_STATE_UPDATED: "TRAVEL_STATE_UPDATED",
     REVALIDATE_TRAVEL_OFFER: "REVALIDATE_TRAVEL_OFFER",
     OPEN_TRAVEL_ROUTE: "OPEN_TRAVEL_ROUTE",
@@ -37,6 +38,7 @@
     TRAVEL_PAGE_DETECTED: ["vertical", "adapterId", "adapterVersion", "fingerprint", "confidence", "missingFields"],
     START_TRAVEL_SEARCH: ["tabId", "fingerprint"],
     GET_TRAVEL_STATE: ["tabId", "fingerprint"],
+    GET_TRAVEL_EVIDENCE: ["tabId", "searchId", "manifestId"],
     TRAVEL_STATE_UPDATED: ["tabId", "state"],
     REVALIDATE_TRAVEL_OFFER: ["tabId", "searchId", "offerId"],
     OPEN_TRAVEL_ROUTE: ["tabId", "searchId", "offerId", "revalidationId", "confirmPriceChange"],
@@ -68,7 +70,7 @@
     if (message.adapterVersion !== undefined && !/^\d+\.\d+\.\d+$/.test(message.adapterVersion)) return false;
     if (message.confidence !== undefined && (typeof message.confidence !== "number" || message.confidence < 0 || message.confidence > 1)) return false;
     if (message.missingFields !== undefined && (!Array.isArray(message.missingFields) || message.missingFields.length > 16 || message.missingFields.some(function (item) { return typeof item !== "string" || item.length > 64; }))) return false;
-    for (const field of ["searchId", "offerId", "revalidationId"]) {
+    for (const field of ["searchId", "offerId", "revalidationId", "manifestId"]) {
       if (message[field] !== undefined && (typeof message[field] !== "string" || !/^[A-Za-z0-9._:-]{1,256}$/.test(message[field]))) return false;
     }
     if (message.confirmPriceChange !== undefined && typeof message.confirmPriceChange !== "boolean") return false;
@@ -76,6 +78,7 @@
     if (message.type === TYPES.TRAVEL_PAGE_DETECTED && (!message.adapterId || !message.adapterVersion || !message.vertical)) return false;
     if (message.type === TYPES.START_TRAVEL_SEARCH && (!Number.isInteger(message.tabId) || !message.fingerprint)) return false;
     if (message.type === TYPES.GET_TRAVEL_STATE && !Number.isInteger(message.tabId)) return false;
+    if (message.type === TYPES.GET_TRAVEL_EVIDENCE && (!Number.isInteger(message.tabId) || !message.searchId || !message.manifestId)) return false;
     if ((message.type === TYPES.REVALIDATE_TRAVEL_OFFER || message.type === TYPES.OPEN_TRAVEL_ROUTE) && (!Number.isInteger(message.tabId) || !message.searchId || !message.offerId)) return false;
     return true;
   }

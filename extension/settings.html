@@ -51,14 +51,14 @@
         <input id="display-currency" type="text" maxlength="3" value="USD">
       </div>
       <div class="field">
-        <label for="meaningful-amount">Meaningful saving amount</label>
+        <label for="meaningful-amount">Meaningful saving amount (USD equivalent)</label>
         <input id="meaningful-amount" type="number" min="0" max="999999" step="0.01">
       </div>
       <div class="field">
         <label for="meaningful-percent">Meaningful saving percent</label>
         <input id="meaningful-percent" type="number" min="0" max="100" step="0.1">
       </div>
-      <p class="help">The badge stays passive; a saving is meaningful at the larger of the configured amount or percentage. Current automatic page support is intentionally limited to the versioned local flight and hotel demos.</p>
+      <p class="help">A notification is allowed only for a verified saving at or above both configured thresholds with explicit USD conversion evidence; smaller or unevidenced savings keep a passive checked badge. Current automatic page support is intentionally limited to the versioned local flight and hotel demos.</p>
     </section>
     <section>
       <label class="check"><input id="telemetry-enabled" type="checkbox"> <span>Enable privacy-conscious self-hosted telemetry. Disabled by default. Product-page text and browsing history are not sent as telemetry.</span></label>

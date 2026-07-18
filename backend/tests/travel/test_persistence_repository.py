@@ -29,7 +29,10 @@ def _search_payload(**overrides):
         "status": "queued",
         "market": "AE",
         "intent": {"origin": "DXB", "destination": "LHR"},
-        "expires_at": "2026-07-14T00:00:00Z",
+        # Dynamic future expiry: anonymous capability access requires a valid
+        # future expiry, so a hardcoded date silently rots the test the day it
+        # passes (this was pinned to 2026-07-14 and broke on 2026-07-15).
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     }
     payload.update(overrides)
     return payload

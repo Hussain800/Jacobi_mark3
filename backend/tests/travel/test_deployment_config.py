@@ -15,12 +15,17 @@ from validate_travel_deployment import validate_repository, validate_static_cont
 
 
 class _RuntimeHealthService:
-    def __init__(self, runtime: str) -> None:
+    def __init__(self, runtime: str, worker: str = "inline") -> None:
         self.runtime = runtime
+        self.worker = worker
 
     async def provider_health(self):
         return {
             "runtime": self.runtime,
+            # Readiness also gates on worker health (the real service reports
+            # this); the stub must mirror the contract so this test isolates
+            # the runtime dimension it is named for.
+            "worker": self.worker,
             "providers": [{"provider_id": "amadeus", "health": "unconfigured"}],
         }
 

@@ -121,19 +121,21 @@ const flightFixtureUrl = `http://127.0.0.1:${server.address().port}/fixture-flig
 const hotelFixtureUrl = `http://127.0.0.1:${server.address().port}/fixture-hotel-v1.html`;
 
 const profile = mkdtempSync(join(tmpdir(), "jacobi-extension-"));
-// On a display-less runner (Linux CI) Chrome must run new-headless with the
-// sandbox and /dev/shm workarounds, or it never opens the DevTools port and
-// DevToolsActivePort is never written. Locally (Windows, with a display) the
-// off-screen window is enough and headless is skipped so the extension side
-// panel renders the same way a user sees it.
-const headlessArgs =
+// The CI job runs this under xvfb-run, so Chrome has a virtual display and
+// stays HEADED — MV3 extensions load and their background target attaches
+// exactly as they do locally (new-headless breaks that target). What a
+// GitHub Ubuntu runner additionally needs is the sandbox and /dev/shm
+// workarounds, without which headed Chrome never opens the DevTools port and
+// DevToolsActivePort is never written. Locally (Windows, real display) none
+// of these are needed.
+const ciArgs =
   process.env.CI || process.platform === "linux"
-    ? ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+    ? ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
     : [];
 const processHandle = spawn(chromePath, [
   "--window-position=-10000,-10000", "--window-size=420,760", "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
   "--disable-component-update", "--disable-sync", "--enable-extensions", "--remote-debugging-port=0",
-  ...headlessArgs,
+  ...ciArgs,
   `--user-data-dir=${profile}`, `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`,
   "about:blank",
 ], { stdio: "ignore", windowsHide: true });

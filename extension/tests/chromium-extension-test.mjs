@@ -71,12 +71,12 @@ async function waitForTarget(port, predicate, timeoutMs = 15000) {
   throw new Error("Timed out waiting for Chromium target. Visible targets: " + targets.map((target) => `${target.type}:${target.url}`).join(", "));
 }
 
-async function waitForValue(page, expression, predicate, timeoutMs = 10000) {
+async function waitForValue(page, expression, predicate, timeoutMs = 10000, { awaitPromise = false } = {}) {
   const deadline = Date.now() + timeoutMs;
   let value = null;
   while (Date.now() < deadline) {
-    const evaluation = await page.send("Runtime.evaluate", { expression, returnByValue: true });
-    value = evaluation.result.value;
+    const evaluation = await page.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise });
+    value = evaluation.result?.value ?? null;
     if (predicate(value)) return value;
     await delay(100);
   }
@@ -159,11 +159,26 @@ try {
   await browser.send("Target.createTarget", { url: panelUrl });
   const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
   const panel = await connect(panelTarget.webSocketDebuggerUrl);
-  const manifestCheck = await panel.send("Runtime.evaluate", { expression: "({ version: chrome.runtime.getManifest().version, manifestPermissions: chrome.runtime.getManifest().permissions, permissions: chrome.permissions.getAll() })", awaitPromise: true, returnByValue: true });
-  assert.equal(manifestCheck.result.value.version, "0.6.0");
-  assert.deepEqual(manifestCheck.result.value.permissions.origins || [], []);
-  assert.ok(!(manifestCheck.result.value.permissions.permissions || []).includes("tabs"));
-  assert.ok((manifestCheck.result.value.manifestPermissions || []).includes("notifications"));
+  // Wait for the panel context to expose the extension APIs before probing —
+  // on a slower CI runner chrome.runtime/chrome.permissions are not injected
+  // the instant the target is created, and a one-shot evaluate would throw and
+  // return no value. The expression is a single async IIFE so the
+  // chrome.permissions.getAll() promise is awaited and serialized by value.
+  const manifestExpression =
+    "(async () => ({ version: chrome.runtime.getManifest().version, " +
+    "manifestPermissions: chrome.runtime.getManifest().permissions, " +
+    "permissions: await chrome.permissions.getAll() }))()";
+  const manifestValue = await waitForValue(
+    panel,
+    manifestExpression,
+    (value) => Boolean(value && value.version),
+    10000,
+    { awaitPromise: true },
+  );
+  assert.equal(manifestValue.version, "0.6.0");
+  assert.deepEqual(manifestValue.permissions.origins || [], []);
+  assert.ok(!(manifestValue.permissions.permissions || []).includes("tabs"));
+  assert.ok((manifestValue.manifestPermissions || []).includes("notifications"));
   await panel.send("Page.enable");
   const deadline = Date.now() + 10000;
   let state = null;

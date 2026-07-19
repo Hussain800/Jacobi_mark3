@@ -16,7 +16,12 @@ from pydantic import TypeAdapter
 from .domain.enums import TravelVertical
 from .domain.flight import FlightIntent
 from .domain.hotel import HotelIntent
-from .evaluation import DATASET_FILES, evaluate_dataset
+from .evaluation import (
+    COST_RANKING_DATASET_FILES,
+    DATASET_FILES,
+    evaluate_accuracy_dataset,
+    evaluate_dataset,
+)
 from .search import intent_fingerprint
 from .search.schemas import TravelSearchInput
 from .search.service import TravelSearchService, get_travel_search_service
@@ -217,13 +222,17 @@ class TravelToolingService:
         health = dict(await self.search_service.provider_health())
         providers = list(health.get("providers") or [])
         runtime_healthy = health.get("runtime") == "healthy"
+        worker_healthy = health.get("worker") in {"inline", "healthy"}
         return {
             "status": (
                 "ready"
-                if runtime_healthy and any(item.get("configured") for item in providers)
+                if runtime_healthy
+                and worker_healthy
+                and any(item.get("configured") for item in providers)
                 else "degraded"
             ),
             "runtime": health.get("runtime", "unknown"),
+            "worker": health.get("worker", "unknown"),
             "configured_provider_count": sum(
                 1 for item in providers if item.get("configured")
             ),
@@ -233,6 +242,17 @@ class TravelToolingService:
         }
 
     def evaluate(self, dataset: str) -> dict[str, Any]:
+        if dataset.removesuffix(".jsonl") in COST_RANKING_DATASET_FILES:
+            report = evaluate_accuracy_dataset(dataset)
+            payload = report.model_dump(mode="json")
+            payload.update(
+                {
+                    "passed": report.passed,
+                    "evidence_label": "fixture",
+                    "real_user_validation": False,
+                }
+            )
+            return payload
         report = evaluate_dataset(dataset)
         payload = report.model_dump(mode="json")
         payload.update(

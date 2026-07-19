@@ -224,6 +224,18 @@ def _human_providers(providers: list[dict[str, Any]]) -> str:
 
 def _human_travel(payload: Any, command: str) -> str:
     if command == "eval":
+        if "vertical" not in payload:
+            return (
+                f"Travel cost/ranking evaluation: {payload['dataset']}\n"
+                f"Records: {payload['record_count']}\n"
+                f"Cost accuracy: {payload['cost_accuracy']:.4f}\n"
+                f"Ranking exact-match rate: {payload['ranking_exact_match_rate']:.4f}\n"
+                f"Ranking agreement: {payload['ranking_agreement']:.4f}\n"
+                f"Passed: {payload['passed']}\n"
+                f"Cost failures: {', '.join(payload['cost_failures']) or 'none'}\n"
+                f"Ranking failures: {', '.join(payload['ranking_failures']) or 'none'}\n"
+                "Evidence: fixture corpus; not real-user validation"
+            )
         return (
             f"Travel evaluation: {payload['dataset']} ({payload['vertical']})\n"
             f"Correct: {payload['correct_count']}/{payload['record_count']}\n"

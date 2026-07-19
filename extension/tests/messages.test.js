@@ -22,3 +22,23 @@ test("dismissed domains must be hostnames", function () {
   assert.equal(messages.validMessage({ type: messages.TYPES.DISMISS_DOMAIN, domain: "amazon.ae" }), true);
   assert.equal(messages.validMessage({ type: messages.TYPES.DISMISS_DOMAIN, domain: "amazon.ae/path" }), false);
 });
+
+test("travel messages are field-bounded and do not carry page HTML or intent payloads", function () {
+  const detected = {
+    type: messages.TYPES.TRAVEL_PAGE_DETECTED,
+    vertical: "flight",
+    adapterId: "flight-demo-v1",
+    adapterVersion: "1.0.0",
+    fingerprint: "a".repeat(64),
+    confidence: 1,
+    missingFields: [],
+  };
+  assert.equal(messages.validMessage(detected), true);
+  assert.equal(messages.validMessage({ ...detected, html: "<html>" }), false);
+  assert.equal(messages.validMessage({ type: messages.TYPES.START_TRAVEL_SEARCH, tabId: 3, fingerprint: "b".repeat(64) }), true);
+  assert.equal(messages.validMessage({ type: messages.TYPES.START_TRAVEL_SEARCH, tabId: 3, fingerprint: "bad" }), false);
+  assert.equal(messages.validMessage({ type: messages.TYPES.REVALIDATE_TRAVEL_OFFER, tabId: 3, searchId: "search_1", offerId: "offer_1" }), true);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "man_offer_1" }), true);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "../../secret" }), false);
+  assert.equal(messages.validMessage({ type: messages.TYPES.GET_TRAVEL_EVIDENCE, tabId: 3, searchId: "search_1", manifestId: "man_offer_1", capabilityToken: "secret" }), false);
+});

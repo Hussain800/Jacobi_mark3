@@ -1,0 +1,50 @@
+{
+  "data": [
+    {
+      "type": "hotel-offers",
+      "hotel": {
+        "hotelId": "HYDXB001",
+        "iataCode": "DXB",
+        "name": "Sanitized Downtown Hotel",
+        "geoCode": {"latitude": 25.1972, "longitude": -55.2744},
+        "address": {"lines": ["1 Example Boulevard"], "countryCode": "AE"}
+      },
+      "available": true,
+      "offers": [
+        {"id": "BROKEN-HOTEL-OFFER"},
+        {
+          "id": "HOTEL-PARTIAL-1",
+          "checkInDate": "2027-02-01",
+          "checkOutDate": "2027-02-03",
+          "roomQuantity": 1,
+          "guests": {"adults": 2},
+          "price": {
+            "currency": "AED",
+            "base": "800.00",
+            "total": "900.00",
+            "taxes": [{"code": "TAX", "amount": "100.00", "included": true}]
+          },
+          "room": {
+            "type": "KING",
+            "typeEstimated": {"category": "DELUXE_ROOM"},
+            "description": {"text": "Sanitized room description"}
+          },
+          "policies": {
+            "paymentType": "guarantee",
+            "cancellations": [{"deadline": "2027-01-30T18:00:00"}]
+          }
+        },
+        {
+          "id": "HOTEL-PARTIAL-1",
+          "checkInDate": "2027-02-01",
+          "checkOutDate": "2027-02-03",
+          "roomQuantity": 1,
+          "guests": {"adults": 2},
+          "price": {"currency": "AED", "base": "700.00", "total": "800.00"},
+          "room": {"type": "KING"},
+          "policies": {"paymentType": "guarantee"}
+        }
+      ]
+    }
+  ]
+}

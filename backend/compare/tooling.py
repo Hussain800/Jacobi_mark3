@@ -215,6 +215,8 @@ async def deep_audit(
         return {
             "error": "deep audit requires explicit=true",
             "automatic_paid_provider_calls": False,
+            "managed_provider_explicitly_allowed": False,
+            "paid_provider_usage": "not_performed",
         }
     if tier not in {"free", "pro"}:
         return {"error": "tier must be 'free' or 'pro'"}
@@ -227,15 +229,27 @@ async def deep_audit(
                     "configured deployer-managed provider credentials"
                 ),
                 "automatic_paid_provider_calls": False,
+                "managed_provider_explicitly_allowed": False,
+                "paid_provider_usage": "not_performed",
             }
         # Lazy import avoids coupling normal comparison startup to main.py. The
         # full synthetic matrix remains owned by the preserved legacy engine.
         from main import run_full_probe
 
         result = await run_full_probe(url, url, tier=tier)
+        executed = result.get("real_probes_executed")
+        paid_provider_usage = (
+            "performed"
+            if isinstance(executed, int) and executed > 0
+            else "not_performed"
+            if executed == 0
+            else "unknown"
+        )
         return {
             "audit_type": "synthetic_price_discrimination_matrix",
+            "automatic_paid_provider_calls": False,
             "managed_provider_explicitly_allowed": True,
+            "paid_provider_usage": paid_provider_usage,
             "result": result,
         }
     displayed_total = (
@@ -253,5 +267,7 @@ async def deep_audit(
     )
     result = _json(envelope)
     result["audit_type"] = "agentcore_fixture_price_context"
+    result["automatic_paid_provider_calls"] = False
     result["managed_provider_explicitly_allowed"] = False
+    result["paid_provider_usage"] = "not_performed"
     return result

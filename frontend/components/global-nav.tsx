@@ -14,10 +14,10 @@ import { usePathname } from "next/navigation";
 import NavAuth from "./nav-auth";
 
 const LINKS = [
-  { href: "/chat",        label: "Probe" },
-  { href: "/history",     label: "History" },
-  { href: "/leaderboard", label: "Board" },
-  { href: "/pricing",     label: "Pricing" },
+  { href: "/travel",   label: "Travel Guardian" },
+  { href: "/extension", label: "Extension" },
+  { href: "/compare",  label: "Retail compare" },
+  { href: "/chat",     label: "Deep Audit" },
 ];
 
 export default function GlobalNav() {
@@ -62,7 +62,7 @@ export default function GlobalNav() {
 
         <div className="hidden md:flex items-center gap-[30px]">
           {LINKS.map((l) => {
-            const active = pathname === l.href || (l.href === "/chat" && pathname.startsWith("/chat"));
+            const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
             return (
               <Link
                 key={l.href}

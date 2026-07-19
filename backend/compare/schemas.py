@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -598,6 +598,10 @@ class DeepAuditRequest(BaseModel):
 class DeepAuditResult(BaseModel):
     status: str
     automatic_paid_provider_calls: bool = False
+    managed_provider_explicitly_allowed: bool = False
+    paid_provider_usage: Literal["not_performed", "performed", "unknown"] = (
+        "not_performed"
+    )
     result: Dict[str, Any] = Field(default_factory=dict)
 
 

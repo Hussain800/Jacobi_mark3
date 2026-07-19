@@ -2,6 +2,8 @@ node_modules
 .next
 .git
 .env
-frontend
+**/.env*
+frontend/node_modules
+frontend/.next
 __pycache__
 *.pyc

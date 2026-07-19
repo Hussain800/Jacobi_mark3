@@ -13,10 +13,11 @@ import { usePathname } from "next/navigation";
 import BrandLockup from "../design/BrandLockup";
 
 const LINKS = [
-  { label: "Compare", href: "/compare" },
+  { label: "Guardian", href: "/travel" },
+  { label: "Method", href: "/method" },
+  { label: "Providers", href: "/travel#providers" },
   { label: "Extension", href: "/extension" },
-  { label: "Developers", href: "/developers" },
-  { label: "Deep Audit", href: "/chat" },
+  { label: "Retail compare", href: "/compare" },
 ];
 
 export default function LandingNav() {
@@ -49,8 +50,8 @@ export default function LandingNav() {
           })}
         </div>
         <div className="jx-nav__right">
-          <Link href="/dashboard" className="jx-nav__signin">Dashboard</Link>
-          <Link href="/extension" className="jx-nav__cta">Load extension</Link>
+          <Link href="/chat" className="jx-nav__signin">Deep Audit</Link>
+          <Link href="/travel" className="jx-nav__cta">Open Guardian</Link>
         </div>
       </div>
     </nav>

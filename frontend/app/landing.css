@@ -424,6 +424,27 @@
 .jx-hero__meta b { color: var(--jx-ink); font-weight: 500; }
 .jx-hero__stage { position: relative; width: 100%; max-width: 620px; margin-left: auto; }
 
+.jx-travel-preview { position: relative; overflow: hidden; border: 1px solid var(--jx-line-2); border-radius: var(--jx-r-2); background: linear-gradient(145deg, var(--jx-layer-2), var(--jx-layer-1) 56%); box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 28px 70px rgba(0,0,0,.26); }
+.jx-travel-preview::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(118deg, rgba(255,255,255,.035), transparent 28%); }
+.jx-travel-preview__head,
+.jx-travel-preview__foot { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 18px; border-bottom: 1px solid var(--jx-line); font-family: var(--jx-mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+.jx-travel-preview__head span,
+.jx-travel-preview__foot span { color: var(--jx-ink-3); }
+.jx-travel-preview__head b { padding: 3px 7px; border: 1px solid rgba(255,176,83,.35); border-radius: 99px; color: var(--jx-caution); font-weight: 500; }
+.jx-travel-preview__route { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: clamp(26px, 5vw, 44px) 22px; }
+.jx-travel-preview__route strong { max-width: 11ch; font-size: clamp(25px, 3.4vw, 40px); line-height: 1.03; letter-spacing: -.035em; }
+.jx-travel-preview__route span { color: var(--jx-ink-4); font-family: var(--jx-mono); font-size: 10px; letter-spacing: .12em; }
+.jx-travel-preview__prices { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--jx-line); border-bottom: 1px solid var(--jx-line); }
+.jx-travel-preview__prices > div { display: grid; gap: 8px; padding: 18px 20px; }
+.jx-travel-preview__prices > div + div { border-left: 1px solid var(--jx-line); }
+.jx-travel-preview__prices span { color: var(--jx-ink-4); font-family: var(--jx-mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.jx-travel-preview__prices b { color: var(--jx-ink-2); font-family: var(--jx-mono); font-size: clamp(18px, 2.2vw, 26px); font-weight: 500; }
+.jx-travel-preview__prices .is-returned { background: var(--jx-accent-dim); box-shadow: inset 2px 0 0 var(--jx-accent); }
+.jx-travel-preview__prices .is-returned b { color: var(--jx-accent-hi); }
+.jx-travel-preview__foot { border-bottom: 0; }
+.jx-travel-preview__foot b { color: var(--jx-baseline); font-weight: 500; }
+.jx-travel-preview > p { padding: 11px 18px; border-top: 1px dashed var(--jx-line-2); color: var(--jx-ink-4); font-family: var(--jx-mono); font-size: 8.5px; line-height: 1.5; }
+
 /* ---- Hero canvas material: a calibrated dark instrument chamber -----------
    Dimensional dark material (layered radials, no lines) — reads as a lit
    measurement chamber, not flat black, and never a grid maze. */
@@ -967,6 +988,13 @@
   .jx-route-proof strong,
   .jx-evidence-demo code,
   .jx-evidence-demo__row strong { grid-row: auto; text-align: left; }
+}
+
+@media (max-width: 540px) {
+  .jx-travel-preview__route { align-items: flex-start; flex-direction: column; }
+  .jx-travel-preview__prices { grid-template-columns: 1fr; }
+  .jx-travel-preview__prices > div + div { border-top: 1px solid var(--jx-line); border-left: 0; }
+  .jx-travel-preview__foot { align-items: flex-start; flex-direction: column; }
 }
 
 .jx-code { margin-top: 24px; padding: 20px 22px; overflow-x: auto; border: 1px solid var(--jx-line-2); background: #050706; color: #dff9e3; border-radius: var(--jx-r-1); }

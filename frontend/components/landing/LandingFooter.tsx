@@ -8,15 +8,16 @@ export default function LandingFooter() {
         <div>
           <BrandLockup size={17} />
           <p className="jx-footer__desc">
-            The open-source price optimisation engine for exact product matching,
-            known all-in totals, replaceable providers, and evidence-backed savings.
+            A travel price guardian for equivalent offers, mandatory-cost clarity,
+            truthful provider environments, evidence, and fresh revalidation.
           </p>
         </div>
         <nav className="jx-footer__col" aria-label="Product">
           <span className="jx-label">Product</span>
-          <Link href="/compare">Compare</Link>
+          <Link href="/travel">Travel Guardian</Link>
+          <Link href="/travel#providers">Providers</Link>
           <Link href="/extension">Extension</Link>
-          <Link href="/history">History</Link>
+          <Link href="/compare">Retail compare</Link>
           <Link href="/chat">Deep Audit</Link>
         </nav>
         <nav className="jx-footer__col" aria-label="Project">
@@ -28,7 +29,7 @@ export default function LandingFooter() {
         </nav>
       </div>
       <div className="jx-wrap jx-wrap--wide jx-footer__bottom">
-        <span className="jx-footer__tag">Every saving leaves evidence.</span>
+        <span className="jx-footer__tag">Every travel claim keeps its limits attached.</span>
         <span className="jx-footer__tag">Copyright 2026 Jacobi / MIT licensed core</span>
       </div>
     </footer>

@@ -217,7 +217,13 @@ async def deep_audit(
         raise HTTPException(status_code=400, detail=payload["error"])
     return DeepAuditResult(
         status="complete",
-        automatic_paid_provider_calls=False,
+        automatic_paid_provider_calls=bool(
+            payload.get("automatic_paid_provider_calls", False)
+        ),
+        managed_provider_explicitly_allowed=bool(
+            payload.get("managed_provider_explicitly_allowed", False)
+        ),
+        paid_provider_usage=str(payload.get("paid_provider_usage", "unknown")),
         result=payload,
     )
 

@@ -25,10 +25,10 @@ import { createClient } from "../../lib/supabase/client";
 import BrandLockup from "./BrandLockup";
 
 const LINKS: { label: string; href: string }[] = [
-  { label: "Compare", href: "/compare" },
+  { label: "Travel Guardian", href: "/travel" },
   { label: "Extension", href: "/extension" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "History", href: "/history" },
+  { label: "Retail compare", href: "/compare" },
+  { label: "Enterprise", href: "/dashboard/overview" },
   { label: "Deep Audit", href: "/chat" },
 ];
 

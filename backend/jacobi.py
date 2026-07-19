@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from compare import tooling
+from travel import tooling as travel_tooling
 
 
 def _load_object(path: str) -> dict[str, Any]:
@@ -79,6 +80,68 @@ def _parser() -> argparse.ArgumentParser:
         help="required acknowledgement that Deep Audit is separate from comparison",
     )
     _add_output_flag(audit)
+
+    travel = commands.add_parser("travel", help="travel Price Guardian tooling")
+    travel_commands = travel.add_subparsers(dest="travel_command", required=True)
+
+    travel_eval = travel_commands.add_parser(
+        "eval", help="evaluate a versioned travel equivalence corpus"
+    )
+    travel_eval.add_argument(
+        "--dataset",
+        required=True,
+        help="dataset identifier, for example flight_equivalence_v1",
+    )
+    _add_output_flag(travel_eval)
+
+    travel_benchmark = travel_commands.add_parser(
+        "benchmark", help="benchmark hermetic travel equivalence evaluation"
+    )
+    travel_benchmark.add_argument("--dataset")
+    travel_benchmark.add_argument("--iterations", type=int, default=5)
+    travel_benchmark.add_argument("--warmups", type=int, default=1)
+    _add_output_flag(travel_benchmark)
+
+    for name, help_text in (
+        ("providers", "list travel provider capabilities and configuration"),
+        ("health", "show travel tooling/runtime health without probing providers"),
+    ):
+        subcommand = travel_commands.add_parser(name, help=help_text)
+        _add_output_flag(subcommand)
+
+    travel_intent = travel_commands.add_parser(
+        "intent", help="validate and normalize a typed flight or hotel intent"
+    )
+    travel_intent.add_argument("--input", required=True, help="intent JSON object, or -")
+    _add_output_flag(travel_intent)
+
+    travel_search = travel_commands.add_parser(
+        "search", help="validate and enqueue a durable travel search"
+    )
+    travel_search.add_argument("--input", required=True, help="search JSON object, or -")
+    _add_output_flag(travel_search)
+
+    for name, help_text in (
+        ("status", "read a capability-authorized travel search"),
+        ("explain", "explain a capability-authorized travel search"),
+        ("evidence", "read sanitized capability-authorized travel evidence"),
+    ):
+        subcommand = travel_commands.add_parser(name, help=help_text)
+        subcommand.add_argument("--search-id", required=True)
+        subcommand.add_argument(
+            "--capability-token", "--access-token", dest="capability_token", required=True
+        )
+        _add_output_flag(subcommand)
+
+    travel_revalidate = travel_commands.add_parser(
+        "revalidate", help="revalidate a flight offer before redirect"
+    )
+    travel_revalidate.add_argument("--search-id", required=True)
+    travel_revalidate.add_argument("--offer-id", required=True)
+    travel_revalidate.add_argument(
+        "--capability-token", "--access-token", dest="capability_token", required=True
+    )
+    _add_output_flag(travel_revalidate)
     return parser
 
 
@@ -159,6 +222,80 @@ def _human_providers(providers: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _human_travel(payload: Any, command: str) -> str:
+    if command == "eval":
+        if "vertical" not in payload:
+            return (
+                f"Travel cost/ranking evaluation: {payload['dataset']}\n"
+                f"Records: {payload['record_count']}\n"
+                f"Cost accuracy: {payload['cost_accuracy']:.4f}\n"
+                f"Ranking exact-match rate: {payload['ranking_exact_match_rate']:.4f}\n"
+                f"Ranking agreement: {payload['ranking_agreement']:.4f}\n"
+                f"Passed: {payload['passed']}\n"
+                f"Cost failures: {', '.join(payload['cost_failures']) or 'none'}\n"
+                f"Ranking failures: {', '.join(payload['ranking_failures']) or 'none'}\n"
+                "Evidence: fixture corpus; not real-user validation"
+            )
+        return (
+            f"Travel evaluation: {payload['dataset']} ({payload['vertical']})\n"
+            f"Correct: {payload['correct_count']}/{payload['record_count']}\n"
+            f"Accuracy: {payload['accuracy']:.4f}\n"
+            f"Passed: {payload['passed']}\n"
+            "Evidence: fixture corpus; not real-user validation"
+        )
+    if command == "benchmark":
+        return (
+            f"Travel benchmark: {payload['workload']}\n"
+            f"Cases per iteration: {payload['case_count_per_iteration']}\n"
+            f"Median: {payload['median_ms']:.3f} ms; p95: {payload['p95_ms']:.3f} ms\n"
+            "Includes live-provider latency: False"
+        )
+    if command == "providers":
+        return "\n".join(
+            f"{item['provider_id']}: {item['health']}, {item['current_environment']}, "
+            f"verticals={','.join(item['verticals'])}"
+            for item in payload
+        )
+    if command == "health":
+        return (
+            f"Travel tooling: {payload['status']}\n"
+            f"Runtime: {payload['runtime']}\n"
+            f"Configured providers: {payload['configured_provider_count']}\n"
+            "Provider health network requests: 0"
+        )
+    if command == "intent":
+        return (
+            f"Travel intent: {payload['vertical']}\n"
+            f"Fingerprint: {payload['intent_fingerprint']}\n"
+            "Network requests: 0"
+        )
+    if command == "search":
+        return (
+            f"Travel search {payload['search_id']}: {payload['status']}\n"
+            f"Results: {payload['result_url']}\n"
+            "Execution: durable job"
+        )
+    if command == "status":
+        return (
+            f"Travel search {payload['search_id']}: {payload['status']}\n"
+            f"Offers: {len(payload.get('offers', []))}\n"
+            f"Provider attempts: {len(payload.get('provider_attempts', []))}"
+        )
+    if command == "revalidate":
+        return (
+            f"Travel offer {payload['offer_id']}: {payload['status']}\n"
+            f"Changes: {', '.join(payload.get('changes', [])) or 'none'}"
+        )
+    if command == "explain":
+        return payload["explanation"]
+    if command == "evidence":
+        return (
+            f"Travel evidence for {payload['search_id']}: {len(payload['evidence'])} item(s)\n"
+            "Raw provider payloads included: False"
+        )
+    return str(payload)
+
+
 def _emit(payload: Any, *, json_output: bool, human: str) -> None:
     if json_output:
         print(json.dumps(payload, indent=2, sort_keys=True, default=str))
@@ -195,6 +332,47 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Automatic paid-provider calls: {payload['paid_provider_automatic_calls']}"
             )
             _emit(payload, json_output=args.json, human=human)
+        elif args.command == "travel":
+            service = travel_tooling.get_travel_tooling_service()
+            if args.travel_command == "eval":
+                payload = service.evaluate(args.dataset)
+            elif args.travel_command == "benchmark":
+                payload = service.benchmark(
+                    dataset=args.dataset,
+                    iterations=args.iterations,
+                    warmups=args.warmups,
+                )
+            elif args.travel_command == "providers":
+                payload = service.providers()
+            elif args.travel_command == "health":
+                payload = asyncio.run(service.health())
+            elif args.travel_command == "intent":
+                payload = service.parse_intent(_load_object(args.input))
+            elif args.travel_command == "search":
+                payload = asyncio.run(service.search(_load_object(args.input)))
+            elif args.travel_command == "status":
+                payload = asyncio.run(
+                    service.status(args.search_id, args.capability_token)
+                )
+            elif args.travel_command == "revalidate":
+                payload = asyncio.run(
+                    service.revalidate(
+                        args.search_id, args.offer_id, args.capability_token
+                    )
+                )
+            elif args.travel_command == "explain":
+                payload = asyncio.run(
+                    service.explain(args.search_id, args.capability_token)
+                )
+            else:
+                payload = asyncio.run(
+                    service.evidence(args.search_id, args.capability_token)
+                )
+            _emit(
+                payload,
+                json_output=args.json,
+                human=_human_travel(payload, args.travel_command),
+            )
         else:
             payload = asyncio.run(tooling.deep_audit(
                 explicit=args.confirm_explicit,
@@ -224,7 +402,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(payload, json_output=args.json, human=human)
         return 0
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
-        error = {"error": str(exc), "command": args.command}
+        command = (
+            f"travel {args.travel_command}"
+            if args.command == "travel"
+            else args.command
+        )
+        error = {"error": str(exc), "command": command}
         if getattr(args, "json", False):
             print(json.dumps(error, sort_keys=True), file=sys.stderr)
         else:

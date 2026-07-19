@@ -13,7 +13,7 @@ button:hover { border-color:#4d5666; } button:disabled { opacity:.45; cursor:not
 .state { display:flex; flex-direction:column; gap:12px; }
 .eyebrow { font:700 10px ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; }
 h1,h2,h3,p { margin:0; } h1 { font-size:22px; line-height:1.18; } h2 { font-size:17px; } h3 { font-size:14px; }
-.headline.saving { color:var(--green); } .headline.tradeoff,.headline.uncertainty,.headline.partial-failure { color:var(--amber); }
+.headline.saving { color:var(--green); } .headline.tradeoff,.headline.uncertainty,.headline.partial-failure,.headline.degraded,.headline.stale { color:var(--amber); } .headline.error { color:var(--red); }
 .subline,.privacy-note { color:var(--dim); } .privacy-note { font-size:11px; }
 .identity,.card { border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--panel); display:flex; flex-direction:column; gap:7px; }
 .identity { border-color:#24432f; margin-bottom:12px; } .identity p { color:var(--dim); }
@@ -27,4 +27,5 @@ details { border:1px solid var(--line); border-radius:8px; padding:9px; } summar
 .candidate { display:grid; grid-template-columns:1fr auto; gap:4px 8px; padding:9px 0; border-top:1px solid var(--line); } .candidate p { grid-column:1/-1; color:var(--dim); font-size:11px; }
 .action-row { display:flex; gap:8px; } .action-row button { flex:1; }
 .evidence-output { white-space:pre-wrap; max-height:260px; overflow:auto; padding:9px; border:1px solid var(--line); border-radius:8px; color:#c7fbd4; font:10px/1.45 ui-monospace,monospace; }
+.evidence-manifest { display:flex; flex-direction:column; gap:7px; padding-top:7px; border-top:1px solid var(--line); }
 code { color:#c7fbd4; overflow-wrap:anywhere; }

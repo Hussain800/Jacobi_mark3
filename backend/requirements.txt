@@ -1,6 +1,10 @@
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 httpx==0.28.*
+# Travel search runtime: queue, leases, cache, rate limits and replayable SSE
+# streams. Local tests use the in-memory contract; hosted travel mode requires
+# Redis and fails closed when it is selected but unavailable.
+redis>=5.0,<9
 # FastMCP < ~1.13 crashes on typing-generic tool params (issubclass on
 # Dict[str, Any]); agentcore/mcp_server.py needs a modern release.
 mcp>=1.28
@@ -21,6 +25,8 @@ reportlab==4.2.*
 stripe>=10.0
 supabase>=2.7
 sentry-sdk>=2.20
+# Property-based travel money/date/ranking tests.
+hypothesis>=6.100,<7
 # Optional (NOT installed by default; agentcore degrades to local HTTP without
 # it): browser evidence provider.
 #   pip install playwright && python -m playwright install chromium

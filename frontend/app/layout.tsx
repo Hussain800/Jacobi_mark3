@@ -16,13 +16,13 @@ const schibsted = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Jacobi - Verified price optimisation",
+  title: "Jacobi - Travel Price Guardian",
   description:
-    "Jacobi finds the cheapest verified way to buy the exact product you are viewing, calculates the known all-in total, and preserves the evidence.",
+    "Stop overpaying for trips you already chose. Jacobi compares equivalent travel offers, preserves mandatory-cost uncertainty, and revalidates before action.",
   openGraph: {
-    title: "Jacobi - Find the exact same product for less",
+    title: "Jacobi - Stop overpaying for trips you already chose",
     description:
-      "Exact-product matching, known all-in totals, evidence, REST, MCP, CLI, and an open-source Chrome side panel.",
+      "Travel equivalence, mandatory-cost clarity, truthful provider labels, evidence manifests, and fresh revalidation.",
     type: "website",
   },
 };

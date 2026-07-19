@@ -155,38 +155,28 @@ try {
   const fixturePage = await connect(fixtureTarget.webSocketDebuggerUrl);
   const fixtureHeading = await waitForValue(fixturePage, "document.querySelector('h1')?.textContent || ''", (value) => /WH-1000XM6/.test(value));
   assert.match(fixtureHeading, /WH-1000XM6/);
-  const panelUrl = `chrome-extension://${extensionId}/sidepanel/index.html?demo=1`;
-  await browser.send("Target.createTarget", { url: panelUrl });
-  const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
-  const panel = await connect(panelTarget.webSocketDebuggerUrl);
-  // Enable the page/runtime domains and wait for the extension APIs to be
-  // injected into the panel's main world before probing. Under xvfb on a
-  // GitHub runner the chrome-extension:// document commits before
-  // chrome.runtime is available, so an immediate probe reads null; give it a
-  // generous window to become ready.
-  await panel.send("Page.enable");
-  await panel.send("Runtime.enable");
-  await waitForValue(
-    panel,
-    "typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.getManifest && chrome.permissions)",
-    (value) => value === true,
-    30000,
+  // Probe manifest + permissions in the background service worker, which is
+  // the extension's own context and always owns chrome.runtime /
+  // chrome.permissions. The side-panel *page* main-world injects chrome.* only
+  // after the document commits, and under xvfb on a GitHub runner that lagged
+  // long enough that panel probes read null — the SW context has no such race.
+  const workerTarget = await waitForTarget(
+    port,
+    (target) =>
+      (target.type === "service_worker" || target.type === "background_page") &&
+      new RegExp(`chrome-extension://${extensionId}/`).test(target.url),
   );
-  // Probe the panel context in separate, individually-awaited steps. A slower
-  // CI runner does not inject chrome.runtime/chrome.permissions the instant the
-  // target is created, and serializing one big object that embeds an unresolved
-  // promise proved fragile (nested fields came back undefined). Each field is
-  // returned as its own JSON string primitive via waitForValue's retry, which
-  // can't hit the nested-serialization quirk.
+  const worker = await connect(workerTarget.webSocketDebuggerUrl);
   const manifestVersion = await waitForValue(
-    panel,
+    worker,
     "chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : null",
     (value) => Boolean(value),
+    30000,
   );
   assert.equal(manifestVersion, "0.6.0");
   const manifestPermissions = JSON.parse(
     await waitForValue(
-      panel,
+      worker,
       "JSON.stringify((chrome.runtime.getManifest().permissions) || [])",
       (value) => typeof value === "string",
     ),
@@ -194,7 +184,7 @@ try {
   assert.ok(manifestPermissions.includes("notifications"));
   const grantedPermissions = JSON.parse(
     await waitForValue(
-      panel,
+      worker,
       "chrome.permissions.getAll().then((p) => JSON.stringify(p))",
       (value) => typeof value === "string",
       10000,
@@ -203,6 +193,11 @@ try {
   );
   assert.deepEqual(grantedPermissions.origins || [], []);
   assert.ok(!(grantedPermissions.permissions || []).includes("tabs"));
+
+  const panelUrl = `chrome-extension://${extensionId}/sidepanel/index.html?demo=1`;
+  await browser.send("Target.createTarget", { url: panelUrl });
+  const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
+  const panel = await connect(panelTarget.webSocketDebuggerUrl);
   await panel.send("Page.enable");
   const deadline = Date.now() + 10000;
   let state = null;

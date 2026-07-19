@@ -159,26 +159,37 @@ try {
   await browser.send("Target.createTarget", { url: panelUrl });
   const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
   const panel = await connect(panelTarget.webSocketDebuggerUrl);
-  // Wait for the panel context to expose the extension APIs before probing —
-  // on a slower CI runner chrome.runtime/chrome.permissions are not injected
-  // the instant the target is created, and a one-shot evaluate would throw and
-  // return no value. The expression is a single async IIFE so the
-  // chrome.permissions.getAll() promise is awaited and serialized by value.
-  const manifestExpression =
-    "(async () => ({ version: chrome.runtime.getManifest().version, " +
-    "manifestPermissions: chrome.runtime.getManifest().permissions, " +
-    "permissions: await chrome.permissions.getAll() }))()";
-  const manifestValue = await waitForValue(
+  // Probe the panel context in separate, individually-awaited steps. A slower
+  // CI runner does not inject chrome.runtime/chrome.permissions the instant the
+  // target is created, and serializing one big object that embeds an unresolved
+  // promise proved fragile (nested fields came back undefined). Each field is
+  // returned as its own JSON string primitive via waitForValue's retry, which
+  // can't hit the nested-serialization quirk.
+  const manifestVersion = await waitForValue(
     panel,
-    manifestExpression,
-    (value) => Boolean(value && value.version),
-    10000,
-    { awaitPromise: true },
+    "chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : null",
+    (value) => Boolean(value),
   );
-  assert.equal(manifestValue.version, "0.6.0");
-  assert.deepEqual(manifestValue.permissions.origins || [], []);
-  assert.ok(!(manifestValue.permissions.permissions || []).includes("tabs"));
-  assert.ok((manifestValue.manifestPermissions || []).includes("notifications"));
+  assert.equal(manifestVersion, "0.6.0");
+  const manifestPermissions = JSON.parse(
+    await waitForValue(
+      panel,
+      "JSON.stringify((chrome.runtime.getManifest().permissions) || [])",
+      (value) => typeof value === "string",
+    ),
+  );
+  assert.ok(manifestPermissions.includes("notifications"));
+  const grantedPermissions = JSON.parse(
+    await waitForValue(
+      panel,
+      "chrome.permissions.getAll().then((p) => JSON.stringify(p))",
+      (value) => typeof value === "string",
+      10000,
+      { awaitPromise: true },
+    ),
+  );
+  assert.deepEqual(grantedPermissions.origins || [], []);
+  assert.ok(!(grantedPermissions.permissions || []).includes("tabs"));
   await panel.send("Page.enable");
   const deadline = Date.now() + 10000;
   let state = null;

@@ -159,6 +159,19 @@ try {
   await browser.send("Target.createTarget", { url: panelUrl });
   const panelTarget = await waitForTarget(port, (target) => target.type === "page" && target.url === panelUrl);
   const panel = await connect(panelTarget.webSocketDebuggerUrl);
+  // Enable the page/runtime domains and wait for the extension APIs to be
+  // injected into the panel's main world before probing. Under xvfb on a
+  // GitHub runner the chrome-extension:// document commits before
+  // chrome.runtime is available, so an immediate probe reads null; give it a
+  // generous window to become ready.
+  await panel.send("Page.enable");
+  await panel.send("Runtime.enable");
+  await waitForValue(
+    panel,
+    "typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.getManifest && chrome.permissions)",
+    (value) => value === true,
+    30000,
+  );
   // Probe the panel context in separate, individually-awaited steps. A slower
   // CI runner does not inject chrome.runtime/chrome.permissions the instant the
   // target is created, and serializing one big object that embeds an unresolved

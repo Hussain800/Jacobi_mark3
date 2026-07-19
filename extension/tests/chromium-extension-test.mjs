@@ -167,13 +167,19 @@ try {
       new RegExp(`chrome-extension://${extensionId}/`).test(target.url),
   );
   const worker = await connect(workerTarget.webSocketDebuggerUrl);
+  // Assert the loaded extension reports the version in the manifest.json it was
+  // actually loaded from — not a hardcoded string. On CI the gate runs against
+  // the PR merge ref, whose manifest version can differ from this branch tip,
+  // so hardcoding a version makes the test wrong for reasons unrelated to the
+  // extension behaving correctly.
+  const expectedVersion = JSON.parse(readFileSync(join(extensionDir, "manifest.json"), "utf8")).version;
   const manifestVersion = await waitForValue(
     worker,
     "chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : null",
     (value) => Boolean(value),
     30000,
   );
-  assert.equal(manifestVersion, "0.6.0");
+  assert.equal(manifestVersion, expectedVersion);
   const manifestPermissions = JSON.parse(
     await waitForValue(
       worker,

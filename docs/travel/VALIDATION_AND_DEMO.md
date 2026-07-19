@@ -104,3 +104,23 @@ git diff --check
 Docker Compose and real Supabase RLS validation are required release evidence
 when those external runtimes and credentials are available; static validation
 does not substitute for them.
+
+## Acceptance-demo evidence — 2026-07-18 (fixture/sandbox tier)
+
+Deterministic repo-side acceptance run (no credentials, no network). All commands from `backend/` unless noted.
+
+| Check | Command | Result |
+|---|---|---|
+| Full backend suite (legacy + travel) | `python -m pytest -q` | 1819 passed, 2 skipped, 0 failed |
+| Travel suite | `python -m pytest -q tests/travel` | 131 passed |
+| Flight equivalence eval | `python -m jacobi travel eval --dataset flight_equivalence_v1` | Accuracy 1.0000; Passed: True |
+| Hotel equivalence eval | `python -m jacobi travel eval --dataset hotel_equivalence_v1` | Accuracy 1.0000; Passed: True |
+| Cost/ranking eval (TR-904) | `python -m jacobi travel eval --dataset cost_ranking_v1` | 100 records; cost 1.0000; ranking 1.0000; agreement 1.0000; Passed: True |
+| Benchmark | `python -m jacobi travel benchmark` | 640 cases/iter; median 156.8 ms; p95 173.8 ms; live latency: False |
+| Providers | `python -m jacobi travel providers` | amadeus unconfigured (no creds); Booking/Expedia/Skyscanner blocked_external |
+| Health | `python -m jacobi travel health` | Runtime healthy; 0 configured providers (fixture-only, honest degraded) |
+| Extension Node contracts | `node --test extension/tests/*.test.js` (repo root) | all passed |
+| Unpacked Chromium E2E | `node extension/tests/chromium-extension-test.mjs` (repo root) | retail + versioned flight/hotel/degraded panels; screenshots `extension/artifacts/sidepanel-*.png` |
+| Deterministic package | `scripts/package-extension.ps1 -ApiOrigin ... -SupportedSiteOrigin ...` | 22 reviewed files, stable sha256, exact-origin enforced |
+
+Every panel and label in this tier is fixture/sandbox — the extension renders `fixture`/`sandbox` origin labels, never `live`. The independent-provider **live** flight/hotel browser runs, real Supabase RLS, production deploys, Chrome Web Store review, and consented user study remain external blockers (TR-EXT-001..008 and the credentialed halves of TR-101/102/508/1004).

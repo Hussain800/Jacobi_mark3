@@ -88,11 +88,11 @@ async function waitForExtensionId(profilePath, port, timeoutMs = 15000) {
   const preferencesPath = join(profilePath, "Default", "Preferences");
   let registered = [];
   while (Date.now() < deadline) {
-    try {
-      const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-      const extensionTarget = targets.find((target) => /chrome-extension:\/\/[^/]+\/background\.js/.test(target.url));
-      if (extensionTarget) return new URL(extensionTarget.url).hostname;
-    } catch (_) { /* Debug endpoint is still starting. */ }
+    // Authoritative match first: the extension whose registered load path is
+    // exactly our unpacked dir. The /json/list background.js scan below is a
+    // greedy fallback that on CI can match a bundled Chrome-for-Testing
+    // component extension (a different id/version) instead of ours, so it must
+    // never take priority over the path match.
     try {
       const preferences = JSON.parse(readFileSync(preferencesPath, "utf8"));
       const settings = preferences.extensions && preferences.extensions.settings || {};
@@ -103,6 +103,13 @@ async function waitForExtensionId(profilePath, port, timeoutMs = 15000) {
     } catch (_) { /* Preferences is written asynchronously. */ }
     await delay(150);
   }
+  // Fallback: no path match landed in time — accept a lone unpacked extension
+  // background target from the debug endpoint.
+  try {
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    const extensionTarget = targets.find((target) => /chrome-extension:\/\/[^/]+\/background\.js/.test(target.url));
+    if (extensionTarget) return new URL(extensionTarget.url).hostname;
+  } catch (_) { /* Debug endpoint unavailable. */ }
   throw new Error("Timed out waiting for unpacked Jacobi extension registration. Registered: " + registered.join(", "));
 }
 

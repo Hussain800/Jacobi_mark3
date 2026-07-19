@@ -1,0 +1,140 @@
+name: jacobi-travel
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jacobi}
+      POSTGRES_USER: ${POSTGRES_USER:-jacobi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jacobi_local_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - travel-postgres-data:/var/lib/postgresql/data
+      - ./scripts/travel-postgres-bootstrap.sql:/docker-entrypoint-initdb.d/001-travel-bootstrap.sql:ro
+      - ./supabase/migrations/202607130001_travel_market_graph.sql:/docker-entrypoint-initdb.d/100-travel-market-graph.sql:ro
+      - ./supabase/migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jacobi} -d ${POSTGRES_DB:-jacobi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - travel-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      JACOBI_TRAVEL_STORAGE: ${JACOBI_TRAVEL_STORAGE:-memory}
+      JACOBI_TRAVEL_RUNTIME: ${JACOBI_TRAVEL_RUNTIME:-redis}
+      JACOBI_TRAVEL_INLINE_WORKER: ${JACOBI_TRAVEL_INLINE_WORKER:-1}
+      JACOBI_TRAVEL_CAPABILITY_SECRET: ${JACOBI_TRAVEL_CAPABILITY_SECRET:-local-compose-capability-secret-change-me}
+      JACOBI_TRAVEL_RATE_LIMIT_PER_MIN: ${JACOBI_TRAVEL_RATE_LIMIT_PER_MIN:-30}
+      JACOBI_TRAVEL_TELEMETRY_ENABLED: ${JACOBI_TRAVEL_TELEMETRY_ENABLED:-false}
+      JACOBI_TRAVEL_OTEL_ENABLED: ${JACOBI_TRAVEL_OTEL_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+      AMADEUS_ENVIRONMENT: ${AMADEUS_ENVIRONMENT:-sandbox}
+      AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
+      AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
+      AMADEUS_PRODUCTION_APPROVED: ${AMADEUS_PRODUCTION_APPROVED:-0}
+      AMADEUS_TIMEOUT_SECONDS: ${AMADEUS_TIMEOUT_SECONDS:-8}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      JACOBI_COMPARE_STORAGE: ${JACOBI_COMPARE_STORAGE:-memory}
+      JACOBI_AGENT_STORAGE: ${JACOBI_AGENT_STORAGE:-memory}
+      JACOBI_MANIFEST_SIGNING_KEY: ${JACOBI_MANIFEST_SIGNING_KEY:-}
+      BRIGHTDATA_API_KEY: ${BRIGHTDATA_API_KEY:-}
+      BRIGHTDATA_UNLOCKER_ZONE: ${BRIGHTDATA_UNLOCKER_ZONE:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v2/travel/health/ready', timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    profiles: ["distributed"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "travel_worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      JACOBI_TRAVEL_STORAGE: ${JACOBI_TRAVEL_STORAGE:-supabase}
+      JACOBI_TRAVEL_RUNTIME: redis
+      JACOBI_TRAVEL_INLINE_WORKER: "0"
+      JACOBI_TRAVEL_CAPABILITY_SECRET: ${JACOBI_TRAVEL_CAPABILITY_SECRET:-local-compose-capability-secret-change-me}
+      JACOBI_TRAVEL_TELEMETRY_ENABLED: ${JACOBI_TRAVEL_TELEMETRY_ENABLED:-false}
+      JACOBI_TRAVEL_OTEL_ENABLED: ${JACOBI_TRAVEL_OTEL_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+      AMADEUS_ENVIRONMENT: ${AMADEUS_ENVIRONMENT:-sandbox}
+      AMADEUS_CLIENT_ID: ${AMADEUS_CLIENT_ID:-}
+      AMADEUS_CLIENT_SECRET: ${AMADEUS_CLIENT_SECRET:-}
+      AMADEUS_PRODUCTION_APPROVED: ${AMADEUS_PRODUCTION_APPROVED:-0}
+      AMADEUS_TIMEOUT_SECONDS: ${AMADEUS_TIMEOUT_SECONDS:-8}
+      JACOBI_AGENT_STORAGE: ${JACOBI_AGENT_STORAGE:-memory}
+      JACOBI_MANIFEST_SIGNING_KEY: ${JACOBI_MANIFEST_SIGNING_KEY:-}
+      BRIGHTDATA_API_KEY: ${BRIGHTDATA_API_KEY:-}
+      BRIGHTDATA_UNLOCKER_ZONE: ${BRIGHTDATA_UNLOCKER_ZONE:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "travel.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      AUTH_SECRET: ${AUTH_SECRET:-local-compose-auth-secret-change-me}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  travel-postgres-data:
+  travel-redis-data:

@@ -1,0 +1,130 @@
+services:
+  - type: web
+    name: jacobi-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v2/travel/health/ready
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: JACOBI_COMPARE_STORAGE
+        value: supabase
+      - key: JACOBI_COMPARE_TELEMETRY_ENABLED
+        value: "false"
+      - key: JACOBI_ENABLE_PLAYWRIGHT
+        value: "0"
+      - key: ENTERPRISE_REQUIRE_SUPABASE
+        value: "1"
+      - key: JACOBI_TRAVEL_STORAGE
+        value: supabase
+      - key: JACOBI_TRAVEL_RUNTIME
+        value: redis
+      - key: JACOBI_TRAVEL_INLINE_WORKER
+        value: "0"
+      - key: JACOBI_AGENT_STORAGE
+        value: supabase
+      - key: JACOBI_TRAVEL_CAPABILITY_SECRET
+        generateValue: true
+      - key: JACOBI_MANIFEST_SIGNING_KEY
+        generateValue: true
+      - key: JACOBI_TRAVEL_RATE_LIMIT_PER_MIN
+        value: "30"
+      - key: JACOBI_TRAVEL_TELEMETRY_ENABLED
+        value: "false"
+      - key: JACOBI_TRAVEL_OTEL_ENABLED
+        value: "false"
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: AMADEUS_ENVIRONMENT
+        value: production
+      - key: AMADEUS_PRODUCTION_APPROVED
+        value: "1"
+      - key: AMADEUS_CLIENT_ID
+        sync: false
+      - key: AMADEUS_CLIENT_SECRET
+        sync: false
+      - key: AMADEUS_TIMEOUT_SECONDS
+        value: "8"
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  - type: worker
+    name: jacobi-travel-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m travel_worker
+    maxShutdownDelaySeconds: 60
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: JACOBI_ENABLE_PLAYWRIGHT
+        value: "0"
+      - key: JACOBI_TRAVEL_STORAGE
+        value: supabase
+      - key: JACOBI_TRAVEL_RUNTIME
+        value: redis
+      - key: JACOBI_TRAVEL_INLINE_WORKER
+        value: "0"
+      - key: JACOBI_AGENT_STORAGE
+        value: supabase
+      - key: JACOBI_TRAVEL_CAPABILITY_SECRET
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_TRAVEL_CAPABILITY_SECRET
+      - key: JACOBI_MANIFEST_SIGNING_KEY
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_MANIFEST_SIGNING_KEY
+      - key: JACOBI_TRAVEL_TELEMETRY_ENABLED
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_TRAVEL_TELEMETRY_ENABLED
+      - key: JACOBI_TRAVEL_OTEL_ENABLED
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: JACOBI_TRAVEL_OTEL_ENABLED
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: REDIS_URL
+      - key: SUPABASE_URL
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: SUPABASE_URL
+      - key: SUPABASE_SERVICE_KEY
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: SUPABASE_SERVICE_KEY
+      - key: AMADEUS_ENVIRONMENT
+        value: production
+      - key: AMADEUS_PRODUCTION_APPROVED
+        value: "1"
+      - key: AMADEUS_CLIENT_ID
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: AMADEUS_CLIENT_ID
+      - key: AMADEUS_CLIENT_SECRET
+        fromService:
+          type: web
+          name: jacobi-api
+          envVarKey: AMADEUS_CLIENT_SECRET
+      - key: AMADEUS_TIMEOUT_SECONDS
+        value: "8"

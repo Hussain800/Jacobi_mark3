@@ -1,0 +1,24 @@
+{
+  "fixture_version": "2026-07-12",
+  "merchant": "Jumbo Electronics UAE",
+  "offers": [
+    {
+      "url": "https://www.jumbo.ae/fixture/sony-wh-1000xm6-black",
+      "brand": "Sony",
+      "model": "WH-1000XM6",
+      "mpn": "WH-1000XM6/B",
+      "gtin": "4548736158801",
+      "variant": {"colour": "black", "warranty_region": "UAE"},
+      "item_price": "1575.00",
+      "shipping": "0.00",
+      "currency": "AED",
+      "seller": "Jumbo Electronics UAE",
+      "seller_type": "first_party",
+      "condition": "new",
+      "stock": "in_stock",
+      "delivery": {"max_days": 3},
+      "warranty": {"region": "UAE", "text": "Local UAE warranty"},
+      "return_terms": {"window_days": 14}
+    }
+  ]
+}

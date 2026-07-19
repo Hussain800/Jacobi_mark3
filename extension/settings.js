@@ -1,108 +1,96 @@
-/**
- * JACOBI — Settings Page Script
- *
- * Uses the same flat key structure as background.js:
- *   chrome.storage.sync: backendUrl, autoProbe, maxRecent
- *   chrome.storage.local: recentProbes
- */
-
 "use strict";
 
-const DEFAULTS = {
-  backendUrl: "http://localhost:3000",
-  autoProbe: false,
-  maxRecent: 15,
-};
+(async function () {
+  const apiInput = document.getElementById("api-backend-url");
+  const webappInput = document.getElementById("webapp-url");
+  const telemetryInput = document.getElementById("telemetry-enabled");
+  const consentInput = document.getElementById("automatic-consent");
+  const currencyInput = document.getElementById("display-currency");
+  const amountInput = document.getElementById("meaningful-amount");
+  const percentInput = document.getElementById("meaningful-percent");
+  const modeInputs = Array.from(document.querySelectorAll('input[name="travel-mode"]'));
+  const status = document.getElementById("status");
 
-(async () => {
-  // ─── DOM refs ──────────────────────────────────────────────────────────
-  const urlInput    = document.getElementById("backend-url");
-  const autoToggle  = document.getElementById("auto-probe");
-  const maxSlider   = document.getElementById("max-recent");
-  const sliderValue = document.getElementById("slider-value");
-  const sliderLabel = document.getElementById("slider-label");
-  const btnSave     = document.getElementById("btn-save");
-  const btnClear    = document.getElementById("btn-clear-all");
-  const banner      = document.getElementById("status-banner");
-
-  // ─── Load settings ─────────────────────────────────────────────────────
-  const data = await chrome.storage.sync.get(DEFAULTS);
-  const settings = { ...DEFAULTS, ...data };
-
-  urlInput.value    = settings.backendUrl;
-  autoToggle.checked = settings.autoProbe;
-  maxSlider.value   = settings.maxRecent;
-  sliderValue.textContent = settings.maxRecent;
-  sliderLabel.textContent = settings.maxRecent + " entries";
-
-  // ─── Slider live update ────────────────────────────────────────────────
-  maxSlider.addEventListener("input", () => {
-    const v = maxSlider.value;
-    sliderValue.textContent = v;
-    sliderLabel.textContent = v + " entries";
-  });
-
-  // ─── Auto-save on change ──────────────────────────────────────────────
-  async function autoSave() {
-    settings.backendUrl = urlInput.value.trim();
-    settings.autoProbe  = autoToggle.checked;
-    settings.maxRecent  = parseInt(maxSlider.value, 10) || 15;
-    await chrome.storage.sync.set(settings);
+  function show(text, kind) {
+    status.textContent = text;
+    status.className = kind || "";
   }
 
-  urlInput.addEventListener("change", async () => {
-    settings.backendUrl = urlInput.value.trim();
-    await chrome.storage.sync.set({ backendUrl: settings.backendUrl });
-    showBanner("success", "Backend URL saved");
-  });
-
-  autoToggle.addEventListener("change", async () => {
-    settings.autoProbe = autoToggle.checked;
-    await chrome.storage.sync.set({ autoProbe: settings.autoProbe });
-    showBanner("success", "Auto-probe " + (settings.autoProbe ? "enabled" : "disabled"));
-  });
-
-  maxSlider.addEventListener("change", async () => {
-    settings.maxRecent = parseInt(maxSlider.value, 10) || 15;
-    await chrome.storage.sync.set({ maxRecent: settings.maxRecent });
-    showBanner("success", "Max probes set to " + settings.maxRecent);
-  });
-
-  // ─── Save all ──────────────────────────────────────────────────────────
-  btnSave.addEventListener("click", async () => {
-    try {
-      await autoSave();
-      showBanner("success", "All settings saved");
-    } catch (err) {
-      console.error("[JACOBI] Save failed:", err);
-      showBanner("error", "Save failed");
-    }
-  });
-
-  // ─── Clear all data ────────────────────────────────────────────────────
-  btnClear.addEventListener("click", async () => {
-    if (!confirm("This will clear all recent probes and local data. Continue?")) return;
-
-    try {
-      await chrome.storage.local.remove("recentProbes");
-      await chrome.storage.local.remove("jacobi_daily_count");
-      await chrome.storage.local.remove("jacobi_recent_probes");
-      showBanner("success", "All probe data cleared");
-    } catch (err) {
-      console.error("[JACOBI] Clear failed:", err);
-      showBanner("error", "Clear failed");
-    }
-  });
-
-  // ─── Banner helper ─────────────────────────────────────────────────────
-  let bannerTimer = null;
-
-  function showBanner(type, msg) {
-    if (bannerTimer) clearTimeout(bannerTimer);
-    banner.className = "status-banner show " + type;
-    banner.textContent = msg;
-    bannerTimer = setTimeout(() => {
-      banner.classList.remove("show");
-    }, 2200);
+  function selectedMode() {
+    const selected = modeInputs.find(function (item) { return item.checked; });
+    return selected ? selected.value : "privacy";
   }
+
+  function syncConsentControl() {
+    const automatic = selectedMode() === "automatic";
+    consentInput.disabled = !automatic;
+    if (!automatic) consentInput.checked = false;
+  }
+
+  function requestOrigins(origins) {
+    return new Promise(function (resolve) {
+      chrome.permissions.request({ origins }, function (granted) {
+        if (chrome.runtime.lastError) { resolve({ ok: false, error: chrome.runtime.lastError.message }); return; }
+        resolve({ ok: Boolean(granted), error: null });
+      });
+    });
+  }
+
+  const stored = await chrome.storage.sync.get(JacobiConfig.SETTINGS_KEY);
+  const settings = JacobiConfig.normalizeSettings(stored[JacobiConfig.SETTINGS_KEY]);
+  apiInput.value = settings.apiBackendUrl;
+  webappInput.value = settings.webappUrl;
+  telemetryInput.checked = settings.privacy.telemetryEnabled;
+  consentInput.checked = settings.travel.automaticSavingsConsent;
+  currencyInput.value = settings.travel.displayCurrency;
+  amountInput.value = settings.travel.meaningfulSavingsAmount;
+  percentInput.value = String(settings.travel.meaningfulSavingsPercent);
+  modeInputs.forEach(function (item) {
+    item.checked = item.value === settings.travel.mode;
+    item.addEventListener("change", syncConsentControl);
+  });
+  syncConsentControl();
+
+  document.getElementById("save").addEventListener("click", async function () {
+    const api = JacobiConfig.safeHttpUrl(apiInput.value);
+    const webapp = JacobiConfig.safeHttpUrl(webappInput.value);
+    if (!api || !webapp) {
+      show("Enter valid http(s) URLs without credentials.", "error");
+      return;
+    }
+    const mode = selectedMode();
+    if (mode === "automatic" && !consentInput.checked) {
+      show("Automatic Savings Mode requires the explicit consent checkbox.", "error");
+      return;
+    }
+    const next = JacobiConfig.normalizeSettings({
+      apiBackendUrl: api.toString(),
+      webappUrl: webapp.toString(),
+      privacy: { telemetryEnabled: telemetryInput.checked },
+      travel: {
+        mode,
+        automaticSavingsConsent: consentInput.checked,
+        meaningfulSavingsAmount: amountInput.value,
+        meaningfulSavingsPercent: percentInput.value,
+        displayCurrency: currencyInput.value,
+      },
+    });
+    const origin = JacobiConfig.permissionOrigin(next.apiBackendUrl);
+    const origins = Array.from(new Set([origin].concat(mode === "automatic" ? JacobiConfig.TRAVEL_SITE_ORIGINS : []).filter(Boolean)));
+    const permission = await requestOrigins(origins);
+    if (!permission.ok) {
+      show(permission.error ? "Access not granted: " + permission.error : "Access was not granted.", "error");
+      return;
+    }
+    await chrome.storage.sync.set({ [JacobiConfig.SETTINGS_KEY]: next });
+    Object.assign(settings, next);
+    await chrome.runtime.sendMessage({ type: JacobiMessages.TYPES.SETTINGS_UPDATED });
+    show(mode === "automatic" ? "Saved. Automatic mode is limited to the two localhost demo origins." : "Saved. Privacy Mode sends only after your click.", "ok");
+  });
+
+  document.getElementById("clear").addEventListener("click", async function () {
+    if (!window.confirm("Clear recent Deep Audits, travel search references, dismissed sites, and wrong-match feedback?")) return;
+    const response = await chrome.runtime.sendMessage({ type: JacobiMessages.TYPES.CLEAR_LOCAL_DATA });
+    show(response && response.ok ? "Local extension data cleared." : "Could not clear local data.", response && response.ok ? "ok" : "error");
+  });
 })();

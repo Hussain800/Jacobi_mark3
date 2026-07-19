@@ -6,27 +6,105 @@
   <img src="assets/logo-dark.svg" alt="JACOBI" width="360" />
 </picture>
 
-### Evidence-grade pricing-discrimination intelligence
+### The cheapest verified way to buy the exact product you are viewing
 
-Paste one URL. A swarm of synthetic shoppers checks the price from every angle —
-geography, device, cookies, referrer, language — and tells you, **with statistics
-and receipts**, whether you are being charged for *who you are*.
+Browse normally. Jacobi extracts deterministic product identifiers from the active
+page, discovers user-approved alternatives, rejects material mismatches, preserves
+unknown costs, and shows the best legitimate route in a Chrome side panel.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square&labelColor=0b0b0f)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11-3776AB?style=flat-square&labelColor=0b0b0f&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&labelColor=0b0b0f&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=flat-square&labelColor=0b0b0f&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Math Engine v2](https://img.shields.io/badge/math%20engine-v2-a855f7?style=flat-square&labelColor=0b0b0f)](#-the-mathematics)
-[![BrightData](https://img.shields.io/badge/proxies-Bright%20Data-60a5fa?style=flat-square&labelColor=0b0b0f)](https://brightdata.com/)
-[![Tests](https://img.shields.io/badge/tests-1310%20passing-22c55e?style=flat-square&labelColor=0b0b0f)](#-testing)
+[![Default provider cost](https://img.shields.io/badge/default%20provider%20cost-%240-22c55e?style=flat-square&labelColor=0b0b0f)](#zero-cost-by-default)
 
-**[Live demo →](https://jacobi-mark3.vercel.app)**
+**[Hosted legacy demo →](https://jacobi-mark3.vercel.app)** · **[Local price-optimization demo](docs/DEMO_PRICE_OPTIMIZATION.md)**
 
-<sub><b>Smart 24</b> — live (early-access waitlist) &nbsp;·&nbsp; <b>Pro 50</b> — private beta</sub>
+<sub>UAE consumer electronics · browser-assisted and explicit public-page comparison · Deep Audit remains optional</sub>
 
 </div>
 
 ---
+
+## What Jacobi does now
+
+The normal path is fast, browser-native price optimization:
+
+```text
+current product page
+→ canonical identity
+→ zero-cost offer discovery
+→ exact-equivalence verification
+→ known all-in totals
+→ cheapest valid route
+→ immutable evidence
+```
+
+It prioritizes GTIN, EAN/UPC, manufacturer part number, model, storage, memory,
+generation, processor, size, year, region, condition, bundle, accessories, colour,
+and warranty region. A lower number cannot win if it is the wrong variant. Shipping,
+tax, duties, fees, FX, discounts, cashback, and mandatory services use Decimal-safe
+arithmetic and explicit `known`, `estimated`, `unknown`, or `not_applicable` states.
+
+![Jacobi side panel showing a verified saving](extension/artifacts/sidepanel-saving.png)
+
+### Zero-cost by default
+
+The comparison service does not import or automatically call Bright Data or any
+other paid scraping provider. Its genuine zero-cost routes are the active browser
+page, explicitly submitted/open browser tabs, and caller-approved direct public
+HTTP structured metadata. Deterministic retailer fixtures are opt-in development
+infrastructure and are always labelled as fixtures. Paid providers can only exist
+as explicitly enabled optional plugins.
+
+### Quick start
+
+```powershell
+git clone https://github.com/Hussain800/Jacobi_mark3.git
+cd Jacobi_mark3
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+python -m uvicorn main:app --app-dir backend --reload --port 8000
+
+# In another terminal
+cd frontend
+npm ci
+npm run dev
+```
+
+Load `extension/` with **Chrome → Extensions → Developer mode → Load unpacked**.
+The extension starts with no host access. It requests only the configured backend
+origin or explicitly selected open-tab origins at runtime.
+
+Core documentation:
+
+- [Architecture](docs/ARCHITECTURE_PRICE_OPTIMIZATION.md)
+- [Local and extension setup](docs/LOCAL_SETUP_PRICE_OPTIMIZATION.md)
+- [Demo](docs/DEMO_PRICE_OPTIMIZATION.md)
+- [Provider plug-ins](docs/PROVIDER_PLUGIN_GUIDE.md)
+- [REST, MCP and CLI](docs/MCP_PRICE_OPTIMIZATION.md)
+- [Deployment](docs/DEPLOYMENT_PRICE_OPTIMIZATION.md)
+- [Security review](docs/SECURITY_REVIEW_PRICE_OPTIMIZATION.md)
+- [Privacy and limitations](docs/PRIVACY_PRICE_OPTIMIZATION.md)
+- [PDR completion ledger](docs/PDR_IMPLEMENTATION_STATUS.md)
+
+### Preserved Deep Audit
+
+Jacobi's original controlled synthetic-shopper system remains intact as the
+voluntary 60–100 second Deep Audit. It retains Smart 24/Pro 50 matrices, controlled
+buyer-context variables, Welch's t-test, the Jacobian sensitivity matrix, PEI,
+attribution gates, evidence reports, Agentcore, legacy APIs, Supabase history, and
+optional deployer-supplied Bright Data credentials. It never runs during a normal
+comparison request.
+
+<details>
+<summary><strong>Archived-in-place Deep Audit and original architecture reference</strong></summary>
+
+The material below documents the preserved pricing-discrimination product. It is
+kept for maintainers and researchers, but it is no longer the default consumer flow.
 
 ## Table of contents
 
@@ -877,3 +955,5 @@ Released under the **MIT License** — see [`LICENSE`](LICENSE) for details.
 <div align="center">
 <sub>JACOBI · evidence-grade pricing-discrimination intelligence · one URL is all it takes to see the price you were never meant to compare.</sub>
 </div>
+
+</details>

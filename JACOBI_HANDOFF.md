@@ -144,7 +144,7 @@ SUPABASE_ANON_KEY=sb_publishable_Br_pt2cgWxok1ZLAMXMWiQ_Bb7KvAES
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_PRO_PRICE_ID=price_1TbQtuEX9Slvr2kwpbhWvTlk
 STRIPE_WEBHOOK_SECRET=whsec_...
-GEMINI_API_KEY=AIzaSyCznrAWnfsQ4SX810j6fIIarEUmYnAkZKk
+GEMINI_API_KEY=[REDACTED_GOOGLE_API_KEY]
 ```
 
 ### `.env.local` (local dev only, gitignored)

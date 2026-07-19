@@ -1,0 +1,57 @@
+name: False product match
+description: Report an exact-match, trade-off, or total-cost classification error using sanitized evidence.
+title: "[Match]: "
+labels: ["product identity"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not post order IDs, account data, signed URLs, access tokens, or private evidence. Prefer a minimal synthetic fixture reproducing the mismatch."
+  - type: dropdown
+    id: error
+    attributes:
+      label: Error type
+      options:
+        - Wrong model or generation
+        - Storage or memory mismatch
+        - Region or connectivity mismatch
+        - Condition mismatch
+        - Bundle or accessory-only listing
+        - Warranty or seller trade-off hidden
+        - Incorrect all-in total
+        - Stale or unavailable offer
+        - Other equivalence error
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current product identifiers
+      description: Brand, model, MPN, GTIN, variant and condition. Redact tracking data.
+    validations:
+      required: true
+  - type: textarea
+    id: candidate
+    attributes:
+      label: Candidate identifiers and material difference
+    validations:
+      required: true
+  - type: input
+    id: classification
+    attributes:
+      label: Returned classification/reason code
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Minimal fixture or reproduction
+      description: State whether the evidence is fixture, browser-observed, or direct public metadata.
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanitized
+    attributes:
+      label: Privacy
+      options:
+        - label: I removed personal data, tokens, authenticated content, and checkout information.
+          required: true

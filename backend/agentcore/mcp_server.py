@@ -15,6 +15,7 @@ restricted or unknown routes return decision=block unless official_route.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -22,8 +23,20 @@ from mcp.server.fastmcp import FastMCP
 from . import engine
 from . import policy as policy_mod
 from .schemas import ConsentScope
+from compare import tooling as price_tools
+from travel import tooling as travel_tools
 
 mcp = FastMCP("jacobi")
+
+
+def _json_object(value: str, name: str) -> Dict[str, Any]:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return payload
 
 
 @mcp.tool()
@@ -126,6 +139,181 @@ def explain_decision(request_id: str) -> Dict[str, Any]:
     with the recommended next step."""
     out = engine.explain(request_id)
     return out or {"error": f"decision {request_id} not found (stores are in-memory)"}
+
+
+# Price optimization tools -------------------------------------------------
+
+
+@mcp.tool()
+def identify_product(product_json: str) -> Dict[str, Any]:
+    """Resolve a canonical product identity from observed page fields.
+
+    product_json is a JSON object containing fields such as title, brand,
+    model, MPN, GTIN, storage, memory, region, colour, and condition. This tool
+    performs no network request.
+    """
+    return price_tools.identify_product_fields(_json_object(product_json, "product_json"))
+
+
+@mcp.tool()
+async def discover_offers(request_json: str) -> Dict[str, Any]:
+    """Discover offers through the canonical comparison provider pipeline.
+
+    Providers remain zero-cost by default. Fixture offers, browser-submitted
+    observations, and direct HTTP URLs are used only when the request opts in.
+    """
+    result = await price_tools.compare_request(_json_object(request_json, "request_json"))
+    return price_tools.discovery_view(result)
+
+
+@mcp.tool()
+async def compare_offers(request_json: str) -> Dict[str, Any]:
+    """Identify, discover, classify, cost, rank, and preserve evidence."""
+    result = await price_tools.compare_request(_json_object(request_json, "request_json"))
+    return result.model_dump(mode="json")
+
+
+@mcp.tool()
+async def find_cheapest_route(request_json: str) -> Dict[str, Any]:
+    """Find the cheapest verified route and explain all excluded offers."""
+    result = await price_tools.compare_request(_json_object(request_json, "request_json"))
+    return price_tools.optimization_view(result)
+
+
+@mcp.tool()
+def verify_offer_equivalence(
+    current_product_json: str,
+    candidate_offer_json: str,
+    current_condition: str = "new",
+) -> Dict[str, Any]:
+    """Classify a candidate as exact, trade-off, similar, or rejected."""
+    return price_tools.verify_offer_fields(
+        _json_object(current_product_json, "current_product_json"),
+        _json_object(candidate_offer_json, "candidate_offer_json"),
+        current_condition=current_condition,
+    )
+
+
+@mcp.tool()
+def calculate_total_cost(price_json: str) -> Dict[str, Any]:
+    """Calculate a Decimal-safe payable total without treating unknowns as zero."""
+    return price_tools.calculate_total_fields(_json_object(price_json, "price_json"))
+
+
+@mcp.tool()
+def explain_optimization(comparison_id: str, access_token: str) -> Dict[str, Any]:
+    """Explain a prior optimization using its unguessable access token."""
+    return price_tools.explain_stored_optimization(comparison_id, access_token)
+
+
+@mcp.tool()
+def fetch_evidence_manifest(
+    comparison_id: str,
+    manifest_id: str,
+    access_token: str,
+) -> Dict[str, Any]:
+    """Fetch immutable evidence belonging to an authorized comparison."""
+    return price_tools.fetch_stored_manifest(comparison_id, manifest_id, access_token)
+
+
+@mcp.tool()
+async def deep_audit_price(
+    explicit: bool = False,
+    demo: Optional[str] = None,
+    url: Optional[str] = None,
+    displayed_total_amount: Optional[float] = None,
+    displayed_total_currency: str = "AED",
+    consent_scope: str = "research_only",
+    tier: str = "free",
+    allow_managed_provider: bool = False,
+) -> Dict[str, Any]:
+    """Run the optional legacy Deep Audit; explicit=true is always required.
+
+    This is separate from normal comparison and never activates a paid
+    provider automatically.
+    """
+    return await price_tools.deep_audit(
+        explicit=explicit,
+        demo=demo,
+        url=url,
+        displayed_total_amount=displayed_total_amount,
+        displayed_total_currency=displayed_total_currency,
+        consent_scope=consent_scope,
+        tier=tier,
+        allow_managed_provider=allow_managed_provider,
+    )
+
+
+# Travel Price Guardian tools ----------------------------------------------
+
+
+@mcp.tool()
+def parse_travel_intent(intent_json: str) -> Dict[str, Any]:
+    """Validate a flight or hotel intent and return its stable fingerprint.
+
+    The JSON may contain a top-level ``vertical`` and nested ``intent`` object,
+    or a directly inferable FlightIntent/HotelIntent object. No network request
+    is performed.
+    """
+    return travel_tools.get_travel_tooling_service().parse_intent(
+        _json_object(intent_json, "intent_json")
+    )
+
+
+@mcp.tool()
+async def search_travel(search_json: str) -> Dict[str, Any]:
+    """Search configured official travel providers through the shared facade.
+
+    Returns an accepted durable search plus a capability token for subsequent
+    status, revalidation, explanation and evidence calls.
+    """
+    return await travel_tools.get_travel_tooling_service().search(
+        _json_object(search_json, "search_json")
+    )
+
+
+@mcp.tool()
+async def get_travel_search_status(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Read an authorized durable travel search and normalized offers."""
+    return await travel_tools.get_travel_tooling_service().status(
+        search_id, capability_token
+    )
+
+
+@mcp.tool()
+async def revalidate_travel_offer(
+    search_id: str, offer_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Revalidate an authorized flight offer before any redirect decision.
+
+    Hotel revalidation is refused because the first hotel provider does not
+    expose a guaranteed equivalent price-check contract.
+    """
+    return await travel_tools.get_travel_tooling_service().revalidate(
+        search_id, offer_id, capability_token
+    )
+
+
+@mcp.tool()
+async def explain_travel_search(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Explain travel search outcome, provider failures and limitations."""
+    return await travel_tools.get_travel_tooling_service().explain(
+        search_id, capability_token
+    )
+
+
+@mcp.tool()
+async def fetch_travel_evidence(
+    search_id: str, capability_token: str
+) -> Dict[str, Any]:
+    """Fetch sanitized hashed offer/revalidation evidence for a travel search."""
+    return await travel_tools.get_travel_tooling_service().evidence(
+        search_id, capability_token
+    )
 
 
 if __name__ == "__main__":

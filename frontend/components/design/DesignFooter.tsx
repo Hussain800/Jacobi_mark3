@@ -16,17 +16,16 @@ export default function DesignFooter() {
         <div className="footer-brand">
           <BrandLockup size={18} />
           <p className="footer-desc sec">
-            Controlled synthetic-buyer pricing audits. Evidence-grade detection
-            of personalized-pricing exposure, MAP undercutting, and gray-market
-            drift.
+            Travel price checks with explicit equivalence, mandatory-cost states,
+            truthful provider environments, and revalidation before action.
           </p>
         </div>
         <nav className="footer-col">
           <span className="label-mono">Product</span>
-          <Link className="nav-link" href="/chat">Run audit</Link>
-          <Link className="nav-link" href="/leaderboard">Leaderboard</Link>
-          <Link className="nav-link" href="/history">History</Link>
-          <Link className="nav-link" href="/pricing">Pricing</Link>
+          <Link className="nav-link" href="/travel">Travel Guardian</Link>
+          <Link className="nav-link" href="/travel#providers">Providers</Link>
+          <Link className="nav-link" href="/compare">Retail compare</Link>
+          <Link className="nav-link" href="/chat">Deep Audit</Link>
         </nav>
         <nav className="footer-col">
           <span className="label-mono">Company</span>
@@ -38,7 +37,7 @@ export default function DesignFooter() {
       </div>
       <div className="wrap footer-bottom">
         <p className="footer-tag">
-          Every price leaves evidence. JACOBI&nbsp;captures it.
+          Every travel claim keeps its evidence and limits attached.
         </p>
         <span className="label-mono">© 2026 JACOBI · all rights reserved</span>
       </div>

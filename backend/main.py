@@ -2243,6 +2243,16 @@ app.include_router(billing_router)
 # decisioning only — no purchase execution exists behind these routes.
 from agentcore.api import router as agent_router
 app.include_router(agent_router)
+# Jacobi Compare: consumer price-optimization pivot (/api/v1/compare,
+# /api/v1/comparisons/{id}). Zero-cost fixture/local providers only — never
+# Bright Data, never the synthetic probe matrix (that remains the optional
+# Deep Audit path).
+from compare.api import router as compare_router
+app.include_router(compare_router)
+# Travel Price Guardian: one-page flight/hotel intent to independent provider
+# search, progressive SSE results, and revalidation-gated redirect authorization.
+from api.v2_travel import router as travel_v2_router
+app.include_router(travel_v2_router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html") if os.path.isdir(FRONTEND_DIR) else None
@@ -3444,8 +3454,13 @@ async def get_schedules():
 
 @app.get("/_next/static/{rest:path}")
 async def serve_next_static(rest: str):
-    file_path = os.path.join(FRONTEND_DIR, "_next", "static", rest)
-    if os.path.isfile(file_path):
+    static_root = os.path.realpath(os.path.join(FRONTEND_DIR, "_next", "static"))
+    file_path = os.path.realpath(os.path.join(static_root, rest))
+    try:
+        contained = os.path.commonpath((static_root, file_path)) == static_root
+    except ValueError:
+        contained = False
+    if contained and os.path.isfile(file_path):
         return FileResponse(file_path)
     return JSONResponse(status_code=404, content={"detail": "Not found"})
 

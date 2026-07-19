@@ -1,0 +1,25 @@
+{
+  "merchant": "sony_ae",
+  "note": "Official-store deterministic fixture — the PDR appendix scenario (exact match, AED 1499 delivered).",
+  "offers": [
+    {
+      "brand": "Sony",
+      "model": "WH-1000XM6/B",
+      "mpn": "WH-1000XM6/B",
+      "gtin": "4548736158801",
+      "title": "Sony WH-1000XM6 Premium Noise Cancelling Wireless Headphones - Black",
+      "variant": {"colour": "black"},
+      "item_price": 1499,
+      "shipping": 0,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "Sony Store UAE",
+      "seller_type": "official_store",
+      "delivery": {"estimate": "1-2 days", "free": true},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "return_terms": {"window_days": 14},
+      "url": "https://www.sony-mea.com/fixture/wh-1000xm6-black"
+    }
+  ]
+}

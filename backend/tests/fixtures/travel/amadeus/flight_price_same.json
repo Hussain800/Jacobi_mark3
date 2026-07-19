@@ -1,0 +1,19 @@
+{
+  "data": {
+    "type": "flight-offers-pricing",
+    "flightOffers": [
+      {
+        "type": "flight-offer",
+        "id": "1",
+        "source": "GDS",
+        "instantTicketingRequired": false,
+        "oneWay": false,
+        "lastTicketingDate": "2027-01-02",
+        "numberOfBookableSeats": 9,
+        "itineraries": [{"duration": "PT7H45M", "segments": [{"departure": {"iataCode": "DXB", "at": "2027-02-01T09:00:00"}, "arrival": {"iataCode": "LHR", "at": "2027-02-01T13:45:00"}, "carrierCode": "EK", "number": "1", "aircraft": {"code": "388"}, "operating": {"carrierCode": "EK"}, "duration": "PT7H45M", "id": "1", "numberOfStops": 0}] }],
+        "price": {"currency": "AED", "total": "1210.00", "base": "1000.00", "fees": [{"amount": "10.00", "type": "SUPPLIER"}], "grandTotal": "1210.00"},
+        "travelerPricings": [{"travelerId": "1", "fareDetailsBySegment": [{"segmentId": "1", "cabin": "BUSINESS", "fareBasis": "CLEAN", "class": "C", "includedCheckedBags": {"quantity": 2}}]}]
+      }
+    ]
+  }
+}

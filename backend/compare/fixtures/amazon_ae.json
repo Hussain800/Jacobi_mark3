@@ -1,0 +1,43 @@
+{
+  "merchant": "amazon_ae",
+  "note": "Deterministic development fixtures. Prices are invented for demos and tests.",
+  "offers": [
+    {
+      "brand": "Sony",
+      "model": "WH-1000XM6/B",
+      "mpn": "WH-1000XM6/B",
+      "gtin": "4548736158801",
+      "title": "Sony WH-1000XM6 Wireless Noise Cancelling Headphones - Black",
+      "variant": {"colour": "black"},
+      "item_price": 1699,
+      "shipping": 0,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "Amazon.ae",
+      "seller_type": "first_party",
+      "delivery": {"estimate": "Tomorrow", "free": true},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "return_terms": {"window_days": 15},
+      "url": "https://www.amazon.ae/dp/B0FIXTURE01"
+    },
+    {
+      "brand": "Apple",
+      "model": "MacBook Air 13 M3",
+      "mpn": "MRXN3",
+      "gtin": "195949125301",
+      "title": "Apple MacBook Air 13-inch M3 8GB/256GB - Midnight",
+      "variant": {"storage": "256GB", "memory": "8GB", "colour": "midnight", "size": "13in"},
+      "item_price": 4499,
+      "shipping": 0,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "Amazon.ae",
+      "seller_type": "first_party",
+      "delivery": {"estimate": "Tomorrow", "free": true},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "url": "https://www.amazon.ae/dp/B0FIXTURE02"
+    }
+  ]
+}

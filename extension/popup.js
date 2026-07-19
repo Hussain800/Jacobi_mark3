@@ -107,9 +107,8 @@
 
     try {
       await chrome.runtime.sendMessage({
-        type: "PROBE_CURRENT_TAB",
+        type: "OPEN_DEEP_AUDIT",
         url: currentTabUrl,
-        title: currentTabTitle,
       });
       window.close();
     } catch (err) {
@@ -180,9 +179,8 @@
         if (!url) return;
         try {
           await chrome.runtime.sendMessage({
-            type: "OPEN_PROBE",
+            type: "OPEN_DEEP_AUDIT",
             url,
-            title: "",
           });
           window.close();
         } catch (err) {
@@ -240,7 +238,7 @@
           const url = item.dataset.url;
           if (!url) return;
           try {
-            await chrome.runtime.sendMessage({ type: "OPEN_PROBE", url, title: "" });
+            await chrome.runtime.sendMessage({ type: "OPEN_DEEP_AUDIT", url });
             window.close();
           } catch (err) {
             console.error("[JACOBI] Re-probe failed:", err);
@@ -255,7 +253,7 @@
   // ─── Clear recent ────────────────────────────────────────────────────────
   btnClear.addEventListener("click", async () => {
     try {
-      await chrome.runtime.sendMessage({ type: "CLEAR_RECENT" });
+      await chrome.runtime.sendMessage({ type: "CLEAR_LOCAL_DATA" });
       await renderRecent();
       showToast("Recent probes cleared");
     } catch (err) {

@@ -135,5 +135,22 @@ def build_manifest(
 
 
 def verify_manifest(manifest: EvidenceManifest) -> bool:
-    """True if the manifest's stored hash matches a fresh canonical recompute."""
-    return manifest.manifest_sha256 == canonical_manifest_hash(manifest)
+    """Verify the canonical hash and any attached server HMAC.
+
+    Unsigned legacy manifests retain hash-only compatibility. A signed manifest
+    fails closed when the verifier does not have the signing key.
+    """
+
+    if manifest.manifest_sha256 != canonical_manifest_hash(manifest):
+        return False
+    if manifest.signature is None:
+        return True
+    key = os.getenv("JACOBI_MANIFEST_SIGNING_KEY")
+    if not key or not manifest.manifest_sha256:
+        return False
+    expected = hmac.new(
+        key.encode("utf-8"),
+        manifest.manifest_sha256.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(manifest.signature, expected)

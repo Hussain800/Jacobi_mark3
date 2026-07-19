@@ -1,0 +1,58 @@
+{
+  "merchant": "noon_ae",
+  "note": "Deterministic development fixtures. Includes traps: colour variant, shipping unknown, storage mismatch.",
+  "offers": [
+    {
+      "brand": "Sony",
+      "model": "WH-1000XM6/S",
+      "title": "Sony WH-1000XM6 Wireless Noise Cancelling Headphones - Silver",
+      "variant": {"colour": "silver"},
+      "item_price": 1420,
+      "shipping": 25,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "TechDeals FZE",
+      "seller_type": "marketplace",
+      "delivery": {"estimate": "2-4 days"},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "url": "https://www.noon.com/uae-en/fixture-xm6-silver"
+    },
+    {
+      "brand": "Sony",
+      "model": "WH-1000XM6/B",
+      "mpn": "WH-1000XM6/B",
+      "gtin": "4548736158801",
+      "title": "Sony WH-1000XM6 Wireless Noise Cancelling Headphones - Black",
+      "variant": {"colour": "black"},
+      "item_price": 1450,
+      "shipping": null,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "GadgetWorld",
+      "seller_type": "marketplace",
+      "delivery": {},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "url": "https://www.noon.com/uae-en/fixture-xm6-black"
+    },
+    {
+      "brand": "Apple",
+      "model": "MacBook Air 13 M3",
+      "mpn": "MRXQ3",
+      "gtin": "195949126209",
+      "title": "Apple MacBook Air 13-inch M3 8GB/512GB - Midnight",
+      "variant": {"storage": "512GB", "memory": "8GB", "colour": "midnight", "size": "13in"},
+      "item_price": 4299,
+      "shipping": 0,
+      "currency": "AED",
+      "condition": "new",
+      "stock": "in_stock",
+      "seller": "noon",
+      "seller_type": "first_party",
+      "delivery": {"estimate": "1-2 days", "free": true},
+      "warranty": {"region": "UAE", "duration": "1 year"},
+      "url": "https://www.noon.com/uae-en/fixture-mba-512"
+    }
+  ]
+}

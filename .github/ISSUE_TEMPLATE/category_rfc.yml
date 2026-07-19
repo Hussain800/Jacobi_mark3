@@ -1,0 +1,45 @@
+name: Product category RFC
+description: Propose a new category only when exact identity and total-cost rules are defined.
+title: "[Category RFC]: "
+labels: ["new category RFC"]
+body:
+  - type: input
+    id: category
+    attributes:
+      label: Category and target market
+    validations:
+      required: true
+  - type: textarea
+    id: identity
+    attributes:
+      label: Deterministic identity fields
+      description: GTIN/MPN/model/variant identifiers and hard mismatch rules.
+    validations:
+      required: true
+  - type: textarea
+    id: totals
+    attributes:
+      label: All-in cost and eligibility model
+      description: Mandatory fees, taxes, duties, condition, warranty, returns and unknowns.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Lawful zero-cost sources
+      description: Browser, structured metadata, official APIs/feeds, and limitations.
+    validations:
+      required: true
+  - type: textarea
+    id: dataset
+    attributes:
+      label: Dataset and validation plan
+      description: Labelled pairs, false-match risks, savings evidence and release thresholds.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals and policy risks
+    validations:
+      required: true

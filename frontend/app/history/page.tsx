@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * History — the logbook of past probes, rebuilt on the .jx forensic system.
+ * Deep Audit history — preserved separately from browser comparison history.
  *
  * Three states:
  *   1. Logged-out  → sign-in CTA (Google via Supabase OAuth)
@@ -150,12 +150,12 @@ export default function HistoryPage() {
   return (
     <MarketingShell>
       <PageHeader
-        eyebrow="Logbook"
-        title={<>Your <span className="jx-soft">audit history</span>.</>}
-        lede="Every audit you've run — target, topology, spread, and the evidence behind it — kept in one reviewable trail."
+        eyebrow="Deep Audit logbook"
+        title={<>Your advanced <span className="jx-soft">audit history</span>.</>}
+        lede="This page preserves synthetic-buyer audit history. Normal exact-product comparisons stay in the browser side panel and the configured self-hosted comparison store."
       />
 
-      <SectionMarker id="01" name="The logbook" meta="probes · topology · spread" />
+      <SectionMarker id="01" name="Advanced audit logbook" meta="optional · 60–100s · evidence" />
       <section className="jx-section jx-section--tight">
         <div className="jx-wrap jx-wrap--wide">
           {/* ── Loading auth ──────────────────────────────────── */}
@@ -183,9 +183,10 @@ export default function HistoryPage() {
           {signedIn === true && sorted.length === 0 && (
             <div className="jx-state" data-reveal>
               <div className="jx-state__label">The logbook is empty</div>
-              <p className="jx-state__body">Audit a URL to start building your evidence trail.</p>
+                <p className="jx-state__body">Use the extension for instant verified comparisons, or explicitly start a Deep Audit to build this research trail.</p>
               <div className="jx-state__cta">
-                <Link href="/chat" className="jx-btn jx-btn--primary">Start an audit →</Link>
+                <Link href="/extension" className="jx-btn jx-btn--primary">Set up price comparison →</Link>
+                <Link href="/chat" className="jx-btn">Start Deep Audit →</Link>
               </div>
             </div>
           )}

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ban, RefreshCw, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getClientApiBase } from "@/lib/api-base";
+import Link from "next/link";
 import { PageHead } from "../ui";
 
 type Member = {
@@ -31,6 +33,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const comparisonApi = getClientApiBase();
 
   const authHeaders = useCallback(async () => {
     const sessionResult = await supabase.auth.getSession();
@@ -110,14 +113,28 @@ export default function SettingsPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
         <PageHead
           eyebrow="Settings"
-          title="Workspace access"
-          lede="Manage team roles and pending invitations for the enterprise price-integrity workspace."
+          title="Self-hosting and workspace access"
+          lede="Confirm the price-comparison backend and privacy defaults, then manage optional Deep Audit workspace roles."
         />
         <button className="btn btn-ghost" onClick={loadMembers} disabled={loading} style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 28 }}>
           <RefreshCw size={15} aria-hidden="true" />
           Refresh
         </button>
       </div>
+
+      <section style={{ border: "1px solid var(--good)", borderRadius: "var(--r-sm)", background: "var(--surface)", padding: 18, marginBottom: 22 }}>
+        <span className="label-mono" style={{ color: "var(--good)" }}>Normal price comparison</span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14, marginTop: 12 }}>
+          <div><div className="mono" style={{ color: "var(--text-2)", fontSize: 10 }}>BACKEND</div><strong className="mono">{comparisonApi || "same-origin local proxy"}</strong></div>
+          <div><div className="mono" style={{ color: "var(--text-2)", fontSize: 10 }}>TELEMETRY</div><strong>Disabled by default</strong></div>
+          <div><div className="mono" style={{ color: "var(--text-2)", fontSize: 10 }}>PAID PROVIDERS</div><strong>Disabled by default</strong></div>
+        </div>
+        <p style={{ color: "var(--text-2)" }}>The Chrome extension keeps its own local backend setting and requests that origin at runtime. No API key or retailer host access is installed automatically.</p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/extension" className="btn btn-primary">Extension settings</Link>
+          <Link href="/dashboard/providers" className="btn btn-ghost">Provider capabilities</Link>
+        </div>
+      </section>
 
       <section style={{ border: "1px solid var(--line)", borderRadius: "var(--r-sm)", background: "var(--surface)", padding: 18, marginBottom: 22 }}>
         <span className="label-mono" style={{ color: "var(--text-2)" }}>Invite member</span>

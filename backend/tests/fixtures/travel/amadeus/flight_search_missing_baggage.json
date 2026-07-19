@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "type": "flight-offer",
+      "id": "missing-bag",
+      "source": "GDS",
+      "itineraries": [
+        {
+          "duration": "PT7H45M",
+          "segments": [
+            {
+              "departure": {"iataCode": "DXB", "at": "2027-02-01T09:00:00"},
+              "arrival": {"iataCode": "LHR", "at": "2027-02-01T13:45:00"},
+              "carrierCode": "EK",
+              "number": "1",
+              "id": "1",
+              "numberOfStops": 0
+            }
+          ]
+        }
+      ],
+      "price": {"currency": "AED", "total": "1210.00", "grandTotal": "1210.00"},
+      "travelerPricings": [
+        {"travelerId": "1", "fareDetailsBySegment": [{"segmentId": "1", "cabin": "ECONOMY"}]}
+      ]
+    }
+  ]
+}

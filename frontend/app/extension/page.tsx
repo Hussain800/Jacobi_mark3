@@ -1,86 +1,55 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
 import MarketingShell from "../../components/marketing/MarketingShell";
-import { PageHeader, SectionMarker, DocShell, DocSection } from "../../components/marketing/parts";
+import { DocSection, DocShell, PageHeader, SectionMarker } from "../../components/marketing/parts";
 
 export const metadata: Metadata = {
-  title: "Browser extension | JACOBI",
-  description:
-    "The status, intended workflow, and release safeguards for the JACOBI browser extension prototype.",
+  title: "Chrome extension | Jacobi",
+  description: "Load Jacobi's Manifest V3 side panel and automatically check the supported flight or hotel page already open in your browser.",
 };
 
 const toc = [
-  { href: "#status", label: "Current status" },
-  { href: "#workflow", label: "Intended workflow" },
-  { href: "#release-bar", label: "Release bar" },
-  { href: "#data", label: "Data and permissions" },
-];
-
-const FLOW: [string, string][] = [
-  ["Identify a page", "From a product or offer page, the extension would let a user choose the URL they are already reviewing."],
-  ["Hand off the URL", "The URL would open in Jacobi's audit workflow. The extension would not make an evidence claim on the page itself."],
-  ["Run an explicit audit", "The user would still review the target and deliberately start the audit in Jacobi. No background live scan begins from passive browsing."],
-  ["Review the evidence", "Results, coverage, exports, and any share controls remain in the authenticated Jacobi workspace."],
-];
-
-const RELEASE: [string, string][] = [
-  ["Production handoff", "The prototype must point to the supported production app rather than a local development address."],
-  ["Least privilege", "Every browser permission and host pattern must be reduced to the minimum needed for a specific user-facing feature."],
-  ["Clear disclosure", "The store listing, permissions explanation, privacy notice, and in-product controls must describe the same behavior."],
-  ["Independent review", "The extension needs functional, privacy, security, and Chrome Web Store policy review before release."],
+  { href: "#status", label: "Release status" },
+  { href: "#install", label: "Load unpacked" },
+  { href: "#privacy", label: "Data and permissions" },
+  { href: "#states", label: "Result states" },
 ];
 
 export default function ExtensionPage() {
   return (
     <MarketingShell>
       <PageHeader
-        eyebrow="Browser extension"
-        title="A faster handoff from the page you are reviewing."
-        lede="The Jacobi extension is a development prototype, not a published browser product. This page explains its intended workflow and the safeguards required before anyone should install it."
-        meta={<><span>Prototype status</span><span>No public install or store listing</span></>}
+        eyebrow="Travel Guardian side panel"
+        title="Open one trip page. Jacobi does the rest."
+        lede="After one-time Automatic Savings consent, Jacobi detects a supported flight or hotel page, extracts bounded trip facts, checks configured providers, and keeps equivalence, mandatory costs, evidence, and revalidation beside the page. No itinerary re-entry. The repository build is ready for unpacked development use; Chrome Web Store review remains external."
+        meta={<><span>Flights + hotels</span><span>Manifest V3</span><span>Optional host permissions</span></>}
       />
-
-      <SectionMarker id="01" name="The extension" meta="roadmap, not a download" />
-      <DocShell
-        toc={toc}
-        aside={<><span className="l">Availability</span><strong>Not shipped</strong><p>No installer. No store listing. No supported production configuration.</p></>}
-      >
-        <DocSection id="status" overline="Current status" title="There is no Jacobi extension for customers to install today." tone="intro">
-          <div className="jx-splitcopy">
-            <p>The repository includes a Chrome extension prototype with a popup, a context-menu action, local recent-item storage, and a lightweight on-page price cue. It is unfinished, uses development configuration, and is not published through the Chrome Web Store.</p>
-            <p>That distinction matters. This is a roadmap page, not a download page. The web app remains the supported way to submit an audit URL today.</p>
-          </div>
-          <Link href="/chat" className="jx-doc__action">Open the supported audit workflow <span aria-hidden="true">→</span></Link>
+      <SectionMarker id="01" name="Development extension" meta="unpacked / repository build" />
+      <DocShell toc={toc} aside={<><span className="l">Distribution</span><strong>Unpacked build</strong><p>Use the repository package today. Store submission and approval are separate external release steps.</p></>}>
+        <DocSection id="status" overline="Current status" title="A working development surface, not a store listing." tone="intro">
+          <p>The extension contains flight and hotel context extraction, the Travel Guardian side-panel workflow, self-hosted backend settings, provider environment labels, evidence detail, trade-off and uncertainty states, and an explicit Deep Audit handoff. Fixture walkthroughs remain visibly labelled demos.</p>
+          <Link href="/travel#status" className="jx-doc__action">Inspect the Travel Guardian flow <span aria-hidden="true">-&gt;</span></Link>
         </DocSection>
-
-        <DocSection id="workflow" overline="Intended workflow" title="Keep the decision in the web app, remove the copy-and-paste.">
+        <DocSection id="install" overline="Install" title="Load the repository folder in Chrome.">
+          <pre className="jx-code"><code>{`1. Start the backend on http://localhost:8000\n2. Open chrome://extensions\n3. Enable Developer mode\n4. Choose Load unpacked\n5. Select the repository's extension/ folder\n6. Grant Automatic Savings consent for supported origins\n7. Open a supported flight or hotel page\n8. Open the Jacobi side panel to review the automatic check`}</code></pre>
+          <p>For a remote or self-hosted backend, open extension settings and grant only that origin when prompted.</p>
+        </DocSection>
+        <DocSection id="privacy" overline="Privacy" title="The active trip context is the boundary.">
           <div className="jx-steps">
-            {FLOW.map(([h, p], i) => (
-              <div className="jx-steps__item" key={h}>
-                <span className="jx-steps__n">{String(i + 1).padStart(2, "0")}</span>
-                <div><h3>{h}</h3><p>{p}</p></div>
-              </div>
-            ))}
+            <div className="jx-steps__item"><span className="jx-steps__n">01</span><div><h3>Local first</h3><p>Supported flight and hotel facts are read in the active tab.</p></div></div>
+            <div className="jx-steps__item"><span className="jx-steps__n">02</span><div><h3>Bounded fields only</h3><p>The request sends trip and offer facts, not passenger identity, payment credentials, raw page HTML, or browsing history.</p></div></div>
+            <div className="jx-steps__item"><span className="jx-steps__n">03</span><div><h3>Explicit mode consent</h3><p>Automatic Savings Mode requires onboarding consent and exact supported-origin access. Privacy Mode keeps the intent local until your click.</p></div></div>
+            <div className="jx-steps__item"><span className="jx-steps__n">04</span><div><h3>Clear controls</h3><p>Settings expose backend configuration, provider status, device-local history, preferences, and clear-data actions.</p></div></div>
           </div>
         </DocSection>
-
-        <DocSection id="release-bar" overline="Release bar" title="What must be true before this can be a product.">
+        <DocSection id="states" overline="Honest outcomes" title="A cheaper number is not always a saving." tone="limits">
           <div className="jx-deftable">
-            <div className="jx-deftable__head"><span>Requirement</span><span>What it means</span><span>&nbsp;</span></div>
-            {RELEASE.map(([h, p]) => (
-              <div className="jx-deftable__row" key={h} style={{ gridTemplateColumns: "1fr 2fr" }}>
-                <strong>{h}</strong><span>{p}</span>
-              </div>
-            ))}
-          </div>
-        </DocSection>
-
-        <DocSection id="data" overline="Data and permissions" title="Nothing should be implicit." tone="limits">
-          <p>A released extension would explain each requested browser permission in plain language: what it enables, when it runs, what data it can reach, whether data leaves the browser, and how the user can remove access. That disclosure does not exist for a released Jacobi extension because there is no released Jacobi extension.</p>
-          <div className="jx-callout">
-            <ShieldCheck aria-hidden="true" />
-            <p><strong>For now:</strong> use the web application for audits and see the <Link href="/privacy">Privacy Policy</Link> for the current service data-handling overview.</p>
+            <div className="jx-deftable__head"><span>State</span><span>Meaning</span><span>Action</span></div>
+            <div className="jx-deftable__row"><strong>Comparable</strong><span>Eligible itinerary or rate returned by configured providers</span><span>Revalidate</span></div>
+            <div className="jx-deftable__row"><strong>No improvement</strong><span>No returned comparable beats the observed page basis</span><span>Stay here</span></div>
+            <div className="jx-deftable__row"><strong>Trade-off</strong><span>Different baggage, ticketing, room, meal, payment, or policy fact</span><span>Review details</span></div>
+            <div className="jx-deftable__row"><strong>Uncertain</strong><span>Equivalence or mandatory cost cannot be verified</span><span>No headline saving</span></div>
+            <div className="jx-deftable__row"><strong>Deep Audit</strong><span>Optional buyer-context investigation, 60-100 seconds</span><span>Explicit launch</span></div>
           </div>
         </DocSection>
       </DocShell>

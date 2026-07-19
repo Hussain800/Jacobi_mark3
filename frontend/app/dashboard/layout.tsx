@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Enterprise audit workspace shell.
+ * Optional enterprise Deep Audit workspace shell.
  *
  * Wraps all /dashboard/* pages with the shared chrome (nav, demo banner,
  * tabs, footer) and the jacobi-design system so the workspace matches the

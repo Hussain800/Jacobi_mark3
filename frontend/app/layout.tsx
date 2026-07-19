@@ -16,13 +16,13 @@ const schibsted = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "JACOBI — Price Integrity Intelligence",
+  title: "Jacobi - Travel Price Guardian",
   description:
-    "JACOBI runs controlled synthetic-buyer audits to detect personalized-pricing exposure, MAP undercutting, and gray-market drift — and produces evidence-grade reports for compliance and brand-protection teams.",
+    "Stop overpaying for trips you already chose. Jacobi compares equivalent travel offers, preserves mandatory-cost uncertainty, and revalidates before action.",
   openGraph: {
-    title: "JACOBI — Price Integrity Intelligence",
+    title: "Jacobi - Stop overpaying for trips you already chose",
     description:
-      "Controlled synthetic-buyer pricing audits. Evidence-grade price-integrity reports for compliance and brand-protection teams.",
+      "Travel equivalence, mandatory-cost clarity, truthful provider labels, evidence manifests, and fresh revalidation.",
     type: "website",
   },
 };

@@ -62,7 +62,7 @@ export default function PreviewBody() {
             >
               <div className="pi-row">
                 <span className="pi-meta">
-                  <span className="pi-glyph">⌖</span> 24 agents
+                  <span className="pi-glyph">⌖</span> Smart24 agents
                 </span>
                 <input
                   id="probe-input"
@@ -412,7 +412,7 @@ export default function PreviewBody() {
           >
             <div className="pi-row">
               <span className="pi-meta">
-                <span className="pi-glyph">⌖</span> 24 agents
+                <span className="pi-glyph">⌖</span> Smart24 agents
               </span>
               <input
                 className="pi-input"

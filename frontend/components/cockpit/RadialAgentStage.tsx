@@ -51,14 +51,14 @@ function agentIndex(agent_id: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }): Pt {
+function clusterPos(idx: number, axis: Axis, stage: { w: number; h: number }, totalAgents: number): Pt {
   const anchorAngle = CLUSTER_ANGLE[axis];
   const anchorR = Math.min(stage.w * 0.34, stage.h * 0.42);
   const ax = Math.cos(anchorAngle) * anchorR;
   const ay = Math.sin(anchorAngle) * anchorR * 0.82;
 
   const peers: number[] = [];
-  for (let i = 0; i < 24; i++) if (indexToAxis(i) === axis) peers.push(i);
+  for (let i = 0; i < totalAgents; i++) if (indexToAxis(i) === axis) peers.push(i);
   const idxInCluster = peers.indexOf(idx);
   const n = peers.length;
   const tangentAngle = anchorAngle + Math.PI / 2;
@@ -131,7 +131,9 @@ export default function RadialAgentStage({
     return () => ro.disconnect();
   }, []);
 
-  /* Resolve 24-node state */
+  const agentCount = report?.total_agents ?? 24;
+
+  /* Resolve the configured node count */
   const nodes: NodeState[] = useMemo(() => {
     const agentsById = new Map<number, Agent>();
     (report?.agents || []).forEach((a) => agentsById.set(agentIndex(a.agent_id), a));
@@ -150,7 +152,7 @@ export default function RadialAgentStage({
       if (dearest !== null)  dearestIdx  = agentIndex((dearest  as Agent).agent_id);
     }
 
-    return Array.from({ length: 24 }, (_, i) => {
+    return Array.from({ length: agentCount }, (_, i) => {
       const a = agentsById.get(i) || null;
       const axis = indexToAxis(i);
       let status: NodeStatus = "pending";
@@ -172,11 +174,11 @@ export default function RadialAgentStage({
         isDearest:  i === dearestIdx,
       };
     });
-  }, [report, scanStarted, isResult, now]);
+  }, [report, scanStarted, isResult, now, agentCount]);
 
   const positions = useMemo(
-    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage)),
-    [nodes, stage],
+    () => nodes.map((n) => clusterPos(n.idx, n.axis, stage, agentCount)),
+    [nodes, stage, agentCount],
   );
 
   const cx = stage.w / 2;
@@ -306,7 +308,7 @@ export default function RadialAgentStage({
             {isResult ? "Probe complete" : "Live deployment"}
           </div>
           <div className="font-mono text-[12px] text-secondary tabular-nums mt-0.5">
-            {totalDone}<span className="text-muted">/24 agents</span>
+            {totalDone}<span className="text-muted">/{agentCount} agents</span>
             {scanStarted > 0 && !isResult && (
               <span className="ml-3 text-muted">
                 {((now - scanStarted) / 1000).toFixed(1)}s

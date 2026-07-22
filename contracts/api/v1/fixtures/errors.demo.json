@@ -1,0 +1,145 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "error_catalog",
+  "fixture_id": "stable_error_catalog_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/main.py, backend/agentcore/api.py, frontend/app/api/[...path]/route.ts",
+    "notes": "Stable status/code examples for client tests. Detail messages are human-readable and may add context without exposing secrets."
+  },
+  "errors": [
+    {
+      "surface": "audit",
+      "endpoint": "POST /api/probe",
+      "status": 401,
+      "code": "auth_required",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "audit",
+      "endpoint": "POST /api/probe",
+      "status": 400,
+      "code": "invalid_url",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "audit",
+      "endpoint": "POST /api/probe",
+      "status": 503,
+      "code": "quota_unavailable",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "audit",
+      "endpoint": "POST /api/probe",
+      "status": 402,
+      "code": "quota_exceeded",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "audit",
+      "endpoint": "GET /api/result/{session_id}",
+      "status": 404,
+      "code": "session_not_found",
+      "detail_shape": "string"
+    },
+    {
+      "surface": "enterprise",
+      "endpoint": "GET /api/enterprise/workspace",
+      "status": 401,
+      "code": "auth_required",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise",
+      "endpoint": "any enterprise object read/write",
+      "status": 404,
+      "code": "not_found",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise",
+      "endpoint": "any forbidden enterprise mutation",
+      "status": 403,
+      "code": "forbidden",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise",
+      "endpoint": "any validation failure",
+      "status": 400,
+      "code": "invalid_request",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise",
+      "endpoint": "configured Supabase-required path",
+      "status": 503,
+      "code": "supabase_unconfigured",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise_worker",
+      "endpoint": "POST|GET /api/enterprise/scan-worker/run",
+      "status": 503,
+      "code": "worker_secret_missing",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "enterprise_worker",
+      "endpoint": "POST|GET /api/enterprise/scan-worker/run",
+      "status": 401,
+      "code": "worker_unauthorized",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "agent",
+      "endpoint": "POST /api/v1/agent/verify",
+      "status": 422,
+      "code": "validation_error",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "agent",
+      "endpoint": "POST /api/v1/agent/verify",
+      "status": 422,
+      "code": "unsupported_schema_version",
+      "detail_shape": "object"
+    },
+    {
+      "surface": "agent",
+      "endpoint": "GET /api/v1/agent/manifests/{id}",
+      "status": 404,
+      "code": "manifest_not_found",
+      "detail_shape": "string"
+    },
+    {
+      "surface": "agent",
+      "endpoint": "collection-triggering agent endpoints",
+      "status": 429,
+      "code": "rate_limited",
+      "detail_shape": "string"
+    },
+    {
+      "surface": "frontend_proxy",
+      "endpoint": "POST /api/probe",
+      "status": 503,
+      "code": "probe_unavailable",
+      "detail_shape": "object",
+      "headers": {
+        "x-jacobi-api-mode": "fallback"
+      }
+    },
+    {
+      "surface": "frontend_proxy",
+      "endpoint": "GET /api/result/{session_id}",
+      "status": 503,
+      "code": "result_unavailable",
+      "detail_shape": "object",
+      "headers": {
+        "x-jacobi-api-mode": "fallback"
+      }
+    }
+  ]
+}

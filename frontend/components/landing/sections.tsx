@@ -56,12 +56,12 @@ export function Hero() {
               <span className="jx-eyebrow jx-hero__eyebrow"><span className="jx-tick" />Controlled synthetic-buyer audits</span>
               <h1 className="jx-display jx-h1 jx-hero__title">See the price you were never meant to compare<span className="jx-hero__dot">.</span></h1>
               <p className="jx-lede jx-hero__lede">
-                Paste a URL. Twenty-four synthetic buyers check it from every angle — geography,
-                device, cookies, referrer, language — and return evidence, with statistics and receipts.
+                Choose a deterministic sample or paste a public URL. A live audit checks it from
+                multiple buyer contexts — geography, device, cookies, referrer, language — and returns evidence with clear limits.
               </p>
               <div className="jx-hero__cta">
-                <ProbeInput cta="Run an audit" />
-                <p className="jx-probe__note">Public-web only · Sample audit completes in ~60 seconds</p>
+                <ProbeInput cta="Run live public audit" showDemo />
+                <p className="jx-probe__note">Live audits are public-web only and may require sign-in. Results can be complete, insufficient, indeterminate, or unavailable.</p>
               </div>
             </div>
             <div className="jx-hero__stage"><GlobeStage /></div>
@@ -173,7 +173,7 @@ export function AuditReadout() {
           <SectionHead
             eyebrow="At a glance"
             title="The whole audit, in one readout."
-            lede="Baseline, highest observed, the delta, statistical confidence, and the dominant driver — resolved into a single readout you can hand off or export as an audit-ready report."
+            lede="Baseline, observed spread, coverage, evidence, and claim status — resolved into a readout you can hand off or export without confusing a return rate for confidence."
           />
           <div data-reveal><AuditReadoutArtifact /></div>
         </div>

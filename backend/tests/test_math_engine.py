@@ -6,9 +6,13 @@ re-introducing the Booking.com "aggressive" false positive.
 """
 import math_engine
 from math_engine import (
+    apply_probe_accounting,
     apply_math_engine_v2,
     build_sensitivity_matrix,
     compute_pei,
+    is_inferred_agent,
+    is_real_extraction,
+    is_real_probe,
 )
 
 
@@ -154,3 +158,87 @@ def test_apply_fail_soft_on_empty():
     apply_math_engine_v2(s)  # must not raise
     assert s["pei"]["score"] == 0.0
     assert s["sensitivity_matrix"]["rows"] == []
+
+
+# --- Centralized probe-accounting invariants -------------------------------
+
+def _agent(rt_ms=None, inferred=False, extraction_method="generic_price_parser"):
+    a = {"response_time_ms": rt_ms, "inferred": inferred}
+    if extraction_method is not None:
+        a["evidence"] = {"extraction_method": extraction_method}
+    return a
+
+
+def test_is_real_probe_requires_positive_response_time():
+    assert is_real_probe(_agent(rt_ms=100)) is True
+    assert is_real_probe(_agent(rt_ms=1)) is True
+    # Inferred agents have response_time_ms=0 — NOT real probes.
+    assert is_real_probe(_agent(rt_ms=0)) is False
+    assert is_real_probe(_agent(rt_ms=None)) is False
+
+
+def test_is_inferred_agent():
+    assert is_inferred_agent(_agent(inferred=True)) is True
+    assert is_inferred_agent(_agent(inferred=False)) is False
+    assert is_inferred_agent({}) is False
+
+
+def test_is_real_extraction_requires_non_null_method():
+    assert is_real_extraction(_agent(extraction_method="generic_price_parser")) is True
+    assert is_real_extraction(_agent(extraction_method=None)) is False
+    assert is_real_extraction(_agent(extraction_method="none")) is False
+    assert is_real_extraction(_agent(extraction_method="")) is False
+    assert is_real_extraction({}) is False
+
+
+def test_is_real_extraction_excludes_inferred_agents():
+    """Inferred agents carry COPIED evidence from the real baseline — counting
+    them as separate extractions would fabricate evidence volume."""
+    assert is_real_extraction(_agent(rt_ms=0, inferred=True, extraction_method="generic_price_parser")) is False
+    assert is_real_extraction(_agent(rt_ms=100, inferred=False, extraction_method="generic_price_parser")) is True
+
+
+def test_compute_probe_accounting_counts_correctly():
+    agents = [
+        _agent(rt_ms=100, inferred=False),   # real probe
+        _agent(rt_ms=200, inferred=False),   # real probe
+        _agent(rt_ms=0, inferred=True),      # inferred (skipped)
+        _agent(rt_ms=0, inferred=True),      # inferred (skipped)
+        _agent(rt_ms=0, inferred=False, extraction_method=None),  # failed
+    ]
+    acct = math_engine.compute_probe_accounting(agents)
+    assert acct == {"real_probes_executed": 2, "skipped_inferred_agents": 2, "evidence_count": 2}
+
+
+def test_compute_probe_accounting_empty_list():
+    assert math_engine.compute_probe_accounting([]) == {
+        "real_probes_executed": 0, "skipped_inferred_agents": 0, "evidence_count": 0,
+    }
+
+
+def test_apply_probe_accounting_populates_session():
+    s = {"agents": [
+        _agent(rt_ms=100, inferred=False),
+        _agent(rt_ms=0, inferred=True),
+        _agent(rt_ms=0, inferred=False, extraction_method=None),
+    ]}
+    apply_probe_accounting(s)
+    assert s["real_probes_executed"] == 1
+    assert s["skipped_inferred_agents"] == 1
+    assert s["evidence_count"] == 1
+
+
+def test_apply_probe_accounting_missing_agents_key():
+    s = {}
+    apply_probe_accounting(s)  # must not raise
+    assert s["real_probes_executed"] == 0
+    assert s["skipped_inferred_agents"] == 0
+    assert s["evidence_count"] == 0
+
+
+def test_accounting_rule_is_deterministic():
+    """The same agent list must always produce the same triple — no drift."""
+    agents = [_agent(rt_ms=100) for _ in range(5)] + [_agent(rt_ms=0, inferred=True) for _ in range(3)]
+    a = math_engine.compute_probe_accounting(agents)
+    b = math_engine.compute_probe_accounting(agents)
+    assert a == b == {"real_probes_executed": 5, "skipped_inferred_agents": 3, "evidence_count": 5}

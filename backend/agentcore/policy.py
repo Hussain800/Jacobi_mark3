@@ -35,6 +35,38 @@ DEFAULT_POLICIES: dict[str, ActionMode] = {
     "hotel-official.example": ActionMode.checkout_prepare_allowed,
 }
 
+DEFAULT_OFFICIAL_ROUTE_DOMAINS = {
+    "demo.jacobi.local",
+    "hotel-official.example",
+}
+
+
+def _official_route_domains() -> set[str]:
+    """Return the server-owned official-route registry.
+
+    ``official_route`` is a caller claim, not proof. Only domains configured
+    by the deployment (or the two non-networked demo domains) can turn that
+    claim into an authorized route. This prevents a client from relabeling a
+    restricted URL as an official merchant rail.
+    """
+    raw = os.getenv("JACOBI_OFFICIAL_ROUTE_DOMAINS")
+    if not raw:
+        return set(DEFAULT_OFFICIAL_ROUTE_DOMAINS)
+    return {
+        normalize_domain(value)
+        for value in raw.split(",")
+        if normalize_domain(value)
+    }
+
+
+def is_authorized_official_route(url_or_domain: str, claimed: bool) -> bool:
+    """Validate a caller's official-route claim against server configuration."""
+    if not claimed:
+        return False
+    domain = normalize_domain(url_or_domain)
+    return any(domain == allowed or domain.endswith(f".{allowed}")
+               for allowed in _official_route_domains())
+
 
 def _load_overrides() -> dict[str, ActionMode]:
     """Parse JACOBI_POLICY_OVERRIDES (domain->mode JSON), defensively."""
@@ -80,6 +112,7 @@ def evaluate(
 ) -> PolicyDecision:
     """Gate a platform for a consent scope. See module docstring for semantics."""
     domain = normalize_domain(url_or_domain)
+    official_route = is_authorized_official_route(url_or_domain, official_route)
     restricted = domain in RESTRICTED_DOMAINS
     mode = _policies().get(domain)
     if mode is None:

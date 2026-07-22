@@ -15,6 +15,7 @@ REQUIRED_MIGRATIONS = [
     "202606240005_enterprise_rls_member_management.sql",
     "202606240006_harden_set_updated_at_search_path.sql",
     "202606240007_optimize_rls_initplan.sql",
+    "202607220001_harden_member_insert_policy.sql",
 ]
 
 REQUIRED_ENTERPRISE_TABLES = [

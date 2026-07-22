@@ -10,8 +10,8 @@
 - **Uvicorn** — ASGI server
 
 ## Frontend Framework
-- **Next.js 14.2** — React framework with App Router
-- **React 18** — UI library
+- **Next.js 16.2.9** — React framework with App Router
+- **React 19.2.7** — UI library
 - **Tailwind CSS 3.4** — Utility-first styling
 - **Recharts** — Data visualization (price distribution charts)
 - **Lucide React** — Icon library

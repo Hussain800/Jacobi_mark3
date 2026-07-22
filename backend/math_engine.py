@@ -29,9 +29,20 @@ from typing import Dict, List
 import numpy as np
 
 from pricing_engine import JacobiPricingEngine
+from evidence_adjudication import project_evidence_outcome
 
 _EPS = 1e-9
 
+
+# Probe accounting is dependency-light and shared with enterprise evidence persistence.
+from probe_accounting import (
+    apply_probe_accounting,
+    compute_probe_accounting,
+    is_inferred_agent,
+    is_observed_price_agent,
+    is_real_extraction,
+    is_real_probe,
+)
 
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
@@ -79,7 +90,26 @@ _ROBUST = JacobiPricingEngine(
 # ---------------------------------------------------------------------------
 
 def _valid_prices(session: dict) -> List[float]:
-    return [p for p in (session.get("all_prices") or {}).values() if p is not None]
+    """Return prices from observed agents, excluding inferred/copied/failed rows.
+
+    ``all_prices`` is retained as the source of comparison values for backwards
+    compatibility.  When the session also records an agent, that agent is the
+    authority for whether its value is an observation rather than a projection.
+    """
+    agents_by_id = {
+        agent.get("agent_id"): agent
+        for agent in (session.get("agents") or [])
+        if agent.get("agent_id")
+    }
+    return [
+        price
+        for agent_id, price in (session.get("all_prices") or {}).items()
+        if price is not None
+        and (
+            agent_id not in agents_by_id
+            or is_observed_price_agent(agents_by_id[agent_id])
+        )
+    ]
 
 
 def _raw_mad(prices: List[float]) -> float:
@@ -133,6 +163,8 @@ def _ordered_monotonic_signal(session: dict) -> float:
     do not run rank-correlation theatre on 2 points or a binary axis."""
     pairs = []
     for a in session.get("agents", []):
+        if not is_observed_price_agent(a):
+            continue
         tier = a.get("network_tier")
         price = a.get("price")
         if tier is None or price is None:
@@ -261,19 +293,27 @@ def compute_pei(session: dict) -> dict:
     prices = _valid_prices(session)
     coverage = session.get("coverage", "limited")
     gradients = session.get("gradients") or []
-    sig_count = sum(1 for g in gradients if g.get("significant"))
+    adjudication = project_evidence_outcome(
+        coverage=coverage,
+        gradients=gradients,
+        observed_spread_pct=session.get("max_price_spread_pct", 0.0),
+    )
+    sig_count = adjudication["significant_gradient_count"]
 
     gini = round(_ROBUST.compute_gini(prices), 6) if len(prices) >= 2 else 0.0
     mad_norm = round(_ROBUST.compute_mad_dispersion(prices), 6) if len(prices) >= 2 else 0.0
     # Descriptive only — "how unequal are the observed prices", NOT a verdict.
     dispersion_index = round(100.0 * min(1.0, 0.6 * gini + 0.4 * mad_norm), 1)
 
-    gated_open = sig_count >= 1 and coverage != "limited"
+    gated_open = adjudication["pei_eligible"]
 
     if not gated_open:
-        reason = "No controlled buyer-context variable significantly moved the price (|t| <= 2)"
         if coverage == "limited":
-            reason += ", and coverage is limited"
+            reason = "Coverage is limited"
+            if sig_count:
+                reason += " despite a significant controlled buyer-context gradient"
+        else:
+            reason = "No controlled buyer-context variable significantly moved the price (|t| <= 2)"
         return {
             "score": 0.0,
             "gated": False,
@@ -288,6 +328,7 @@ def compute_pei(session: dict) -> dict:
             },
             "interpretation": "No verified exploitation",
             "config": _config_dict(),
+            "adjudication": adjudication,
         }
 
     j_norm = _jacobian_norm(gradients)
@@ -324,6 +365,7 @@ def compute_pei(session: dict) -> dict:
         },
         "interpretation": _interpret_pei(score),
         "config": _config_dict(),
+        "adjudication": adjudication,
     }
 
 

@@ -1,5 +1,4 @@
-"""
-JACOBI — TriggerWare.ai Workflow Integration (Optional)
+"""JACOBI - TriggerWare.ai Workflow Integration (Optional)
 
 Fires webhook events on probe completion so TriggerWare.ai can route
 them into downstream workflows (Slack alerts, email, dashboards, etc.).
@@ -12,6 +11,14 @@ import logging
 import os
 
 import httpx
+
+try:
+    from url_guard import validate_public_url, UnsafeUrlError
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from url_guard import validate_public_url, UnsafeUrlError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,12 @@ async def dispatch_probe_event(report: dict) -> None:
     Fire-and-forget. Never blocks the probe pipeline.
     """
     if not is_configured():
+        return
+
+    try:
+        validate_public_url(TRIGGERWARE_WEBHOOK_URL)
+    except UnsafeUrlError as exc:
+        logger.warning("TriggerWare.ai URL blocked by SSRF guard: %s", exc)
         return
 
     event = {

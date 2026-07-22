@@ -16,9 +16,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from enterprise_access import EnterprisePermissionError, normalize_role, require_permission
+from enterprise_access import (
+    EnterpriseContext,
+    EnterpriseContextError,
+    EnterprisePermissionError,
+    normalize_role,
+    require_permission,
+)
 from map_policy import evaluate_map_observation
+from probe_accounting import is_real_extraction
 from supabase_client import get_supabase
+from enterprise_reports import redact_packet
 
 
 DEFAULT_WORKSPACE_NAME = "Jacobi Pilot Workspace"
@@ -56,6 +64,20 @@ class EnterpriseUnavailableError(Exception):
     production deploy (no SUPABASE_SERVICE_KEY) by serving ephemeral,
     per-process workspace data that looks live but is never persisted.
     """
+
+
+def _evidence_matches_item(
+    row: dict[str, Any],
+    watchlist_item_id: str,
+    target_url: Optional[str],
+) -> bool:
+    """Match retry evidence without depending on the newly-created session id."""
+    if row.get("watchlist_item_id") == watchlist_item_id:
+        return True
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("watchlist_item_id") == watchlist_item_id:
+        return True
+    return bool(target_url and row.get("target_url") == target_url)
 
 
 def _require_supabase() -> bool:
@@ -262,8 +284,29 @@ def _memory_role(workspace: dict[str, Any], user_id: str) -> str:
     return "viewer"
 
 
+def _memory_context(user_id: str, workspace: dict[str, Any], org_id: Optional[str] = None) -> EnterpriseContext:
+    """Resolve and validate actor/org scope before touching memory rows."""
+    organization = workspace.get("organization") or {}
+    actual_org_id = organization.get("id")
+    if not actual_org_id or (org_id is not None and str(org_id) != str(actual_org_id)):
+        raise EnterpriseAccessError("Organization not found")
+    actor = _clean(user_id)
+    member = next(
+        (member for member in workspace.get("members", []) if member.get("user_id") == actor),
+        None,
+    )
+    if member is None and organization.get("created_by") != actor:
+        # A missing membership is not an anonymous viewer.  Treat it as a
+        # missing organization so memory fallback cannot become an IDOR oracle.
+        raise EnterpriseAccessError("Organization not found")
+    try:
+        return EnterpriseContext(actor, str(actual_org_id), (member or {}).get("role", "owner"))
+    except EnterpriseContextError as exc:
+        raise EnterpriseAccessError("Organization not found") from exc
+
+
 def _require_memory_permission(workspace: dict[str, Any], user_id: str, permission: str) -> None:
-    require_permission(_memory_role(workspace, user_id), permission)
+    _memory_context(user_id, workspace).require(permission)
 
 
 def _supabase_membership_role(client, org_id: str, user_id: str) -> str:
@@ -271,6 +314,19 @@ def _supabase_membership_role(client, org_id: str, user_id: str) -> str:
     if not memberships:
         raise EnterpriseAccessError("Organization not found")
     return normalize_role(memberships[0].get("role"))
+
+
+async def _supabase_context(client, user_id: str, org_id: Optional[str] = None) -> tuple[EnterpriseContext, dict[str, Any]]:
+    """Resolve actor/org membership once for an organization-scoped operation."""
+    actor = _clean(user_id)
+    if not actor:
+        raise EnterpriseAccessError("Organization not found")
+    organization = await _ensure_supabase_org(client, actor, org_id)
+    try:
+        role = await _thread(lambda: _supabase_membership_role(client, organization["id"], actor))
+        return EnterpriseContext(actor, str(organization["id"]), role), organization
+    except (KeyError, EnterpriseContextError) as exc:
+        raise EnterpriseAccessError("Organization not found") from exc
 
 
 def _estimate_job_cost(audit_depth: str, count: int) -> float:
@@ -381,14 +437,22 @@ def _scan_item_ids(job: dict[str, Any]) -> list[str]:
 
 def _coverage_from_session(session: dict[str, Any]) -> Optional[float]:
     total = _num(session.get("configured_agents")) or _num(session.get("total_agents"))
+    agents = session.get("agents") or []
+    if agents:
+        # Coverage is based on real comparable probes, not the successful-agent
+        # counter, because the uniform gate may have copied a baseline price
+        # into inferred agents without collecting them.
+        priced = [
+            agent for agent in agents
+            if _num(agent.get("price")) is not None
+            and is_real_extraction(agent)
+        ]
+        denominator = total if total and total > 0 else len(agents)
+        return round(min(100.0, max(0.0, (len(priced) / denominator) * 100)), 2)
     successful = _num(session.get("successful_agents"))
     if total and total > 0 and successful is not None:
         return round(min(100.0, max(0.0, (successful / total) * 100)), 2)
-    agents = session.get("agents") or []
-    if not agents:
-        return None
-    priced = [agent for agent in agents if _num(agent.get("price")) is not None]
-    return round((len(priced) / len(agents)) * 100, 2) if agents else None
+    return None
 
 
 def _buyer_context(agent: dict[str, Any]) -> str:
@@ -408,6 +472,11 @@ def extract_probe_observations(session: dict[str, Any], default_currency: str = 
     """Convert a completed probe session into evidence-ready price observations."""
     observations: list[dict[str, Any]] = []
     for agent in session.get("agents") or []:
+        # Enterprise evidence must reflect a real extraction, not an
+        # exact-uniform copied agent or a price-only record with no evidence
+        # method. This is the same invariant used by the probe accounting UI.
+        if not is_real_extraction(agent):
+            continue
         observed = _num(agent.get("price"))
         if observed is None or observed <= 0:
             continue
@@ -436,7 +505,7 @@ def extract_probe_observations(session: dict[str, Any], default_currency: str = 
                 "language_label": agent.get("language_label") or evidence.get("language_label"),
                 "extraction_evidence": evidence,
             }),
-            "extraction_method": evidence.get("extraction_method") or "probe_engine",
+            "extraction_method": evidence["extraction_method"],
         })
     return observations
 
@@ -882,11 +951,26 @@ async def _ensure_supabase_org(client, user_id: str, org_id: Optional[str] = Non
     return await _thread(work)
 
 
-async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
-    org = await _ensure_supabase_org(client, user_id)
+async def _workspace_supabase(
+    client,
+    user_id: str,
+    *,
+    context: Optional[EnterpriseContext] = None,
+    organization: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    context, organization = (
+        (context, organization)
+        if context is not None and organization is not None
+        else await _supabase_context(client, user_id)
+    )
 
     def work():
-        org_id = org["id"]
+        org_id = context.organization_id
+        context.require("workspace.read")
+        org_rows = client.table("organizations").select("*").eq("id", org_id).limit(1).execute().data or []
+        if not org_rows:
+            raise EnterpriseAccessError("Organization not found")
+        org = org_rows[0]
         watchlists = client.table("watchlists").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
         products = client.table("products").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
         sellers = client.table("sellers").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute().data or []
@@ -930,8 +1014,11 @@ async def _workspace_supabase(client, user_id: str) -> dict[str, Any]:
 async def get_workspace(user_id: str) -> dict[str, Any]:
     client = _store_client()
     if client:
-        return await _workspace_supabase(client, user_id)
-    return _serialize_workspace(_workspace_for_user(user_id), "memory")
+        context, organization = await _supabase_context(client, user_id)
+        return await _workspace_supabase(client, user_id, context=context, organization=organization)
+    workspace = _workspace_for_user(user_id)
+    _memory_context(user_id, workspace).require("workspace.read")
+    return _serialize_workspace(workspace, "memory")
 
 
 async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -939,10 +1026,10 @@ async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, A
     if not client:
         return _create_watchlist_memory(user_id, payload)
 
-    org = await _ensure_supabase_org(client, user_id, payload.get("org_id"))
+    context, org = await _supabase_context(client, user_id, payload.get("org_id"))
 
     def work():
-        require_permission(_supabase_membership_role(client, org["id"], user_id), "watchlist.write")
+        context.require("watchlist.write")
         watchlist = client.table("watchlists").insert({
             "organization_id": org["id"],
             "name": _clean(payload.get("name"), "MAP Pilot Watchlist"),
@@ -961,7 +1048,7 @@ async def create_watchlist(user_id: str, payload: dict[str, Any]) -> dict[str, A
         return watchlist
 
     watchlist = await _thread(work)
-    response = await _workspace_supabase(client, user_id)
+    response = await _workspace_supabase(client, user_id, context=context, organization=org)
     response["created_watchlist"] = watchlist
     return response
 
@@ -971,15 +1058,29 @@ async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str)
     if not client:
         return _import_items_memory(user_id, watchlist_id, csv_text)
 
+    context, organization = await _supabase_context(client, user_id)
     rows, errors = _parse_csv(csv_text)
 
     def work():
-        watchlists = client.table("watchlists").select("*").eq("id", watchlist_id).limit(1).execute().data or []
+        context.require("watchlist.write")
+        # The public signature remains user-id based; resolve the actor's
+        # default organization before looking up the watchlist so the object
+        # query itself is tenant-scoped.
+        watchlists = (
+            client.table("watchlists")
+            .select("*")
+            .eq("id", watchlist_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not watchlists:
             raise EnterpriseAccessError("Watchlist not found")
         watchlist = watchlists[0]
-        org_id = watchlist["organization_id"]
-        require_permission(_supabase_membership_role(client, org_id, user_id), "watchlist.write")
+        context.assert_organization(watchlist.get("organization_id"))
+        org_id = context.organization_id
 
         imported = 0
         for idx, row in enumerate(rows, start=2):
@@ -1047,7 +1148,11 @@ async def import_watchlist_items(user_id: str, watchlist_id: str, csv_text: str)
         return imported
 
     imported = await _thread(work)
-    return {"imported": imported, "errors": errors, "workspace": await _workspace_supabase(client, user_id)}
+    return {
+        "imported": imported,
+        "errors": errors,
+        "workspace": await _workspace_supabase(client, user_id, context=context, organization=organization),
+    }
 
 
 async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1055,14 +1160,26 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
     if not client:
         return _launch_scan_memory(user_id, payload)
 
+    context, organization = await _supabase_context(client, user_id)
+
     def work():
         watchlist_id = _clean(payload.get("watchlist_id"))
-        watchlists = client.table("watchlists").select("*").eq("id", watchlist_id).limit(1).execute().data or []
+        context.require("scan.write")
+        watchlists = (
+            client.table("watchlists")
+            .select("*")
+            .eq("id", watchlist_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not watchlists:
             raise EnterpriseAccessError("Watchlist not found")
         watchlist = watchlists[0]
-        org_id = watchlist["organization_id"]
-        require_permission(_supabase_membership_role(client, org_id, user_id), "scan.write")
+        context.assert_organization(watchlist.get("organization_id"))
+        org_id = context.organization_id
         limit = int(payload.get("limit") or 50)
         items = client.table("watchlist_items").select("*").eq("watchlist_id", watchlist_id).eq("status", "active").limit(limit).execute().data or []
         run_mode = _normalize_scan_mode(payload.get("run_mode"))
@@ -1129,9 +1246,9 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
         products = {}
         sellers = {}
         if product_ids:
-            products = {p["id"]: p for p in (client.table("products").select("*").in_("id", product_ids).execute().data or [])}
+            products = {p["id"]: p for p in (client.table("products").select("*").in_("id", product_ids).eq("organization_id", org_id).execute().data or [])}
         if seller_ids:
-            sellers = {s["id"]: s for s in (client.table("sellers").select("*").in_("id", seller_ids).execute().data or [])}
+            sellers = {s["id"]: s for s in (client.table("sellers").select("*").in_("id", seller_ids).eq("organization_id", org_id).execute().data or [])}
 
         completed = 0
         failed = 0
@@ -1208,14 +1325,16 @@ async def launch_scan_job(user_id: str, payload: dict[str, Any]) -> dict[str, An
         return {"scan_job": job, "findings": created_findings}
 
     result = await _thread(work)
-    result["workspace"] = await _workspace_supabase(client, user_id)
+    result["workspace"] = await _workspace_supabase(client, user_id, context=context, organization=organization)
     return result
 
 
 def _memory_scan_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
     workspace = _workspace_for_user(user_id)
+    context = _memory_context(user_id, workspace)
+    context.require("scan.write")
     job = _find_one(workspace["scan_jobs"], id=scan_job_id)
-    if not job:
+    if not job or job.get("organization_id") != context.organization_id:
         raise EnterpriseAccessError("Scan job not found")
     item_ids = set(_scan_item_ids(job))
     items = [
@@ -1245,13 +1364,35 @@ async def get_scan_job_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
     if not client:
         return _memory_scan_work(user_id, scan_job_id)
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        jobs = (
+            client.table("scan_jobs")
+            .select("*")
+            .eq("id", scan_job_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not jobs:
             raise EnterpriseAccessError("Scan job not found")
         job = jobs[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
+        context.require("scan.write")
+
+        scoped_watchlists = (
+            client.table("watchlists")
+            .select("id")
+            .eq("id", job.get("watchlist_id"))
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not scoped_watchlists:
             raise EnterpriseAccessError("Scan job not found")
 
         item_ids = _scan_item_ids(job)
@@ -1268,9 +1409,9 @@ async def get_scan_job_work(user_id: str, scan_job_id: str) -> dict[str, Any]:
         products = {}
         sellers = {}
         if product_ids:
-            products = {p["id"]: p for p in (client.table("products").select("*").in_("id", product_ids).execute().data or [])}
+            products = {p["id"]: p for p in (client.table("products").select("*").in_("id", product_ids).eq("organization_id", context.organization_id).execute().data or [])}
         if seller_ids:
-            sellers = {s["id"]: s for s in (client.table("sellers").select("*").in_("id", seller_ids).execute().data or [])}
+            sellers = {s["id"]: s for s in (client.table("sellers").select("*").in_("id", seller_ids).eq("organization_id", context.organization_id).execute().data or [])}
         return {
             "scan_job": job,
             "items": [
@@ -1291,9 +1432,11 @@ async def claim_scan_job(user_id: str, scan_job_id: str) -> dict[str, Any]:
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
+        context = _memory_context(user_id, workspace)
         job = _find_one(workspace["scan_jobs"], id=scan_job_id)
-        if not job:
+        if not job or job.get("organization_id") != context.organization_id:
             raise EnterpriseAccessError("Scan job not found")
+        context.require("scan.write")
         if job.get("status") != "queued":
             return {"claimed": False, "scan_job": job}
         metadata = _scan_metadata(job)
@@ -1302,14 +1445,23 @@ async def claim_scan_job(user_id: str, scan_job_id: str) -> dict[str, Any]:
         _record_audit(workspace, user_id, "scan_job.claimed", "scan_job", job["id"])
         return {"claimed": True, "scan_job": job}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        jobs = (
+            client.table("scan_jobs")
+            .select("*")
+            .eq("id", scan_job_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not jobs:
             raise EnterpriseAccessError("Scan job not found")
         job = jobs[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Scan job not found")
+        context.require("scan.write")
         metadata = _scan_metadata(job)
         metadata["claimed_at"] = _now()
         updated = client.table("scan_jobs").update({
@@ -1430,14 +1582,67 @@ async def claim_next_scan_job(worker_id: str = "enterprise-worker") -> dict[str,
     return await _thread(work)
 
 
+async def fail_claimed_scan_job(
+    worker_id: str,
+    scan_job_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Close a malformed worker claim without requiring an end-user actor."""
+    client = _store_client()
+    now = _now()
+    terminal = {"completed", "failed", "cancelled", "timeout"}
+    if not client:
+        for workspace in _MEMORY_WORKSPACES.values():
+            job = _find_one(workspace["scan_jobs"], id=scan_job_id)
+            if not job:
+                continue
+            if job.get("status") in terminal:
+                return {"scan_job": job}
+            metadata = _scan_metadata(job)
+            metadata.update({"terminal_error": reason, "finished_at": now, "failed_by_worker": worker_id})
+            job.update({"status": "failed", "completed_at": now, "metadata": metadata})
+            _record_audit(workspace, worker_id, "scan_job.failed", "scan_job", scan_job_id, {"reason": reason})
+            return {"scan_job": job}
+        raise EnterpriseAccessError("Scan job not found")
+
+    def work():
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        if not jobs:
+            raise EnterpriseAccessError("Scan job not found")
+        job = jobs[0]
+        if job.get("status") in terminal:
+            return {"scan_job": job}
+        metadata = _scan_metadata(job)
+        metadata.update({"terminal_error": reason, "finished_at": now, "failed_by_worker": worker_id})
+        updated = client.table("scan_jobs").update({
+            "status": "failed",
+            "completed_at": now,
+            "metadata": metadata,
+        }).eq("id", scan_job_id).eq("status", "running").execute().data or []
+        result = updated[0] if updated else job
+        client.table("audit_log").insert({
+            "organization_id": job.get("organization_id"),
+            "actor_user_id": worker_id,
+            "action": "scan_job.failed",
+            "entity_type": "scan_job",
+            "entity_id": scan_job_id,
+            "metadata": {"reason": reason},
+        }).execute()
+        return {"scan_job": result}
+
+    return await _thread(work)
+
+
 async def release_scan_job(user_id: str, scan_job_id: str, reason: str = "partial_worker_slice") -> dict[str, Any]:
     """Return a partially processed live scan job to the queue."""
     client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
+        context = _memory_context(user_id, workspace)
+        context.require("scan.write")
         job = _find_one(workspace["scan_jobs"], id=scan_job_id)
-        if not job:
+        if not job or job.get("organization_id") != context.organization_id:
             raise EnterpriseAccessError("Scan job not found")
         metadata = _scan_metadata(job)
         metadata.update({"released_at": now, "release_reason": reason})
@@ -1445,14 +1650,23 @@ async def release_scan_job(user_id: str, scan_job_id: str, reason: str = "partia
         _record_audit(workspace, user_id, "scan_job.released", "scan_job", scan_job_id, {"reason": reason})
         return {"scan_job": job}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        jobs = (
+            client.table("scan_jobs")
+            .select("*")
+            .eq("id", scan_job_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not jobs:
             raise EnterpriseAccessError("Scan job not found")
         job = jobs[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Scan job not found")
+        context.require("scan.write")
         metadata = _scan_metadata(job)
         metadata.update({"released_at": now, "release_reason": reason})
         updated = client.table("scan_jobs").update({
@@ -1481,15 +1695,46 @@ def _record_live_result_memory(
     error: Optional[str],
 ) -> dict[str, Any]:
     workspace = _workspace_for_user(user_id)
+    context = _memory_context(user_id, workspace)
+    context.require("scan.write")
     job = _find_one(workspace["scan_jobs"], id=scan_job_id)
     item = _find_one(workspace["watchlist_items"], id=watchlist_item_id)
-    if not job or not item:
+    if (
+        not job
+        or job.get("organization_id") != context.organization_id
+        or not item
+        or not _find_one(workspace["watchlists"], id=item.get("watchlist_id"))
+    ):
         raise EnterpriseAccessError("Scan target not found")
 
     metadata = _scan_metadata(job)
     processed = set(metadata.get("processed_item_ids") or [])
     if watchlist_item_id in processed:
         return {"scan_job": job, "finding": None, "evidence_items": [], "duplicate": True}
+
+    existing_findings = [
+        finding
+        for finding in workspace["findings"]
+        if finding.get("scan_job_id") == scan_job_id
+        and finding.get("watchlist_item_id") == watchlist_item_id
+    ]
+    existing_evidence = [
+        evidence
+        for evidence in workspace["evidence_items"]
+        if evidence.get("scan_job_id") == scan_job_id
+        and _evidence_matches_item(evidence, watchlist_item_id, item.get("target_url"))
+    ]
+    if existing_findings or existing_evidence:
+        processed.add(watchlist_item_id)
+        metadata["processed_item_ids"] = sorted(processed)
+        metadata["last_progress_at"] = metadata.get("last_progress_at") or _now()
+        job["metadata"] = metadata
+        return {
+            "scan_job": job,
+            "finding": existing_findings[0] if existing_findings else None,
+            "evidence_items": [],
+            "duplicate": True,
+        }
 
     product = _find_one(workspace["products"], id=item.get("product_id")) or {}
     seller = _find_one(workspace["sellers"], id=item.get("seller_id")) or {}
@@ -1563,6 +1808,7 @@ def _record_live_result_memory(
                     "coverage_pct": coverage,
                     "probe_row_id": probe_row_id,
                     "session_status": session.get("status"),
+                    "watchlist_item_id": watchlist_item_id,
                 },
             }
             workspace["evidence_items"].append(row)
@@ -1610,15 +1856,36 @@ async def record_live_probe_result(
     if not client:
         return _record_live_result_memory(user_id, scan_job_id, watchlist_item_id, session, probe_row_id, error)
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        context.require("scan.write")
+        jobs = (
+            client.table("scan_jobs")
+            .select("*")
+            .eq("id", scan_job_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         items = client.table("watchlist_items").select("*").eq("id", watchlist_item_id).limit(1).execute().data or []
         if not jobs or not items:
             raise EnterpriseAccessError("Scan target not found")
         job = jobs[0]
         item = items[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
+        watchlists = (
+            client.table("watchlists")
+            .select("id")
+            .eq("id", job.get("watchlist_id"))
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not watchlists or item.get("watchlist_id") != job.get("watchlist_id"):
             raise EnterpriseAccessError("Scan target not found")
 
         metadata = _scan_metadata(job)
@@ -1626,8 +1893,51 @@ async def record_live_probe_result(
         if watchlist_item_id in processed:
             return {"scan_job": job, "finding": None, "evidence_items": [], "duplicate": True}
 
-        product_rows = client.table("products").select("*").eq("id", item["product_id"]).limit(1).execute().data or []
-        seller_rows = client.table("sellers").select("*").eq("id", item["seller_id"]).limit(1).execute().data or [] if item.get("seller_id") else []
+        # Metadata is the normal fast idempotency path.  The row checks below
+        # also make a retry safe after a worker persisted evidence/finding rows
+        # but was interrupted before its final job metadata update.
+        existing_findings = (
+            client.table("findings")
+            .select("*")
+            .eq("organization_id", context.organization_id)
+            .eq("scan_job_id", scan_job_id)
+            .eq("watchlist_item_id", watchlist_item_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        existing_evidence_rows = (
+            client.table("evidence_items")
+            .select("*")
+            .eq("organization_id", context.organization_id)
+            .eq("scan_job_id", scan_job_id)
+            .limit(500)
+            .execute()
+            .data
+            or []
+        )
+        existing_evidence = [
+            row
+            for row in existing_evidence_rows
+            if _evidence_matches_item(row, watchlist_item_id, item.get("target_url"))
+        ]
+        if existing_findings or existing_evidence:
+            processed.add(watchlist_item_id)
+            metadata["processed_item_ids"] = sorted(processed)
+            metadata["last_progress_at"] = metadata.get("last_progress_at") or _now()
+            client.table("scan_jobs").update({"metadata": metadata}).eq(
+                "id", scan_job_id
+            ).eq("organization_id", context.organization_id).execute()
+            return {
+                "scan_job": job,
+                "finding": existing_findings[0] if existing_findings else None,
+                "evidence_items": [],
+                "duplicate": True,
+            }
+
+        product_rows = client.table("products").select("*").eq("id", item["product_id"]).eq("organization_id", context.organization_id).limit(1).execute().data or []
+        seller_rows = client.table("sellers").select("*").eq("id", item["seller_id"]).eq("organization_id", context.organization_id).limit(1).execute().data or [] if item.get("seller_id") else []
         product = product_rows[0] if product_rows else {}
         seller = seller_rows[0] if seller_rows else {}
         currency = (product.get("currency") or item.get("last_observed_currency") or "USD").upper()
@@ -1715,6 +2025,7 @@ async def record_live_probe_result(
                         "coverage_pct": coverage,
                         "probe_row_id": probe_row_id,
                         "session_status": session.get("status"),
+                        "watchlist_item_id": watchlist_item_id,
                     },
                 }
                 for observation in observations
@@ -1791,8 +2102,10 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
+        context = _memory_context(user_id, workspace)
+        context.require("scan.write")
         job = _find_one(workspace["scan_jobs"], id=scan_job_id)
-        if not job:
+        if not job or job.get("organization_id") != context.organization_id:
             raise EnterpriseAccessError("Scan job not found")
         metadata = _scan_metadata(job)
         if error:
@@ -1810,14 +2123,14 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
         })
         return {"scan_job": job}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).limit(1).execute().data or []
+        jobs = client.table("scan_jobs").select("*").eq("id", scan_job_id).eq("organization_id", context.organization_id).limit(1).execute().data or []
         if not jobs:
             raise EnterpriseAccessError("Scan job not found")
         job = jobs[0]
-        memberships = client.table("organization_members").select("id").eq("organization_id", job["organization_id"]).eq("user_id", user_id).limit(1).execute().data or []
-        if not memberships:
-            raise EnterpriseAccessError("Scan job not found")
+        context.require("scan.write")
         metadata = _scan_metadata(job)
         if error:
             metadata["terminal_error"] = error
@@ -1828,7 +2141,7 @@ async def finish_scan_job(user_id: str, scan_job_id: str, error: Optional[str] =
             "status": status,
             "completed_at": _now(),
             "metadata": metadata,
-        }).eq("id", scan_job_id).execute().data[0]
+        }).eq("id", scan_job_id).eq("organization_id", context.organization_id).execute().data[0]
         client.table("audit_log").insert({
             "organization_id": job["organization_id"],
             "actor_user_id": user_id,
@@ -1871,6 +2184,7 @@ async def list_evidence_items(
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
+        _memory_context(user_id, workspace).require("workspace.read")
         rows = list(workspace["evidence_items"])
         if finding_id:
             rows = [row for row in rows if row.get("finding_id") == finding_id]
@@ -1879,9 +2193,10 @@ async def list_evidence_items(
         rows = sorted(rows, key=lambda row: row.get("captured_at", ""), reverse=True)[:limit]
         return {"evidence_items": [_enrich_evidence(workspace, row) for row in rows]}
 
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
+        context.require("workspace.read")
         query = client.table("evidence_items").select("*").eq("organization_id", org["id"]).order("captured_at", desc=True).limit(limit)
         if finding_id:
             query = query.eq("finding_id", finding_id)
@@ -1895,17 +2210,32 @@ async def list_evidence_items(
         sellers = {}
         items = {}
         if finding_ids:
-            finding_rows = client.table("findings").select("*").in_("id", finding_ids).execute().data or []
+            finding_rows = client.table("findings").select("*").in_("id", finding_ids).eq("organization_id", org["id"]).execute().data or []
             findings = {row["id"]: row for row in finding_rows}
             item_ids = list({row["watchlist_item_id"] for row in finding_rows if row.get("watchlist_item_id")})
             product_ids = list({row["product_id"] for row in finding_rows if row.get("product_id")})
             seller_ids = list({row["seller_id"] for row in finding_rows if row.get("seller_id")})
             if item_ids:
                 items = {row["id"]: row for row in (client.table("watchlist_items").select("*").in_("id", item_ids).execute().data or [])}
+                watchlist_ids = list({row.get("watchlist_id") for row in items.values() if row.get("watchlist_id")})
+                scoped_watchlists = (
+                    client.table("watchlists")
+                    .select("id")
+                    .in_("id", watchlist_ids)
+                    .eq("organization_id", org["id"])
+                    .execute()
+                    .data
+                    or []
+                ) if watchlist_ids else []
+                allowed_watchlist_ids = {row["id"] for row in scoped_watchlists}
+                items = {
+                    key: row for key, row in items.items()
+                    if row.get("watchlist_id") in allowed_watchlist_ids
+                }
             if product_ids:
-                products = {row["id"]: row for row in (client.table("products").select("*").in_("id", product_ids).execute().data or [])}
+                products = {row["id"]: row for row in (client.table("products").select("*").in_("id", product_ids).eq("organization_id", org["id"]).execute().data or [])}
             if seller_ids:
-                sellers = {row["id"]: row for row in (client.table("sellers").select("*").in_("id", seller_ids).execute().data or [])}
+                sellers = {row["id"]: row for row in (client.table("sellers").select("*").in_("id", seller_ids).eq("organization_id", org["id"]).execute().data or [])}
 
         enriched = []
         for row in rows:
@@ -1927,14 +2257,16 @@ async def get_evidence_item(user_id: str, evidence_id: str) -> dict[str, Any]:
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
+        _memory_context(user_id, workspace).require("workspace.read")
         row = _find_one(workspace["evidence_items"], id=evidence_id)
         if not row:
             raise EnterpriseAccessError("Evidence item not found")
         return {"evidence_item": _enrich_evidence(workspace, row)}
 
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
+        context.require("workspace.read")
         rows = client.table("evidence_items").select("*").eq("id", evidence_id).eq("organization_id", org["id"]).limit(1).execute().data or []
         if not rows:
             raise EnterpriseAccessError("Evidence item not found")
@@ -1949,12 +2281,25 @@ async def get_evidence_item(user_id: str, evidence_id: str) -> dict[str, Any]:
             if finding:
                 if finding.get("watchlist_item_id"):
                     item_rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
+                    if item_rows:
+                        scoped_watchlists = (
+                            client.table("watchlists")
+                            .select("id")
+                            .eq("id", item_rows[0].get("watchlist_id"))
+                            .eq("organization_id", context.organization_id)
+                            .limit(1)
+                            .execute()
+                            .data
+                            or []
+                        )
+                        if not scoped_watchlists:
+                            item_rows = []
                     item = item_rows[0] if item_rows else None
                 if finding.get("product_id"):
-                    product_rows = client.table("products").select("*").eq("id", finding["product_id"]).limit(1).execute().data or []
+                    product_rows = client.table("products").select("*").eq("id", finding["product_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
                     product = product_rows[0] if product_rows else None
                 if finding.get("seller_id"):
-                    seller_rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).limit(1).execute().data or []
+                    seller_rows = client.table("sellers").select("*").eq("id", finding["seller_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
                     seller = seller_rows[0] if seller_rows else None
         return {"evidence_item": {**row, "finding": finding, "product": product, "seller": seller, "watchlist_item": item}}
 
@@ -2007,11 +2352,14 @@ async def get_finding_packet(user_id: str, finding_id: str) -> dict[str, Any]:
     """Return a finding with the evidence needed for reports/shares."""
     client = _store_client()
     if not client:
-        return _finding_packet_from_workspace(_workspace_for_user(user_id), finding_id)
+        workspace = _workspace_for_user(user_id)
+        _memory_context(user_id, workspace).require("workspace.read")
+        return _finding_packet_from_workspace(workspace, finding_id)
 
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
+        context.require("workspace.read")
         findings = client.table("findings").select("*").eq("id", finding_id).eq("organization_id", org["id"]).limit(1).execute().data or []
         if not findings:
             raise EnterpriseAccessError("Finding not found")
@@ -2022,6 +2370,19 @@ async def get_finding_packet(user_id: str, finding_id: str) -> dict[str, Any]:
         if finding.get("watchlist_item_id"):
             rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
             item = rows[0] if rows else None
+            if item:
+                scoped_watchlists = (
+                    client.table("watchlists")
+                    .select("id")
+                    .eq("id", item.get("watchlist_id"))
+                    .eq("organization_id", context.organization_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if not scoped_watchlists:
+                    item = None
         if finding.get("product_id"):
             rows = client.table("products").select("*").eq("id", finding["product_id"]).eq("organization_id", org["id"]).limit(1).execute().data or []
             product = rows[0] if rows else None
@@ -2055,13 +2416,14 @@ async def record_evidence_export(
     metadata: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Persist an export audit record after bytes are generated."""
-    packet = await get_finding_packet(user_id, finding_id)
-    org_id = packet["organization"]["id"]
     client = _store_client()
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "evidence.export")
+        context = _memory_context(user_id, workspace)
+        context.require("evidence.export")
+        packet = _finding_packet_from_workspace(workspace, finding_id)
+        org_id = context.organization_id
         export = {
             "id": _id(),
             "organization_id": org_id,
@@ -2085,8 +2447,14 @@ async def record_evidence_export(
         })
         return {"evidence_export": export}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        require_permission(_supabase_membership_role(client, org_id, user_id), "evidence.export")
+        context.require("evidence.export")
+        packet_rows = client.table("findings").select("id").eq("id", finding_id).eq("organization_id", context.organization_id).limit(1).execute().data or []
+        if not packet_rows:
+            raise EnterpriseAccessError("Finding not found")
+        org_id = context.organization_id
         export = client.table("evidence_exports").insert({
             "organization_id": org_id,
             "finding_id": finding_id,
@@ -2125,8 +2493,8 @@ async def create_share_token(
     redacted: bool = True,
 ) -> dict[str, Any]:
     """Create a revocable external share token for one finding."""
-    packet = await get_finding_packet(user_id, finding_id)
-    org_id = packet["organization"]["id"]
+    if not redacted:
+        raise EnterpriseValidationError("Anonymous share tokens must always be redacted.")
     token = secrets.token_urlsafe(32)
     token_hash = _sha256(token)
     expires_hours = max(1, min(int(expires_hours or 168), 24 * 90))
@@ -2135,7 +2503,12 @@ async def create_share_token(
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "share.write")
+        context = _memory_context(user_id, workspace)
+        context.require("share.write")
+        # Authorization precedes packet resolution so an attacker cannot use
+        # share creation as an object-existence probe.
+        packet = _finding_packet_from_workspace(workspace, finding_id)
+        org_id = context.organization_id
         row = {
             "id": _id(),
             "organization_id": org_id,
@@ -2158,8 +2531,14 @@ async def create_share_token(
         })
         return {"share_token": _share_token_public(row), "token": token}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        require_permission(_supabase_membership_role(client, org_id, user_id), "share.write")
+        context.require("share.write")
+        packet_rows = client.table("findings").select("id").eq("id", finding_id).eq("organization_id", context.organization_id).limit(1).execute().data or []
+        if not packet_rows:
+            raise EnterpriseAccessError("Finding not found")
+        org_id = context.organization_id
         row = client.table("share_tokens").insert({
             "organization_id": org_id,
             "finding_id": finding_id,
@@ -2192,24 +2571,36 @@ async def revoke_share_token(user_id: str, token_id: str) -> dict[str, Any]:
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "share.write")
+        context = _memory_context(user_id, workspace)
+        context.require("share.write")
         row = _find_one(workspace.setdefault("share_tokens", []), id=token_id)
-        if not row:
+        if not row or row.get("organization_id") != context.organization_id:
             raise EnterpriseAccessError("Share token not found")
         row.update({"revoked_at": now, "revoked_by": user_id})
         _record_audit(workspace, user_id, "share_token.revoked", "share_token", token_id, {"finding_id": row.get("finding_id")})
         return {"share_token": _share_token_public(row)}
 
+    context, _ = await _supabase_context(client, user_id)
+
     def work():
-        rows = client.table("share_tokens").select("*").eq("id", token_id).limit(1).execute().data or []
+        rows = (
+            client.table("share_tokens")
+            .select("*")
+            .eq("id", token_id)
+            .eq("organization_id", context.organization_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
         if not rows:
             raise EnterpriseAccessError("Share token not found")
         row = rows[0]
-        require_permission(_supabase_membership_role(client, row["organization_id"], user_id), "share.write")
+        context.require("share.write")
         updated = client.table("share_tokens").update({
             "revoked_at": now,
             "revoked_by": user_id,
-        }).eq("id", token_id).execute().data[0]
+        }).eq("id", token_id).eq("organization_id", context.organization_id).execute().data[0]
         client.table("audit_log").insert({
             "organization_id": row["organization_id"],
             "actor_user_id": user_id,
@@ -2227,16 +2618,15 @@ async def list_members_and_invites(user_id: str) -> dict[str, Any]:
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "workspace.read")
+        _memory_context(user_id, workspace).require("workspace.read")
         return {
             "members": workspace.get("members", []),
             "invites": workspace.get("invites", []),
         }
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
-        role = _supabase_membership_role(client, org["id"], user_id)
-        require_permission(role, "workspace.read")
+        context.require("workspace.read")
         members = client.table("organization_members").select("id,organization_id,user_id,role,created_at").eq("organization_id", org["id"]).order("created_at", desc=True).execute().data or []
         try:
             invites = client.table("organization_invites").select("id,organization_id,email,role,expires_at,accepted_at,revoked_at,created_by,created_at").eq("organization_id", org["id"]).order("created_at", desc=True).execute().data or []
@@ -2261,7 +2651,7 @@ async def create_organization_invite(user_id: str, payload: dict[str, Any]) -> d
     client = _store_client()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "member.manage")
+        _memory_context(user_id, workspace).require("member.manage")
         invite = {
             "id": _id(),
             "organization_id": workspace["organization"]["id"],
@@ -2278,10 +2668,10 @@ async def create_organization_invite(user_id: str, payload: dict[str, Any]) -> d
         _record_audit(workspace, user_id, "organization_invite.created", "organization_invite", invite["id"], {"email": email, "role": role})
         return {"invite": _share_token_public(invite), "token": token}
 
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
-        require_permission(_supabase_membership_role(client, org["id"], user_id), "member.manage")
+        context.require("member.manage")
         invite = client.table("organization_invites").insert({
             "organization_id": org["id"],
             "email": email,
@@ -2308,7 +2698,8 @@ async def revoke_organization_invite(user_id: str, invite_id: str) -> dict[str, 
     now = _now()
     if not client:
         workspace = _workspace_for_user(user_id)
-        _require_memory_permission(workspace, user_id, "member.manage")
+        context = _memory_context(user_id, workspace)
+        context.require("member.manage")
         invite = _find_one(workspace.setdefault("invites", []), id=invite_id)
         if not invite:
             raise EnterpriseAccessError("Invite not found")
@@ -2316,10 +2707,10 @@ async def revoke_organization_invite(user_id: str, invite_id: str) -> dict[str, 
         _record_audit(workspace, user_id, "organization_invite.revoked", "organization_invite", invite_id, {"email": invite.get("email")})
         return {"invite": _share_token_public(invite)}
 
-    org = await _ensure_supabase_org(client, user_id)
+    context, org = await _supabase_context(client, user_id)
 
     def work():
-        require_permission(_supabase_membership_role(client, org["id"], user_id), "member.manage")
+        context.require("member.manage")
         rows = client.table("organization_invites").select("*").eq("id", invite_id).eq("organization_id", org["id"]).limit(1).execute().data or []
         if not rows:
             raise EnterpriseAccessError("Invite not found")
@@ -2349,10 +2740,14 @@ async def get_shared_finding_packet(token: str) -> dict[str, Any]:
                 if row.get("token_hash") != token_hash or row.get("revoked_at") or not expires_at or expires_at <= now:
                     continue
                 row["last_accessed_at"] = _now()
+                packet = _finding_packet_from_workspace(workspace, row["finding_id"])
+                # Bearer-token shares are anonymous by design. Legacy rows that
+                # predate the redaction invariant are projected safely too.
+                redacted = True
                 return {
                     "share_token": _share_token_public(row),
-                    "packet": _finding_packet_from_workspace(workspace, row["finding_id"]),
-                    "redacted": bool(row.get("redacted", True)),
+                    "packet": redact_packet(packet, redacted=redacted),
+                    "redacted": redacted,
                 }
         raise EnterpriseAccessError("Share token not found")
 
@@ -2376,6 +2771,19 @@ async def get_shared_finding_packet(token: str) -> dict[str, Any]:
         if finding.get("watchlist_item_id"):
             item_rows = client.table("watchlist_items").select("*").eq("id", finding["watchlist_item_id"]).limit(1).execute().data or []
             item = item_rows[0] if item_rows else None
+            if item:
+                scoped_watchlists = (
+                    client.table("watchlists")
+                    .select("id")
+                    .eq("id", item.get("watchlist_id"))
+                    .eq("organization_id", row["organization_id"])
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if not scoped_watchlists:
+                    item = None
         if finding.get("product_id"):
             product_rows = client.table("products").select("*").eq("id", finding["product_id"]).eq("organization_id", row["organization_id"]).limit(1).execute().data or []
             product = product_rows[0] if product_rows else None
@@ -2394,6 +2802,13 @@ async def get_shared_finding_packet(token: str) -> dict[str, Any]:
                 for evidence_row in evidence
             ],
         }
-        return {"share_token": _share_token_public(row), "packet": packet, "redacted": bool(row.get("redacted", True))}
+        # Never let a legacy or malformed row opt an anonymous bearer token out
+        # of the external redaction boundary.
+        redacted = True
+        return {
+            "share_token": _share_token_public(row),
+            "packet": redact_packet(packet, redacted=redacted),
+            "redacted": redacted,
+        }
 
     return await _thread(work)

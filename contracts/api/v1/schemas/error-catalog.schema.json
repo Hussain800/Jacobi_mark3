@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jacobi.local/contracts/api/v1/error-catalog.schema.json",
+  "title": "Jacobi API stable error catalog minimum",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "family",
+    "mode",
+    "source",
+    "errors"
+  ],
+  "properties": {
+    "family": {
+      "const": "error_catalog"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "surface",
+          "endpoint",
+          "status",
+          "code",
+          "detail_shape"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string"
+          },
+          "detail_shape": {
+            "type": "string",
+            "enum": [
+              "object",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

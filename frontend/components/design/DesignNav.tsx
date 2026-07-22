@@ -27,6 +27,7 @@ import BrandLockup from "./BrandLockup";
 const LINKS: { label: string; href: string }[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Audit",     href: "/chat" },
+  { label: "Agents",    href: "/dashboard/provenance" },
   { label: "History",   href: "/history" },
   { label: "Board",     href: "/leaderboard" },
   { label: "Pricing",   href: "/pricing" },

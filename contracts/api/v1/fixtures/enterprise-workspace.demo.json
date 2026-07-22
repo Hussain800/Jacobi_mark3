@@ -1,0 +1,293 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "enterprise_workspace",
+  "fixture_id": "enterprise_workspace_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/enterprise_store.py:_serialize_workspace + frontend/app/dashboard/use-enterprise-workspace.ts",
+    "notes": "Sanitized in-memory workspace/job/evidence/share shape; no real tenant, token, organization, or probe identifiers."
+  },
+  "uncertainty": {
+    "workspace_mode": "memory",
+    "evidence_source": "live_probe_demo",
+    "coverage_pct": 75,
+    "share_visibility": "redacted_external",
+    "limitations": [
+      "Demo workspace fixture is not proof of production Supabase RLS.",
+      "Redacted share packets intentionally omit internal IDs and raw extraction artifacts."
+    ]
+  },
+  "response": {
+    "mode": "memory",
+    "organization": {
+      "id": "org_demo_001",
+      "name": "Demo Price Integrity Workspace",
+      "created_by": "user_demo_owner",
+      "created_at": "2026-07-22T00:00:00Z",
+      "updated_at": "2026-07-22T00:00:00Z"
+    },
+    "members": [
+      {
+        "id": "member_demo_owner",
+        "organization_id": "org_demo_001",
+        "user_id": "user_demo_owner",
+        "email": "owner@example.test",
+        "role": "owner",
+        "created_at": "2026-07-22T00:00:00Z"
+      }
+    ],
+    "invites": [],
+    "watchlists": [
+      {
+        "id": "watchlist_demo_map",
+        "organization_id": "org_demo_001",
+        "name": "Demo MAP Watchlist",
+        "workflow_type": "map",
+        "cadence": "daily",
+        "active": true,
+        "created_at": "2026-07-22T00:00:00Z"
+      }
+    ],
+    "products": [
+      {
+        "id": "product_demo_headphones",
+        "organization_id": "org_demo_001",
+        "name": "Demo Wireless Headphones",
+        "sku": "DEMO-HP-001",
+        "map_floor": 199,
+        "currency": "USD"
+      }
+    ],
+    "sellers": [
+      {
+        "id": "seller_demo_market",
+        "organization_id": "org_demo_001",
+        "name": "Demo Market",
+        "domain": "demo-market.example",
+        "authorization_status": "unauthorized"
+      }
+    ],
+    "watchlist_items": [
+      {
+        "id": "item_demo_headphones",
+        "organization_id": "org_demo_001",
+        "watchlist_id": "watchlist_demo_map",
+        "product_id": "product_demo_headphones",
+        "seller_id": "seller_demo_market",
+        "target_url": "https://demo-market.example/p/headphones",
+        "market": "US",
+        "status": "active",
+        "last_observed_price": 176,
+        "last_observed_currency": "USD",
+        "last_coverage_pct": 75,
+        "last_scan_status": "completed",
+        "updated_at": "2026-07-22T00:10:00Z"
+      }
+    ],
+    "scan_jobs": [
+      {
+        "id": "scan_demo_live_queued",
+        "organization_id": "org_demo_001",
+        "watchlist_id": "watchlist_demo_map",
+        "requested_by": "user_demo_owner",
+        "audit_depth": "smart24",
+        "status": "queued",
+        "target_count": 1,
+        "completed_count": 0,
+        "failed_count": 0,
+        "queued_at": "2026-07-22T00:05:00Z",
+        "started_at": null,
+        "completed_at": null,
+        "metadata": {
+          "source": "live_probe",
+          "run_mode": "live",
+          "item_ids": [
+            "item_demo_headphones"
+          ]
+        }
+      },
+      {
+        "id": "scan_demo_imported_complete",
+        "organization_id": "org_demo_001",
+        "watchlist_id": "watchlist_demo_map",
+        "requested_by": "user_demo_owner",
+        "audit_depth": "smart24",
+        "status": "completed",
+        "target_count": 1,
+        "completed_count": 1,
+        "failed_count": 0,
+        "queued_at": "2026-07-22T00:00:00Z",
+        "started_at": "2026-07-22T00:00:01Z",
+        "completed_at": "2026-07-22T00:00:02Z",
+        "metadata": {
+          "source": "csv_policy_preview",
+          "run_mode": "imported",
+          "item_ids": [
+            "item_demo_headphones"
+          ]
+        }
+      }
+    ],
+    "findings_raw": [
+      {
+        "id": "finding_demo_map",
+        "organization_id": "org_demo_001",
+        "scan_job_id": "scan_demo_imported_complete",
+        "watchlist_item_id": "item_demo_headphones",
+        "product_id": "product_demo_headphones",
+        "seller_id": "seller_demo_market",
+        "type": "MAP_UNDERCUT",
+        "severity": "high",
+        "status": "new",
+        "observed_price": 176,
+        "map_floor": 199,
+        "currency": "USD",
+        "spread_pct": 11.56,
+        "confidence": "high",
+        "evidence_summary": "Observed demo price is below the MAP floor with adequate demo coverage.",
+        "created_at": "2026-07-22T00:10:00Z",
+        "updated_at": "2026-07-22T00:10:00Z"
+      }
+    ],
+    "evidence_items": [
+      {
+        "id": "evidence_demo_001",
+        "organization_id": "org_demo_001",
+        "finding_id": "finding_demo_map",
+        "scan_job_id": "scan_demo_imported_complete",
+        "probe_session_id": "probe_demo_session",
+        "buyer_context": "US / desktop / fresh / direct",
+        "target_url": "https://demo-market.example/p/headphones",
+        "observed_price": 176,
+        "currency": "USD",
+        "captured_at": "2026-07-22T00:10:00Z",
+        "source": "live_probe",
+        "extraction_method": "generic_price_parser",
+        "metadata": {
+          "market": "US",
+          "coverage_pct": 75,
+          "session_status": "completed"
+        },
+        "product": {
+          "name": "Demo Wireless Headphones",
+          "sku": "DEMO-HP-001",
+          "map_floor": 199,
+          "currency": "USD"
+        },
+        "seller": {
+          "name": "Demo Market",
+          "domain": "demo-market.example",
+          "authorization_status": "unauthorized"
+        },
+        "finding": {
+          "id": "finding_demo_map",
+          "severity": "high",
+          "status": "new",
+          "spread_pct": 11.56
+        }
+      }
+    ],
+    "evidence_exports": [
+      {
+        "id": "export_demo_json",
+        "organization_id": "org_demo_001",
+        "finding_id": "finding_demo_map",
+        "format": "json",
+        "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byte_size": 2048,
+        "redacted": true,
+        "created_at": "2026-07-22T00:11:00Z"
+      }
+    ],
+    "share_tokens": [
+      {
+        "id": "share_demo_owner_row",
+        "organization_id": "org_demo_001",
+        "finding_id": "finding_demo_map",
+        "scope": "finding",
+        "expires_at": "2026-07-29T00:11:00Z",
+        "revoked_at": null,
+        "revoked_by": null,
+        "redacted": true,
+        "created_by": "user_demo_owner",
+        "created_at": "2026-07-22T00:11:00Z",
+        "last_accessed_at": null
+      }
+    ],
+    "audit_log": [
+      {
+        "id": 1,
+        "organization_id": "org_demo_001",
+        "actor_user_id": "user_demo_owner",
+        "action": "share_token.created",
+        "entity_type": "share_token",
+        "entity_id": "share_demo_owner_row",
+        "created_at": "2026-07-22T00:11:00Z"
+      }
+    ],
+    "portfolio": [
+      {
+        "id": "item_demo_headphones",
+        "product": "Demo Wireless Headphones",
+        "sku": "DEMO-HP-001",
+        "seller": "Demo Market",
+        "domain": "demo-market.example",
+        "url": "https://demo-market.example/p/headphones",
+        "market": "US",
+        "cadence": "Daily",
+        "lastAudit": "2026-07-22T00:10:00Z",
+        "lastStatus": "finding",
+        "latestSeverity": "high",
+        "latestSpreadPct": 11.56,
+        "findingId": "finding_demo_map"
+      }
+    ],
+    "findings": [
+      {
+        "id": "finding_demo_map",
+        "product": "Demo Wireless Headphones",
+        "sku": "DEMO-HP-001",
+        "seller": "Demo Market",
+        "domain": "demo-market.example",
+        "url": "https://demo-market.example/p/headphones",
+        "market": "US",
+        "type": "map",
+        "severity": "high",
+        "status": "new",
+        "currency": "USD",
+        "observedLow": 176,
+        "observedHigh": 199,
+        "baseline": 199,
+        "mapFloor": 199,
+        "spreadPct": 11.56,
+        "driver": "Effective price below MAP floor",
+        "confidence": "high",
+        "topology": "selective",
+        "variationIndex": 58,
+        "detectedAt": "2026-07-22T00:10:00Z",
+        "excerpt": "Observed demo price is below the MAP floor with adequate demo coverage.",
+        "agents": [
+          {
+            "id": "E00",
+            "context": "US / desktop / fresh / direct",
+            "geo": "US",
+            "device": "desktop",
+            "network": "manual",
+            "referrer": "direct",
+            "price": 176,
+            "status": "ok"
+          }
+        ]
+      }
+    ],
+    "kpis": {
+      "openFindings": 1,
+      "critical": 0,
+      "high": 1,
+      "monitoredUrls": 1,
+      "highConfidencePct": 100,
+      "auditsThisMonth": 2
+    }
+  }
+}

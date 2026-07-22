@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jacobi.local/contracts/api/v1/contract-envelope.schema.json",
+  "title": "Jacobi checked-in contract fixture envelope",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "family",
+    "fixture_id",
+    "mode",
+    "source"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "family": {
+      "type": "string",
+      "enum": [
+        "audit_result",
+        "enterprise_workspace",
+        "enterprise_redacted_share",
+        "agent_decision",
+        "agent_manifest",
+        "error_catalog"
+      ]
+    },
+    "fixture_id": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "description": "Fixture wrapper mode. Runtime APIs may carry mode in payloads or headers depending on surface."
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "code_reference",
+        "notes"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "code_reference": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "response": {
+      "type": [
+        "object",
+        "array"
+      ]
+    },
+    "errors": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

@@ -7,6 +7,7 @@ Package layout:
   evidence.py   — deterministic SHA-256 evidence manifests
   extract.py    — extractor v0 (data-attr + generic fallback)
   providers.py  — CollectionProvider interface, fixture + local HTTP providers, budget
+  commands.py   — transport-neutral command normalization + deterministic errors
   engine.py     — verification orchestrator
   api.py        — FastAPI router (/v1/agent/*)
   mcp_server.py — MCP stdio server exposing the tool catalog

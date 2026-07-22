@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:unit": "node --test --experimental-strip-types \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@sentry/nextjs": "^10.60.0",

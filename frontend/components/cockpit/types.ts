@@ -44,6 +44,19 @@ export interface Agent {
   language_label?: string | null;
   language_pair_id?: string | null;
   language_pair_role?: string | null;
+  evidence?: { extraction_method?: string | null } | null;
+}
+
+export interface LanguageObservation {
+  pair_id: string;
+  controlled: boolean;
+  control_language_label?: string | null;
+  variant_language_label?: string | null;
+  control_price_usd?: number | null;
+  variant_price_usd?: number | null;
+  delta_usd?: number | null;
+  delta_pct?: number | null;
+  difference_detected?: boolean;
 }
 
 export interface SensitivityRow {
@@ -114,6 +127,16 @@ export interface TopologyReport {
   gini_all?: number | null;
   sensitivity_matrix?: SensitivityMatrix | null;
   pei?: PEI | null;
+  // Phase 5A honest probe accounting and the actual selected audit tier.
+  configured_agents?: number;
+  real_probes_executed?: number | null;
+  skipped_inferred_agents?: number | null;
+  evidence_count?: number | null;
+  audit_depth?: string | null;
+  tier?: string | null;
+  coverage?: "strong" | "partial" | "limited" | null;
+  priced_agents?: number | null;
+  language_observations?: LanguageObservation[];
 }
 
 export interface Message {

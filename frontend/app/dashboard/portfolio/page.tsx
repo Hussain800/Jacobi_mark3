@@ -7,6 +7,7 @@ import { fmtDate } from "../demo-data";
 import { SeverityBadge, PageHead } from "../ui";
 import { useEnterpriseWorkspace } from "../use-enterprise-workspace";
 import { createClient } from "@/lib/supabase/client";
+import { findingIdForScan, scanNextAction } from "../../../components/cockpit/trust-state";
 
 const COLS = "minmax(0,2.2fr) minmax(0,1.6fr) 80px 90px 110px 130px";
 const TABLE_MIN_WIDTH = 860;
@@ -47,6 +48,7 @@ export default function PortfolioPage() {
   const liveWatchlist = data.watchlists[0];
   const canRunLiveScan = mode === "live" && Boolean(liveWatchlist?.id) && data.portfolio.length > 0;
   const latestScanDate = latestScan?.queued_at ?? latestScan?.started_at ?? latestScan?.completed_at ?? null;
+  const latestScanAction = latestScan ? scanNextAction(latestScan.status, findingIdForScan(latestScan, data.evidenceItems)) : null;
 
   async function runImportFlow() {
     setBusy(true);
@@ -206,8 +208,14 @@ export default function PortfolioPage() {
             <div style={{ minWidth: 220, flex: "1 1 280px" }}>
               <span className="label-mono" style={{ color: "var(--text-2)" }}>Live scan job</span>
               <div className="mono" style={{ color: "var(--text)", fontSize: 13, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {latestScan ? `${latestScan.status.toUpperCase()} | ${latestScan.audit_depth ?? "smart24"} | ${latestScanDate ? fmtDate(latestScanDate) : "No timestamp"}` : "No live scan jobs yet"}
+                {latestScan ? `${latestScan.trust_state ?? latestScan.status} | ${latestScan.audit_depth ?? "smart24"} | ${latestScanDate ? fmtDate(latestScanDate) : "No timestamp"}` : "No live scan jobs yet"}
               </div>
+              {latestScanAction && (
+                <div className="mono" role="status" style={{ color: "var(--text-2)", fontSize: 11, marginTop: 8, lineHeight: 1.45 }}>
+                  <strong style={{ color: "var(--text)" }}>{latestScanAction.label}:</strong> {latestScanAction.guidance}{" "}
+                  {latestScanAction.href && <Link href={latestScanAction.href} className="nav-link">Open</Link>}
+                </div>
+              )}
               {liveMessage && (
                 <div className="mono" style={{ color: liveMessage.includes("failed") || liveMessage.includes("Sign in") ? "var(--gold)" : "var(--good)", fontSize: 12, marginTop: 8 }}>
                   {liveMessage}

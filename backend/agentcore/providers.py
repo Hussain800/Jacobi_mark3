@@ -162,7 +162,7 @@ class LocalHttpProvider(CollectionProvider):
             resp = httpx.get(
                 url,
                 timeout=15.0,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={
                     "User-Agent": (
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -173,6 +173,21 @@ class LocalHttpProvider(CollectionProvider):
             )
         except httpx.HTTPError as exc:
             base.error = f"fetch failed: {exc.__class__.__name__}: {exc}"
+            base.ended_at = datetime.now(timezone.utc)
+            return base
+
+        # Redirect TOCTOU guard: even with follow_redirects=False a 3xx
+        # response carries a Location that may point at a non-public address.
+        # Revalidate the final target (the request URL when no redirect
+        # followed, or the Location header when one was offered) so a public
+        # URL 302ing into a private/metadata address is never captured as
+        # evidence. Mirrors the playwright provider guard.
+        redirect_target = resp.headers.get("location")
+        final_candidate = redirect_target or str(resp.url) or url
+        try:
+            validate_public_url(final_candidate)
+        except UnsafeUrlError as exc:
+            base.error = f"unsafe redirect target rejected: {exc}"
             base.ended_at = datetime.now(timezone.utc)
             return base
 

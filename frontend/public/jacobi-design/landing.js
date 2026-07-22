@@ -66,7 +66,7 @@
   function typeLine() {
     const el = document.getElementById('typed');
     if (!el) return;
-    const full = '24 agents. One URL. The truth about what you pay.';
+    const full = 'Smart24 agents. One URL. The truth about what you pay.';
     if (reduce) { el.textContent = full; return; }
     let i = 0;
     function step() {

@@ -50,3 +50,13 @@ def test_org_member_management_policies_exist():
     assert "on public.organization_members for delete" in sql
     # role-aware helper present.
     assert "function public.has_org_role" in sql
+
+
+def test_member_insert_policy_cannot_grant_owner_to_existing_member():
+    sql = _all_sql().lower()
+    assert "role <> 'owner'" in sql
+    assert "function public.can_bootstrap_org_owner" in sql
+    assert "security definer" in sql
+    assert "org.created_by = (select auth.uid())" in sql
+    assert "not exists" in sql
+    assert "array['owner', 'admin']" in sql

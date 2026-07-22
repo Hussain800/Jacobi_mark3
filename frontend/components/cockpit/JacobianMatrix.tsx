@@ -1,4 +1,4 @@
-import type { SensitivityMatrix, PEI } from "./types";
+import type { Gradient, SensitivityMatrix, PEI } from "./types";
 
 /**
  * Jacobian Sensitivity Matrix view — the price row of the Jacobian: how much
@@ -33,11 +33,14 @@ function fmtPct(n: number | null): string {
 export function JacobianMatrix({
   matrix,
   pei,
+  gradients = [],
 }: {
   matrix: SensitivityMatrix;
   pei?: PEI | null;
+  gradients?: Gradient[];
 }) {
   const rows = matrix.rows || [];
+  const gradientByVariable = new Map(gradients.map((gradient) => [gradient.variable_name, gradient]));
   if (rows.length === 0) return null;
 
   return (
@@ -100,7 +103,7 @@ export function JacobianMatrix({
             fontWeight: 600,
           }}
         >
-          <span>Variable</span>
+          <span>Variable / sample</span>
           <span style={{ textAlign: "right" }}>Δ price</span>
           <span style={{ textAlign: "right" }}>Δ %</span>
           <span style={{ textAlign: "right" }}>t</span>
@@ -122,7 +125,10 @@ export function JacobianMatrix({
             }}
           >
             <span style={{ color: r.significant ? "var(--text)" : "var(--text-2)", fontWeight: r.significant ? 600 : 400 }}>
-              {prettyVar(r.variable)}
+              <span style={{ display: "block" }}>{prettyVar(r.variable)}</span>
+              <span style={{ display: "block", marginTop: 4, fontSize: 10, color: r.significant ? "var(--good)" : "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                {r.significant ? "significant" : "not significant"} · n {gradientByVariable.get(r.variable)?.n_high ?? r.n}/{gradientByVariable.get(r.variable)?.n_low ?? r.n}
+              </span>
             </span>
             <span style={{ textAlign: "right", color: "var(--text)" }}>{fmtMoney(r.delta_usd)}</span>
             <span style={{ textAlign: "right", color: r.significant ? "var(--cobalt-bright)" : "var(--text-3)" }}>

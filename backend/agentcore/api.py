@@ -15,14 +15,14 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import auth
+from . import commands
 from . import engine
-from . import policy as policy_mod
 from .pdf_export import build_evidence_pdf
-from .schemas import ConsentScope, PolicyDecision
+from .schemas import PolicyDecision, SCHEMA_VERSION
 
 # /api prefix so the Next dev proxy (app/api/[...path] → backend /api/*) and
 # direct prod calls share one path shape.
@@ -57,7 +57,12 @@ def _enforce_rate_limit(request: Request) -> None:
     bucket = [t for t in _RATE_BUCKETS[key] if now - t < 60.0]
     if len(bucket) >= RATE_LIMIT_PER_MINUTE:
         _RATE_BUCKETS[key] = bucket
-        raise HTTPException(status_code=429, detail="agent verification rate limit exceeded")
+        raise commands.AgentCommandError(
+            "rate_limited",
+            "Agent verification rate limit exceeded.",
+            http_status=429,
+            retryable=True,
+        )
     bucket.append(now)
     _RATE_BUCKETS[key] = bucket
     if len(_RATE_BUCKETS) > 10_000:  # bound the bucket map itself
@@ -65,6 +70,7 @@ def _enforce_rate_limit(request: Request) -> None:
 
 
 class VerifyRequest(BaseModel):
+    schema_version: str = SCHEMA_VERSION
     demo: Optional[str] = Field(default=None, description="fee_drift | blocked_route")
     url: Optional[str] = None
     consent_scope: str = "recommend"
@@ -76,9 +82,32 @@ class VerifyRequest(BaseModel):
 
 
 class PolicyCheckRequest(BaseModel):
+    schema_version: str = SCHEMA_VERSION
     url: str
     consent_scope: str = "recommend"
     official_route: bool = False
+
+
+def _command_error_response(exc: commands.AgentCommandError) -> JSONResponse:
+    return JSONResponse(status_code=exc.http_status, content={"error": exc.as_dict()})
+
+
+def _auth_error_response(exc: HTTPException) -> JSONResponse:
+    code = "invalid_api_key" if exc.status_code == 401 else "api_key_required"
+    error = commands.AgentCommandError(
+        code,
+        "The API key is invalid." if exc.status_code == 401 else "An API key is required.",
+        http_status=exc.status_code,
+    )
+    return _command_error_response(error)
+
+
+def _not_found_response(kind: str) -> JSONResponse:
+    return _command_error_response(commands.AgentCommandError(
+        f"{kind}_not_found",
+        f"The {kind} was not found.",
+        http_status=404,
+    ))
 
 
 @router.get("/health")
@@ -88,75 +117,68 @@ def agent_health() -> Dict[str, Any]:
 
 @router.post("/verify")
 def verify(req: VerifyRequest, request: Request):
-    _enforce_rate_limit(request)
-    org = auth.org_for_write(request, is_demo=bool(req.demo))
     try:
-        return engine.run_verify(
-            demo=req.demo,
-            url=req.url,
-            consent_scope=req.consent_scope,
-            displayed_total=req.displayed_total,
-            official_route=req.official_route,
-            agent_id=req.agent_id,
-            item_or_booking=req.item_or_booking,
-            merchant=req.merchant,
-            org=org,
+        _enforce_rate_limit(request)
+        org = auth.org_for_write(request, is_demo=bool(req.demo))
+        command = commands.normalize_verify_command(req.model_dump())
+        return commands.execute_verify(
+            command,
+            commands.CommandContext(org=org, transport="rest"),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    except commands.AgentCommandError as exc:
+        return _command_error_response(exc)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
 
 
 @router.post("/compare-total-price")
 def compare_total_price(req: VerifyRequest, request: Request) -> Dict[str, Any]:
-    _enforce_rate_limit(request)
-    org = auth.org_for_write(request, is_demo=bool(req.demo))
     try:
-        env = engine.run_verify(
-            demo=req.demo,
-            url=req.url,
-            consent_scope=req.consent_scope,
-            displayed_total=req.displayed_total,
-            official_route=req.official_route,
-            agent_id=req.agent_id,
-            item_or_booking=req.item_or_booking,
-            merchant=req.merchant,
-            org=org,
+        _enforce_rate_limit(request)
+        org = auth.org_for_write(request, is_demo=bool(req.demo))
+        command = commands.normalize_verify_command(req.model_dump())
+        env = commands.execute_verify(
+            command,
+            commands.CommandContext(org=org, transport="rest"),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    return {
-        "request_id": env.request_id,
-        "decision": env.decision,
-        "price_summary": env.price_summary,
-        "reason_codes": env.reason_codes,
-        "manifest_id": env.evidence.manifest_id,
-    }
+    except commands.AgentCommandError as exc:
+        return _command_error_response(exc)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
+    return commands.compare_total_price_projection(env)
 
 
 @router.post("/policy/check")
 def policy_check(req: PolicyCheckRequest) -> PolicyDecision:
     try:
-        scope = ConsentScope(req.consent_scope)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"invalid consent_scope '{req.consent_scope}'")
-    return policy_mod.evaluate(req.url, scope, req.official_route)
+        command = commands.normalize_policy_command(req.model_dump())
+        return commands.execute_policy(command)
+    except commands.AgentCommandError as exc:
+        return _command_error_response(exc)
 
 
 @router.get("/decisions/{request_id}")
 def get_decision(request_id: str, request: Request):
-    env = engine.get_envelope(request_id, auth.readable_orgs(request))
+    try:
+        orgs = auth.readable_orgs(request)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
+    env = engine.get_envelope(request_id, orgs)
     if env is None:
-        raise HTTPException(status_code=404, detail="decision not found")
+        return _not_found_response("decision")
     return env
 
 
 @router.get("/decisions/{request_id}/export.pdf")
 def export_decision_pdf(request_id: str, request: Request) -> Response:
     """PDF evidence receipt for a stored decision."""
-    orgs = auth.readable_orgs(request)
+    try:
+        orgs = auth.readable_orgs(request)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
     env = engine.get_envelope(request_id, orgs)
     if env is None:
-        raise HTTPException(status_code=404, detail="decision not found")
+        return _not_found_response("decision")
     man = engine.get_manifest(env.evidence.manifest_id, orgs)
     pdf = build_evidence_pdf(env, man)
     return Response(
@@ -171,26 +193,38 @@ def export_decision_pdf(request_id: str, request: Request) -> Response:
 @router.post("/explain")
 def explain_decision(body: Dict[str, str], request: Request) -> Dict[str, str]:
     request_id = body.get("request_id", "")
-    out = engine.explain(request_id, auth.readable_orgs(request))
+    try:
+        orgs = auth.readable_orgs(request)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
+    out = engine.explain(request_id, orgs)
     if out is None:
-        raise HTTPException(status_code=404, detail="decision not found")
+        return _not_found_response("decision")
     return out
 
 
 @router.get("/manifests/{manifest_id}")
 def get_manifest(manifest_id: str, request: Request):
-    man = engine.get_manifest(manifest_id, auth.readable_orgs(request))
+    try:
+        orgs = auth.readable_orgs(request)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
+    man = engine.get_manifest(manifest_id, orgs)
     if man is None:
-        raise HTTPException(status_code=404, detail="manifest not found")
+        return _not_found_response("manifest")
     return man
 
 
 @router.get("/manifests/{manifest_id}/export")
 def export_manifest(manifest_id: str, request: Request) -> Response:
     """JSON evidence export (download)."""
-    man = engine.get_manifest(manifest_id, auth.readable_orgs(request))
+    try:
+        orgs = auth.readable_orgs(request)
+    except HTTPException as exc:
+        return _auth_error_response(exc)
+    man = engine.get_manifest(manifest_id, orgs)
     if man is None:
-        raise HTTPException(status_code=404, detail="manifest not found")
+        return _not_found_response("manifest")
     payload = json.dumps(man.model_dump(mode="json"), indent=2, default=str)
     return Response(
         content=payload,

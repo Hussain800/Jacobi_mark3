@@ -1,0 +1,56 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "agent_manifest",
+  "fixture_id": "agent_manifest_blocked_route_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/agentcore/evidence.py + backend/agentcore/schemas.py:EvidenceManifest",
+    "notes": "Claim-only blocked-route manifest shape. Collection attempts and artifacts are empty by design."
+  },
+  "uncertainty": {
+    "capability_tier": "claim_only",
+    "collection_attempts": 0,
+    "limitations": [
+      "No collection performed: requested action blocked by platform policy.",
+      "Evidence tier is claim-only (agent-provided context, not observed)."
+    ]
+  },
+  "response": {
+    "manifest_id": "man_demo_blocked_route",
+    "version": "1.0.0",
+    "created_at": "2026-07-22T00:00:00Z",
+    "target": {
+      "url": "https://www.booking.com/hotel/ae/demo-example.html",
+      "final_url": "https://www.booking.com/hotel/ae/demo-example.html",
+      "domain": "booking.com",
+      "merchant_name": "StayFinder aggregator (demo)"
+    },
+    "obligation_id": "obl_demo_blocked_route",
+    "collection_attempts": [],
+    "capability_summary": {
+      "local_browser": false,
+      "local_http": false,
+      "managed_request": false,
+      "managed_browser": false,
+      "official_api": false,
+      "real_ip_geography": false,
+      "locale_emulation": false,
+      "timezone_emulation": false,
+      "screenshot": false,
+      "trace_zip": false,
+      "network_log": false,
+      "fixture_mode": false
+    },
+    "artifacts": [],
+    "extractions": [],
+    "extractor_version": "v0",
+    "limitations": [
+      "No collection performed: requested action blocked by platform policy.",
+      "Evidence tier is claim-only (agent-provided context, not observed)."
+    ],
+    "parent_sha256": null,
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature": null
+  }
+}

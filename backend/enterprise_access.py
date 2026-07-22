@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 
 ROLE_PERMISSIONS = {
     "owner": {
@@ -38,6 +39,42 @@ VALID_ROLES = set(ROLE_PERMISSIONS)
 
 class EnterprisePermissionError(PermissionError):
     """Raised when a workspace member lacks a required enterprise permission."""
+
+
+class EnterpriseContextError(EnterprisePermissionError):
+    """Raised when an enterprise access edge lacks actor or organization scope."""
+
+
+@dataclass(frozen=True)
+class EnterpriseContext:
+    """The minimum authorization context required by enterprise data access.
+
+    Public store functions retain their historical ``user_id`` signatures for
+    route compatibility, but internal reads/writes must carry this context once
+    their organization is resolved.  Keeping actor and organization together
+    makes it harder for a later query to accidentally omit one side of the
+    tenant boundary.
+    """
+
+    actor_user_id: str
+    organization_id: str
+    role: str
+
+    def __post_init__(self) -> None:
+        if not str(self.actor_user_id or "").strip():
+            raise EnterpriseContextError("Enterprise actor context is required")
+        if not str(self.organization_id or "").strip():
+            raise EnterpriseContextError("Enterprise organization context is required")
+        object.__setattr__(self, "actor_user_id", str(self.actor_user_id).strip())
+        object.__setattr__(self, "organization_id", str(self.organization_id).strip())
+        object.__setattr__(self, "role", normalize_role(self.role))
+
+    def require(self, permission: str) -> None:
+        require_permission(self.role, permission)
+
+    def assert_organization(self, organization_id: str | None) -> None:
+        if str(organization_id or "") != self.organization_id:
+            raise EnterpriseContextError("Organization not found")
 
 
 def normalize_role(role: str | None) -> str:

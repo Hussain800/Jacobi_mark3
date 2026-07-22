@@ -44,7 +44,9 @@ def _redact_url(url: str | None) -> str:
         return ""
     try:
         parsed = urlsplit(url)
-        return parsed.netloc or "redacted"
+        # The projection is intentionally idempotent because the HTTP adapter
+        # may defensively project an already-projected packet once more.
+        return parsed.netloc or (str(url).split("/", 1)[0] if not parsed.scheme else "redacted")
     except Exception:
         return "redacted"
 
@@ -53,7 +55,7 @@ def _redact_url(url: str | None) -> str:
 # share_tokens row (id, organization_id, finding_id, created_by, revoked_by) is
 # internal workspace metadata and is dropped so a public share never leaks it.
 _EXTERNAL_SHARE_TOKEN_FIELDS = (
-    "scope", "redacted", "expires_at", "created_at", "revoked_at", "last_accessed_at",
+    "scope", "redacted", "expires_at", "created_at",
 )
 
 
@@ -67,7 +69,7 @@ def external_share_token_view(share_token: dict | None) -> dict:
     return {k: st[k] for k in _EXTERNAL_SHARE_TOKEN_FIELDS if k in st}
 
 
-def redact_packet(packet: dict, *, redacted: bool) -> dict:
+def _legacy_redact_packet(packet: dict, *, redacted: bool) -> dict:
     """Return a report/share packet with external-safe fields removed."""
     data = copy.deepcopy(packet)
     if not redacted:
@@ -110,6 +112,62 @@ def redact_packet(packet: dict, *, redacted: bool) -> dict:
         for nested in ("finding", "product", "seller", "watchlist_item"):
             _strip_internal_ids(row.get(nested))
     return data
+
+
+def redact_packet(packet: dict, *, redacted: bool) -> dict:
+    """Return an explicit external projection of a report/share packet.
+
+    Redaction is deliberately an allowlist projection. A denylist cannot keep
+    pace with new persistence columns and could expose a newly added internal
+    identifier or raw extraction detail.
+    """
+    data = copy.deepcopy(packet)
+    if not redacted:
+        return data
+
+    def project(source: object, fields: set[str]) -> dict:
+        if not isinstance(source, dict):
+            return {}
+        return {field: source[field] for field in fields if field in source}
+
+    organization = project(data.get("organization"), {"name"})
+    organization["name"] = organization.get("name") or "Shared workspace"
+    finding = project(data.get("finding"), {
+        "type", "severity", "status", "observed_price", "map_floor",
+        "currency", "spread_pct", "confidence", "evidence_summary", "created_at",
+    })
+    product = project(data.get("product"), {"name", "sku", "category", "currency", "map_floor"})
+    seller = project(data.get("seller"), {"name", "domain"})
+    item = project(data.get("watchlist_item"), {
+        "target_url", "market", "status", "last_observed_price",
+        "last_observed_currency", "last_coverage_pct",
+    })
+    if item.get("target_url"):
+        item["target_url"] = _redact_url(item["target_url"])
+
+    evidence_items = []
+    for source in data.get("evidence_items") or []:
+        row = project(source, {
+            "buyer_context", "target_url", "observed_price", "currency",
+            "captured_at", "source", "extraction_method",
+        })
+        # Preserve the established external contract without exposing the
+        # underlying session identifier.
+        row["probe_session_id"] = None
+        if row.get("target_url"):
+            row["target_url"] = _redact_url(row["target_url"])
+        metadata = project(source.get("metadata"), {"market", "coverage_pct"}) if isinstance(source, dict) else {}
+        row["metadata"] = metadata
+        evidence_items.append(row)
+
+    return {
+        "organization": organization,
+        "finding": finding,
+        "product": product,
+        "seller": seller,
+        "watchlist_item": item,
+        "evidence_items": evidence_items,
+    }
 
 
 def evidence_checksum(packet: dict) -> str:

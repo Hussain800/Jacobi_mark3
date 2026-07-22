@@ -48,13 +48,25 @@ def test_policy_blocks_purchase_on_unknown_domain_by_default():
     assert d.reason_code == ReasonCode.POLICY_FORBIDS_AUTOMATION
 
 
-def test_policy_allows_purchase_with_official_route():
+def test_policy_allows_purchase_with_configured_official_route(monkeypatch):
+    monkeypatch.setenv("JACOBI_OFFICIAL_ROUTE_DOMAINS", "booking.com")
     d = policy_mod.evaluate(
         "https://www.booking.com/hotel/x",
         ConsentScope.purchase_authorized,
         official_route=True,
     )
     assert d.decision == "allow"
+
+
+def test_policy_rejects_forged_official_route_claim(monkeypatch):
+    monkeypatch.delenv("JACOBI_OFFICIAL_ROUTE_DOMAINS", raising=False)
+    d = policy_mod.evaluate(
+        "https://www.booking.com/hotel/x",
+        ConsentScope.purchase_authorized,
+        official_route=True,
+    )
+    assert d.decision == "block"
+    assert d.official_route is False
 
 
 def test_policy_warns_checkout_prepare_on_restricted():

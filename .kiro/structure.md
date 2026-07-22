@@ -19,7 +19,7 @@ jacobi/
 │   ├── auth_user.py            # User authentication
 │   ├── .env                    # Local environment variables (gitignored)
 │   └── .env.example            # Environment variable template
-├── frontend/                   # Next.js 14 TypeScript frontend
+├── frontend/                   # Next.js 16 TypeScript frontend
 │   ├── app/                    # Next.js App Router pages
 │   │   ├── page.tsx            # Landing page
 │   │   ├── layout.tsx          # Root layout with Supabase Auth
@@ -57,7 +57,7 @@ jacobi/
 
 ## Architectural Conventions
 - Backend: FastAPI async handlers, Pydantic models, httpx for HTTP calls
-- Frontend: Next.js 14 App Router, React Server Components where possible, "use client" for interactivity
+- Frontend: Next.js 16 App Router, React Server Components where possible, "use client" for interactivity
 - Auth: Supabase Auth (Google OAuth + Email OTP) with session management
 - AI: Provider cascade pattern — try first, fall through on failure
 - Memory: Fire-and-forget integration patterns for partner services

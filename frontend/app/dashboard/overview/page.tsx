@@ -4,11 +4,12 @@ import Link from "next/link";
 import { fmtDate, type Severity } from "../demo-data";
 import { KpiStrip, SeverityBadge, TypePill, PageHead } from "../ui";
 import { useEnterpriseWorkspace } from "../use-enterprise-workspace";
+import { findingIdForScan, scanNextAction } from "../../../components/cockpit/trust-state";
 
 const SEV: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 export default function OverviewPage() {
-  const { data, loading, mode } = useEnterpriseWorkspace();
+  const { data, loading, mode, reload } = useEnterpriseWorkspace();
   const k = data.kpis;
   const priority = [...data.findings].sort((a, b) => SEV[a.severity] - SEV[b.severity]).slice(0, 4);
 
@@ -24,6 +25,22 @@ export default function OverviewPage() {
       {},
     ),
   ).sort((a, b) => SEV[a.worst] - SEV[b.worst] || b.count - a.count);
+  const latestScan = data.scanJobs[0];
+  const scanAction = latestScan ? scanNextAction(latestScan.status, findingIdForScan(latestScan, data.evidenceItems)) : null;
+  const nextActions = [
+    scanAction
+      ? { label: scanAction.label, guidance: scanAction.guidance, href: scanAction.href || "/dashboard/portfolio" }
+      : null,
+    priority[0]
+      ? { label: "Review priority finding", guidance: `${priority[0].id} is the highest-severity item in the current queue.`, href: `/dashboard/evidence/${priority[0].id}` }
+      : null,
+    mode === "live" && data.watchlists.length === 0
+      ? { label: "Import a watchlist", guidance: "No authenticated watchlist is present in this workspace yet.", href: "/dashboard/portfolio" }
+      : null,
+    mode === "demo" && !latestScan
+      ? { label: "Open the sample workflow", guidance: "Demo records are static examples; run an audit or sign in before treating any result as live.", href: "/dashboard/audits" }
+      : null,
+  ].filter((item): item is { label: string; guidance: string; href: string } => Boolean(item)).slice(0, 3);
 
   const cardStyle: React.CSSProperties = {
     border: "1px solid var(--line)",
@@ -56,9 +73,31 @@ export default function OverviewPage() {
           { label: "Critical", value: String(k.critical), accent: "var(--over)" },
           { label: "Monitored URLs", value: String(k.monitoredUrls) },
           { label: "High-confidence", value: `${k.highConfidencePct}%`, accent: "var(--good)" },
-          { label: "Audits this month", value: k.auditsThisMonth.toLocaleString() },
+          { label: mode === "live" ? "Audits this month" : "Sample portfolio records", value: k.auditsThisMonth.toLocaleString() },
         ]}
       />
+
+      <div style={{ ...cardStyle, marginTop: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <span className="label-mono" style={{ color: "var(--text-2)" }}>Next actions</span>
+            <p className="mono" style={{ color: "var(--text-2)", fontSize: 11, marginTop: 6 }}>
+              Actions reflect returned workspace fields; no completed scan or finding is inferred.
+            </p>
+          </div>
+          <button className="btn btn-ghost" onClick={reload} style={{ fontSize: 11 }}>Refresh state</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginTop: 14 }}>
+          {nextActions.length > 0 ? nextActions.map((action) => (
+            <Link key={action.label} href={action.href} style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 14 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</div>
+              <div className="mono" style={{ color: "var(--text-2)", fontSize: 11, lineHeight: 1.5, marginTop: 6 }}>{action.guidance}</div>
+            </Link>
+          )) : (
+            <div className="mono" style={{ color: "var(--text-2)", fontSize: 12 }}>No next action is available from the current workspace response.</div>
+          )}
+        </div>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 20, marginTop: 28, alignItems: "start" }}>
         <div style={cardStyle}>
@@ -129,10 +168,10 @@ export default function OverviewPage() {
             <span className="label-mono" style={{ color: "var(--text-2)" }}>Scan health</span>
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
               {[
-                { l: "Extraction success rate", v: mode === "live" ? "Pending" : "86%", c: "var(--good)" },
-                { l: "Insufficient-evidence rate", v: mode === "live" ? "Pending" : "9%", c: "var(--gold)" },
-                { l: "Blocked / challenged", v: mode === "live" ? "Pending" : "5%", c: "var(--text-2)" },
-                { l: "Median audit time", v: mode === "live" ? "Pending" : "68s", c: "var(--text)" },
+                { l: "Extraction success rate", v: mode === "live" ? "Pending" : "Sample", c: "var(--good)" },
+                { l: "Insufficient-evidence rate", v: mode === "live" ? "Pending" : "Sample", c: "var(--gold)" },
+                { l: "Blocked / challenged", v: mode === "live" ? "Pending" : "Sample", c: "var(--text-2)" },
+                { l: "Median audit time", v: mode === "live" ? "Pending" : "Sample", c: "var(--text)" },
               ].map((r) => (
                 <div key={r.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
                   <span className="mono" style={{ fontSize: 12, color: "var(--text-2)" }}>{r.l}</span>

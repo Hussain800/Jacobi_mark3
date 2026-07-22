@@ -38,6 +38,10 @@ _MAX_STORE = 500
 _TABLE = "agent_provenance_records"
 
 
+class StorageUnavailableError(RuntimeError):
+    """Configured provenance storage cannot safely serve this request."""
+
+
 class ProvenanceRepo(ABC):
     @abstractmethod
     def save_decision(self, envelope: DecisionEnvelope, org: str) -> None: ...
@@ -102,7 +106,7 @@ class SupabaseRepo(ProvenanceRepo):
     def __init__(self) -> None:
         self._client = get_supabase()
         if self._client is None:
-            raise RuntimeError(
+            raise StorageUnavailableError(
                 "JACOBI_AGENT_STORAGE=supabase but Supabase is not configured"
             )
 
@@ -153,11 +157,15 @@ def get_repo() -> ProvenanceRepo:
     """Lazy singleton chosen by JACOBI_AGENT_STORAGE (default 'memory')."""
     global _repo
     if _repo is None:
-        backend = os.getenv("JACOBI_AGENT_STORAGE", "memory").lower()
+        backend = os.getenv("JACOBI_AGENT_STORAGE", "memory").strip().lower()
         if backend == "supabase":
             _repo = SupabaseRepo()
+        elif backend == "memory":
+            _repo = MemoryRepo()
         else:
-            _repo = MemoryRepo()  # explicit local/dev fallback
+            raise StorageUnavailableError(
+                "JACOBI_AGENT_STORAGE must be either 'memory' or 'supabase'"
+            )
     return _repo
 
 

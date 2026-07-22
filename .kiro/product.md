@@ -1,11 +1,34 @@
 # JACOBI — Product Overview
 
+## Product surfaces
+
+JACOBI is one repository containing three deliberately separate surfaces:
+
+1. **JACOBI Audit** — Smart24 synthetic-buyer research for pricing topology
+   and evidence-backed discrimination analysis.
+2. **Enterprise Price Integrity** — authenticated organizations, watchlists,
+   MAP findings, scan jobs, evidence, exports, and controlled sharing.
+3. **Jacobi for Agents** — deterministic price-provenance and policy decisions
+   exposed through REST, MCP, and the provenance dashboard. It does not execute
+   purchases or import the legacy audit evasion tooling.
+
+The repository is application-complete for local demos and design-partner
+iteration. A private pilot remains conditional on production Supabase/RLS,
+worker, provider, observability, and smoke-test verification; public paid
+traffic is not implied by this document.
+
 ## Purpose
-JACOBI is an adversarial pricing topology probe that detects hidden pricing discrimination on the web. It deploys 24 parallel agents, each with a unique digital fingerprint (location, device, cookie profile, referrer, network tier), against any pricing page and uses statistical analysis + AI to determine if the price varies based on who the user appears to be.
+
+JACOBI Audit probes pricing topology with the currently supported Smart24
+workflow. It uses distinct synthetic contexts and statistical analysis to
+identify price variation while preserving an evidence-first rule: insufficient
+coverage or an unattributed spread must not become a discrimination claim.
 
 ## Core Business Logic
 1. User submits a URL (hotel, flight, e-commerce product page)
-2. 24 probe agents launch in 3 staggered waves (datacenter → residential → mobile)
+2. Smart24 probe agents launch in staggered waves using the configured
+   collection path (the Enterprise product has a separate persisted scan-job
+   workflow)
 3. Each agent fetches the page through BrightData's Unlocker API with a distinct fingerprint
 4. Prices are extracted using polymorphic parsing (JSON-LD → site-specific selectors → regex fallback)
 5. Statistical gradients are computed (Welch's t-test with effect-size thresholds)

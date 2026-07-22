@@ -1,0 +1,94 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "enterprise_redacted_share",
+  "fixture_id": "enterprise_redacted_share_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/main.py:get_enterprise_shared_finding + backend/enterprise_reports.py:redact_packet",
+    "notes": "Anonymous share response shape after redaction; token value and all internal workspace IDs are omitted."
+  },
+  "uncertainty": {
+    "share_visibility": "redacted_external",
+    "tenant_scope": "anonymous_redacted_projection",
+    "limitations": [
+      "A redacted share is a projection, not owner workspace data.",
+      "This fixture does not prove production RLS or token expiry in Supabase."
+    ]
+  },
+  "response": {
+    "share_token": {
+      "scope": "finding",
+      "redacted": true,
+      "expires_at": "2026-07-29T00:11:00Z",
+      "created_at": "2026-07-22T00:11:00Z",
+      "revoked_at": null,
+      "last_accessed_at": null
+    },
+    "redacted": true,
+    "packet": {
+      "organization": {
+        "name": "Demo Price Integrity Workspace"
+      },
+      "finding": {
+        "type": "MAP_UNDERCUT",
+        "severity": "high",
+        "status": "new",
+        "observed_price": 176,
+        "map_floor": 199,
+        "currency": "USD",
+        "spread_pct": 11.56,
+        "confidence": "high",
+        "evidence_summary": "Observed demo price is below the MAP floor with adequate demo coverage.",
+        "created_at": "2026-07-22T00:10:00Z",
+        "updated_at": "2026-07-22T00:10:00Z"
+      },
+      "watchlist_item": {
+        "target_url": "demo-market.example",
+        "market": "US",
+        "status": "active",
+        "last_observed_price": 176,
+        "last_observed_currency": "USD",
+        "last_coverage_pct": 75
+      },
+      "product": {
+        "name": "Demo Wireless Headphones",
+        "sku": "DEMO-HP-001",
+        "map_floor": 199,
+        "currency": "USD"
+      },
+      "seller": {
+        "name": "Demo Market",
+        "domain": "demo-market.example",
+        "authorization_status": "unauthorized"
+      },
+      "evidence_items": [
+        {
+          "buyer_context": "US / desktop / fresh / direct",
+          "target_url": "demo-market.example",
+          "observed_price": 176,
+          "currency": "USD",
+          "captured_at": "2026-07-22T00:10:00Z",
+          "source": "live_probe",
+          "extraction_method": "generic_price_parser",
+          "metadata": {
+            "market": "US",
+            "coverage_pct": 75,
+            "session_status": "completed"
+          },
+          "product": {
+            "name": "Demo Wireless Headphones",
+            "sku": "DEMO-HP-001",
+            "map_floor": 199,
+            "currency": "USD"
+          },
+          "seller": {
+            "name": "Demo Market",
+            "domain": "demo-market.example",
+            "authorization_status": "unauthorized"
+          }
+        }
+      ]
+    }
+  }
+}

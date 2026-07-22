@@ -15,10 +15,10 @@ and receipts**, whether you are being charged for *who you are*.
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square&labelColor=0b0b0f)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11-3776AB?style=flat-square&labelColor=0b0b0f&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&labelColor=0b0b0f&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=flat-square&labelColor=0b0b0f&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&labelColor=0b0b0f&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Math Engine v2](https://img.shields.io/badge/math%20engine-v2-a855f7?style=flat-square&labelColor=0b0b0f)](#-the-mathematics)
 [![BrightData](https://img.shields.io/badge/proxies-Bright%20Data-60a5fa?style=flat-square&labelColor=0b0b0f)](https://brightdata.com/)
-[![Tests](https://img.shields.io/badge/tests-1310%20passing-22c55e?style=flat-square&labelColor=0b0b0f)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-local%20suite%20verified-22c55e?style=flat-square&labelColor=0b0b0f)](#-testing)
 
 **[Live demo →](https://jacobi-mark3.vercel.app)**
 
@@ -96,11 +96,11 @@ single buyer-context variable can explain.
 
 ## Jacobi for Agents — price provenance for AI agents
 
-> **Two products share this repo.** The sections below this one describe the
-> original enterprise pricing-audit product (synthetic-buyer probes,
-> dashboards, evidence packs). This section describes **Jacobi for Agents** —
-> the newer agent-facing provenance layer. They share infrastructure but the
-> agent layer imports none of the legacy collection tooling.
+> **Three product surfaces share this repo.** JACOBI Audit is the Smart24
+> synthetic-buyer research workflow; Enterprise Price Integrity is the
+> workspace/watchlist/MAP monitoring workflow; **Jacobi for Agents** is the
+> agent-facing provenance and policy layer. They share infrastructure, but
+> Jacobi for Agents does not import the legacy audit collection tooling.
 
 The agentic layer of JACOBI: the verification call an AI agent makes **before**
 recommending, booking, or purchasing. Given a purchase context, Jacobi returns
@@ -113,8 +113,10 @@ a deterministic SHA-256 **EvidenceManifest**.
   server (`python -m agentcore.mcp_server`), and the dashboard at
   `/dashboard/provenance`.
 - **Hard safety boundary:** no purchase execution exists; `purchase_authorized`
-  is blocked on restricted or unknown routes unless `official_route` is true;
-  no identity spoofing, CAPTCHA bypass, or platform evasion anywhere.
+  is blocked on restricted or unknown routes unless the server recognizes an
+  authorized official route; no identity spoofing, CAPTCHA bypass, or platform
+  evasion is part of Jacobi for Agents. Legacy audit-probe evasion utilities,
+  where present, are quarantined to the separate audit surface.
 - **Built-in demos:** a lodging fee-drift flow (AED 2,180 listing →
   AED 2,530 checkout-prep after 3 mandatory fees → `ask_user`) and a
   restricted-route purchase attempt (→ `block`), both deterministic,
@@ -522,7 +524,7 @@ host, re-benchmark to P95 ≤ 100 s, *then* flip `PRO50_BETA=1` — is tracked i
 
 ```mermaid
 flowchart TB
-    User([Shopper / Analyst]) --> FE["Next.js 14 frontend<br/>Vercel"]
+    User([Shopper / Analyst]) --> FE["Next.js 16 frontend<br/>Vercel"]
     FE -->|"Bearer JWT"| API["FastAPI backend<br/>Render"]
 
     subgraph Engine["Probe engine"]
@@ -554,7 +556,7 @@ flowchart TB
     class BD,DB,Stripe,PDF ext;
 ```
 
-The system splits cleanly into a **Next.js 14** frontend (Vercel), a **FastAPI**
+The system splits cleanly into a **Next.js 16** frontend (Vercel), a **FastAPI**
 backend probe engine (Docker on Render), **Bright Data** for egress, and
 **Supabase** + **Stripe** for accounts and billing. The frontend proxies all API
 traffic through a Next.js route so the backend origin stays single-sourced.
@@ -589,7 +591,7 @@ limiting, and dependency upgrades (`starlette`, `python-dotenv`, `mcp`, Next.js)
 
 | Layer | Technologies |
 | :--- | :--- |
-| **Frontend** | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Zustand, Framer Motion, Recharts, Three.js, Lucide |
+| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Zustand, Framer Motion, Recharts, Three.js, Lucide |
 | **Backend** | Python 3.11, FastAPI, Uvicorn, httpx (async), Pydantic v2 |
 | **Math engine** | NumPy — robust statistics, Jacobian sensitivity matrix, attribution-gated PEI |
 | **Extraction** | BeautifulSoup4, lxml, site-specific extractor registry |
@@ -725,8 +727,9 @@ curl https://jacobi-mark3.onrender.com/api/result/<session_id>
 
 ## 🧪 Testing
 
-The backend ships a comprehensive `pytest` suite (**1,310 tests** collected)
-covering the probe engine, the coverage gate, topology classification, the Booking
+The backend ships a comprehensive `pytest` suite. Run the command below for the
+current count; the verified local run in this mission passed all collected tests
+with only environment-gated skips. The suite covers the probe engine, the coverage gate, topology classification, the Booking
 extractor and its regional fixtures, the dateless pre-flight gate, currency
 normalisation, **Math Engine v2** (the attribution gate, trimmed median, sensitivity
 matrix, and PEI), PDF export, and the API surface.
@@ -750,7 +753,11 @@ npm run build        # production build
 
 ## Deployment
 
-JACOBI runs as two independently deployed services, both auto-deploying from `main`.
+JACOBI's intended deployment is two independently deployed services; this
+checkout does not prove that either external environment is currently deployed.
+The canonical deployment contract and the status of the retained legacy
+`backend/vercel.json` alternative are documented in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 **Backend → Render (Docker)**
 
@@ -805,9 +812,9 @@ Jacobi_mark3/
 │   ├── billing.py             # Stripe plans, checkout, quotas (test mode)
 │   ├── supabase_client.py     # Persistence (probes, profiles)
 │   ├── requirements.txt
-│   └── tests/                 # pytest suite (1,310) + fixtures
+│   └── tests/                 # pytest suite + fixtures
 └── frontend/
-    ├── app/                   # Next.js 14 App Router
+    ├── app/                   # Next.js 16 App Router
     │   ├── chat/              #   probe cockpit
     │   ├── history/  leaderboard/  pricing/  share/
     │   └── api/[...path]/     #   proxy to the backend origin

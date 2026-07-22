@@ -3,19 +3,6 @@ import { DEMO_REPORT, type TopologyReport } from "@/components/cockpit/types";
 
 export const dynamic = "force-dynamic";
 
-type FallbackSession = {
-  target_url: string;
-  target_name: string;
-};
-
-const globalForFallback = globalThis as typeof globalThis & {
-  __jacobiFallbackSessions?: Map<string, FallbackSession>;
-};
-
-const fallbackSessions =
-  globalForFallback.__jacobiFallbackSessions ??
-  (globalForFallback.__jacobiFallbackSessions = new Map<string, FallbackSession>());
-
 function backendOrigin() {
   return (
     process.env.BACKEND_API_URL ||
@@ -34,23 +21,12 @@ function json(data: unknown, init?: ResponseInit) {
   });
 }
 
-function demoReport(sessionId: string, session?: FallbackSession): TopologyReport {
+function demoReport(sessionId: string): TopologyReport {
   return {
     ...DEMO_REPORT,
     session_id: sessionId,
-    target_url: session?.target_url || DEMO_REPORT.target_url,
-    target_name: session?.target_name || DEMO_REPORT.target_name,
     timestamp: new Date().toISOString(),
   };
-}
-
-function parseBody<T>(bodyText?: string): T | Record<string, never> {
-  if (!bodyText) return {};
-  try {
-    return JSON.parse(bodyText) as T;
-  } catch {
-    return {};
-  }
 }
 
 async function fallbackResponse(path: string, request: NextRequest, bodyText?: string) {
@@ -76,8 +52,8 @@ async function fallbackResponse(path: string, request: NextRequest, bodyText?: s
     // Only the curated demo / case-study ids may serve static sample data when
     // the backend is down. A real session id gets an honest error — never a
     // fabricated discrimination report.
-    if (sessionId.startsWith("demo")) {
-      return json(demoReport(sessionId, fallbackSessions.get(sessionId)));
+    if (sessionId === "demo_session_static") {
+      return json(demoReport(sessionId));
     }
     return json(
       {
@@ -100,27 +76,27 @@ async function fallbackResponse(path: string, request: NextRequest, bodyText?: s
   }
 
   if (request.method === "POST" && path === "analyze") {
-    const body = parseBody<{ use_data_dir?: string; target_url?: string; target_name?: string }>(bodyText);
-
-    const sessionId = body.use_data_dir || "demo_session_static";
-    const session = fallbackSessions.get(sessionId);
-
-    return json({
-      session_id: sessionId,
-      target_name: session?.target_name || body.target_name || DEMO_REPORT.target_name,
-      topology_class: DEMO_REPORT.topology_class,
-      baseline_price: DEMO_REPORT.baseline_price,
-      gemini_report: null,
-      savings_verdict: null,
-    });
+    // Analysis is derived from a real completed session. If the backend is
+    // unavailable, returning DEMO_REPORT here would make a real live scan
+    // appear to have a verdict. The explicit /analyze-demo route is the only
+    // fallback that may return curated sample analysis.
+    return json(
+      {
+        error: "analysis_unavailable",
+        detail: "The analysis service is temporarily unavailable.",
+      },
+      { status: 503 },
+    );
   }
 
   if (request.method === "GET" && path === "leaderboard") {
-    return json([
-      { name: "Leela Palace Bangalore", savings: 57, url: DEMO_REPORT.target_url },
-      { name: "Tokyo Hotels Search", savings: 42, url: "https://www.booking.com/searchresults.html?ss=Tokyo" },
-      { name: "Wireless Headphones", savings: 18, url: "https://www.amazon.com/s?k=wireless+headphones" },
-    ]);
+    return json(
+      {
+        error: "leaderboard_unavailable",
+        detail: "The leaderboard service is temporarily unavailable.",
+      },
+      { status: 503 },
+    );
   }
 
   return json(

@@ -10,6 +10,7 @@ where accounting is unknown (real_probes_executed is None).
 import asyncio
 
 import main as M
+import profile_store
 
 
 def _run_background(monkeypatch, engine_result: dict) -> list:
@@ -63,3 +64,15 @@ def test_unknown_accounting_still_charges(monkeypatch):
         "status": "failed",
     })
     assert increments == ["user-1"]
+
+
+def test_quota_store_unavailable_fails_closed(monkeypatch):
+    async def unavailable(_user_id):
+        return None
+
+    monkeypatch.setattr(profile_store, "ensure_profile", unavailable)
+    try:
+        asyncio.run(profile_store.can_run_probe("user-1"))
+        assert False, "quota checks must not fail open when the store is unavailable"
+    except profile_store.QuotaUnavailableError:
+        pass

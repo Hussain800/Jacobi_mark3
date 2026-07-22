@@ -19,6 +19,10 @@ _client = None
 _quota_lock = asyncio.Lock()
 
 
+class QuotaUnavailableError(RuntimeError):
+    """Raised when a live quota decision cannot be verified safely."""
+
+
 def _free_monthly_limit() -> int:
     # Default matches the hackathon-facing Free tier (24 probes / month).
     # Override via FREE_MONTHLY_PROBES env var.
@@ -30,11 +34,8 @@ def _free_monthly_limit() -> int:
 
 def _pro_monthly_limit() -> int:
     # Default matches the hackathon-facing Pro tier (50 probes / month).
-    # NOTE: can_run_probe() currently treats tier=="pro" as unconditionally
-    # allowed (early-return True), so this constant is not enforced yet —
-    # it's the stored value on the profile so the UI can show "X / 50 used".
-    # Post-hackathon: change can_run_probe() to compare used vs limit for Pro
-    # too. Override via PRO_MONTHLY_PROBES env var.
+    # The cap is enforced by can_run_probe() and can be overridden for a
+    # controlled pilot with PRO_MONTHLY_PROBES.
     try:
         return int(os.getenv("PRO_MONTHLY_PROBES", "50"))
     except ValueError:
@@ -109,13 +110,14 @@ async def can_run_probe(user_id: str) -> tuple[bool, dict]:
     """Quota check for a signed-in user.
 
     Returns (allowed, info_dict) where info_dict has tier, used, limit, reset_at.
-    Pro tier is unlimited; Free tier is capped at FREE_MONTHLY_LIMIT/month with
-    a calendar-month rollover.
+    Pro tier is capped at PRO_MONTHLY_LIMIT/month; Free tier is capped at
+    FREE_MONTHLY_LIMIT/month with a calendar-month rollover. If the profile
+    store is unavailable, this raises instead of failing open and spending
+    provider credits without a verifiable quota decision.
     """
     profile = await ensure_profile(user_id)
     if not profile:
-        # Supabase down → fail open so the demo doesn't break
-        return True, {"tier": "free", "used": 0, "limit": FREE_MONTHLY_LIMIT, "reset_at": None}
+        raise QuotaUnavailableError("quota profile store unavailable")
 
     tier = profile.get("subscription_tier") or "free"
     used = profile.get("probes_used_this_month") or 0

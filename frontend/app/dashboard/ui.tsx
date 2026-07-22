@@ -22,26 +22,45 @@ import {
   statusLabel,
 } from "./demo-data";
 
-/* ── DEMO banner — honesty rule: seeded data is always labeled ────────── */
+/* ── Workspace banner — honesty rule: seeded data is always labeled ───── */
 
-export function DemoModeBanner() {
+type WorkspaceBannerProps = {
+  mode: "demo" | "live" | "error";
+  error?: string;
+  loading?: boolean;
+};
+
+export function DemoModeBanner({ mode, error, loading = false }: WorkspaceBannerProps) {
+  const isLive = mode === "live";
+  const isError = mode === "error";
+  const label = loading ? "Loading workspace" : isLive ? "Live workspace" : isError ? "Workspace unavailable" : "Demo data";
+  const message = loading
+    ? "Checking the authenticated workspace connection."
+    : isLive
+      ? "Authenticated workspace data from the enterprise API."
+      : isError
+        ? `Showing labeled sample data until the workspace reconnects${error ? ` (${error})` : ""}.`
+        : "Sample audit workspace for illustration. “Run audit” executes a real, live audit.";
+
   return (
     <div
+      role={isError ? "alert" : "status"}
+      aria-live="polite"
       style={{
         display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         justifyContent: "center", textAlign: "center",
         padding: "9px 16px",
-        background: "rgba(216,176,106,0.14)",
-        borderBottom: "1px solid rgba(216,176,106,0.34)",
+        background: isLive ? "rgba(69,181,142,0.12)" : isError ? "rgba(239,68,68,0.12)" : "rgba(216,176,106,0.14)",
+        borderBottom: isLive ? "1px solid rgba(69,181,142,0.34)" : isError ? "1px solid rgba(239,68,68,0.34)" : "1px solid rgba(216,176,106,0.34)",
         fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.08em",
-        color: "var(--gold)",
+        color: isLive ? "var(--good)" : isError ? "var(--over)" : "var(--gold)",
       }}
     >
       <span style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.16em" }}>
-        ● Demo data
+        ● {label}
       </span>
       <span style={{ color: "var(--text-2)" }}>
-        Sample audit workspace for illustration. “Run audit” executes a real, live audit.
+        {message}
       </span>
     </div>
   );

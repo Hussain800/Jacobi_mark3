@@ -10,7 +10,8 @@ Run from backend/:
 Claude Desktop config example lives in docs/jacobi-for-agents.md.
 
 Safety: no tool executes a purchase. purchase_authorized requests on
-restricted or unknown routes return decision=block unless official_route.
+restricted or unknown routes return decision=block unless the official-route
+claim is authorized by the server-owned official-route registry.
 """
 
 from __future__ import annotations
@@ -19,11 +20,27 @@ from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from . import commands
 from . import engine
-from . import policy as policy_mod
-from .schemas import ConsentScope
+from .schemas import SCHEMA_VERSION
 
 mcp = FastMCP("jacobi")
+
+
+def _mcp_error(exc: commands.AgentCommandError) -> Dict[str, Any]:
+    return {"error": exc.as_dict()}
+
+
+def _execute_verify(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        command = commands.normalize_verify_command(payload)
+        envelope = commands.execute_verify(
+            command,
+            commands.CommandContext(org="mcp-local", transport="mcp"),
+        )
+    except commands.AgentCommandError as exc:
+        return _mcp_error(exc)
+    return envelope.model_dump(mode="json")
 
 
 @mcp.tool()
@@ -41,6 +58,7 @@ def verify_purchase_context(
     displayed_total_currency: str = "USD",
     official_route: bool = False,
     agent_id: str = "mcp-client",
+    schema_version: str = SCHEMA_VERSION,
 ) -> Dict[str, Any]:
     """Verify a purchase/booking context before recommending or acting.
 
@@ -55,16 +73,15 @@ def verify_purchase_context(
         if displayed_total_amount is not None
         else None
     )
-    env = engine.run_verify(
-        demo=demo,
-        url=url,
-        consent_scope=consent_scope,
-        displayed_total=displayed,
-        official_route=official_route,
-        agent_id=agent_id,
-        org="mcp-local",
-    )
-    return env.model_dump(mode="json")
+    return _execute_verify({
+        "schema_version": schema_version,
+        "demo": demo,
+        "url": url,
+        "consent_scope": consent_scope,
+        "displayed_total": displayed,
+        "official_route": official_route,
+        "agent_id": agent_id,
+    })
 
 
 @mcp.tool()
@@ -73,6 +90,7 @@ def compare_total_price(
     demo: Optional[str] = None,
     displayed_total_amount: Optional[float] = None,
     displayed_total_currency: str = "USD",
+    schema_version: str = SCHEMA_VERSION,
 ) -> Dict[str, Any]:
     """Compare a displayed/claimed price against observed listing and
     checkout-preparation totals. Returns price trace, deltas, mandatory fees,
@@ -82,17 +100,19 @@ def compare_total_price(
         if displayed_total_amount is not None
         else None
     )
-    env = engine.run_verify(
-        demo=demo, url=url, consent_scope="research_only", displayed_total=displayed,
-        agent_id="mcp-client", org="mcp-local",
-    )
-    return {
-        "request_id": env.request_id,
-        "decision": env.decision.value,
-        "price_summary": env.price_summary.model_dump(mode="json"),
-        "reason_codes": [c.value for c in env.reason_codes],
-        "manifest_id": env.evidence.manifest_id,
-    }
+    result = _execute_verify({
+        "schema_version": schema_version,
+        "demo": demo,
+        "url": url,
+        "consent_scope": "research_only",
+        "displayed_total": displayed,
+        "agent_id": "mcp-client",
+    })
+    if "error" in result:
+        return result
+    from .schemas import DecisionEnvelope
+
+    return commands.compare_total_price_projection(DecisionEnvelope.model_validate(result))
 
 
 @mcp.tool()
@@ -100,24 +120,49 @@ def check_platform_policy(
     url: str,
     consent_scope: str = "recommend",
     official_route: bool = False,
+    schema_version: str = SCHEMA_VERSION,
 ) -> Dict[str, Any]:
     """Check whether the requested action is allowed, warned, or blocked
     under Jacobi's platform policy registry."""
-    decision = policy_mod.evaluate(url, ConsentScope(consent_scope), official_route)
-    return decision.model_dump(mode="json")
+    try:
+        command = commands.normalize_policy_command({
+            "schema_version": schema_version,
+            "url": url,
+            "consent_scope": consent_scope,
+            "official_route": official_route,
+        })
+    except commands.AgentCommandError as exc:
+        return _mcp_error(exc)
+    return commands.execute_policy(command).model_dump(mode="json")
 
 
 @mcp.tool()
 def create_evidence_manifest(
     url: Optional[str] = None,
     demo: Optional[str] = None,
+    schema_version: str = SCHEMA_VERSION,
 ) -> Dict[str, Any]:
     """Collect evidence for a target and return the deterministic SHA-256
     evidence manifest (artifacts, hashes, capabilities, limitations)."""
-    env = engine.run_verify(demo=demo, url=url, consent_scope="research_only",
-                            agent_id="mcp-client", org="mcp-local")
-    man = engine.get_manifest(env.evidence.manifest_id)
-    return man.model_dump(mode="json") if man else {"error": "manifest unavailable"}
+    result = _execute_verify({
+        "schema_version": schema_version,
+        "demo": demo,
+        "url": url,
+        "consent_scope": "research_only",
+        "agent_id": "mcp-client",
+    })
+    if "error" in result:
+        return result
+    manifest_id = result["evidence"]["manifest_id"]
+    manifest = engine.get_manifest(manifest_id)
+    if manifest is None:
+        return _mcp_error(commands.AgentCommandError(
+            "manifest_unavailable",
+            "The evidence manifest is unavailable.",
+            http_status=503,
+            retryable=True,
+        ))
+    return manifest.model_dump(mode="json")
 
 
 @mcp.tool()
@@ -125,7 +170,13 @@ def explain_decision(request_id: str) -> Dict[str, Any]:
     """Convert a prior decision envelope into a short user-facing explanation
     with the recommended next step."""
     out = engine.explain(request_id)
-    return out or {"error": f"decision {request_id} not found (stores are in-memory)"}
+    if out is None:
+        return _mcp_error(commands.AgentCommandError(
+            "decision_not_found",
+            "The decision was not found.",
+            http_status=404,
+        ))
+    return out
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import {
   type Finding,
   type PortfolioItem,
 } from "./demo-data";
+import { scanTrustLabel, type TrustLabel } from "../../components/cockpit/trust-state";
 
 type DashboardKpis = ReturnType<typeof kpis>;
 
@@ -32,6 +33,7 @@ export type ScanJobSummary = {
   started_at?: string | null;
   completed_at?: string | null;
   metadata?: Record<string, unknown>;
+  trust_state?: TrustLabel;
 };
 
 export type EvidenceItem = {
@@ -90,6 +92,9 @@ const DEMO_DATA: EnterpriseDashboardData = {
 };
 
 function normalizeWorkspace(payload: WorkspaceResponse): EnterpriseDashboardData {
+  const scanJobs = Array.isArray(payload.scan_jobs)
+    ? payload.scan_jobs.map((job) => ({ ...job, trust_state: scanTrustLabel(job.status) }))
+    : [];
   return {
     portfolio: Array.isArray(payload.portfolio) ? payload.portfolio : [],
     findings: Array.isArray(payload.findings) ? payload.findings : [],
@@ -102,7 +107,7 @@ function normalizeWorkspace(payload: WorkspaceResponse): EnterpriseDashboardData
       auditsThisMonth: 0,
     },
     watchlists: Array.isArray(payload.watchlists) ? payload.watchlists : [],
-    scanJobs: Array.isArray(payload.scan_jobs) ? payload.scan_jobs : [],
+    scanJobs,
     evidenceItems: Array.isArray(payload.evidence_items) ? payload.evidence_items : [],
     evidenceCount: Array.isArray(payload.evidence_items) ? payload.evidence_items.length : 0,
   };

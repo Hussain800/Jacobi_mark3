@@ -88,6 +88,22 @@ def test_limited_coverage_makes_no_discrimination_claim():
     assert s["baseline_price"] is not None
 
 
+def test_inferred_prices_do_not_expand_coverage_population():
+    s = _session([300.0, 360.0, 280.0])
+    inferred = dict(
+        agent_id="AGENT_99", label="inferred baseline", price=300.0,
+        status="success", response_time_ms=0, inferred=True,
+        variables={},
+    )
+    s["agents"].append(inferred)
+    s["all_prices"]["AGENT_99"] = 300.0
+    assert M.finalize_pricing_session(s, 0.0)
+    assert s["priced_agents"] == 3
+    assert s["coverage"] == "limited"
+    assert s["real_probes_executed"] == 3
+    assert s["skipped_inferred_agents"] == 1
+
+
 def test_coverage_serialized_through_api_result(client):
     import uuid
     sid = uuid.uuid4().hex[:12]

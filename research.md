@@ -93,10 +93,10 @@ Each section below ranks items by **impact** and **effort**:
 |---|---------|-----------|----------|
 | 1 | **TypeScript `any` usage** — `DEMO_AGENTS`, `DEMO`, `updateLast`, `msg.report` all typed as `as any` or `any`. | `dashboard.tsx:63-106, 495, 502-504, 629` | P2 |
 | 2 | **Unused imports** — `Zap`, `Download`, `Signal` imported in dashboard.tsx but some may be unused after refactors. | `dashboard.tsx:4-13` | P2 |
-| 3 | **Hardcoded API key in `.env`** — `254d841d-f14d-4f4b-a394-3da0b03af036` committed to git (checked into backend/.env which is NOT in .gitignore). | `.gitignore` + `backend/.env` | **SECURITY** |
-| 4 | **GitHub PAT in `.env`** — `sk-0EqmrKVAbVNz5WHjf0Tb944QiSAmuW2F2stP7YoqArLSBy2LfDagtyKkzGZRMaIe` in .env. | `backend/.env` | **SECURITY** |
+| 3 | **Hardcoded API key in `.env`** — a credential-shaped value was previously reported as committed; the value is intentionally omitted here. Revoke/rotate it if it was ever valid. | `.gitignore` + `backend/.env` | **SECURITY** |
+| 4 | **GitHub PAT in `.env`** — a credential-shaped value was previously reported in `.env`; the value is intentionally omitted here. Revoke/rotate it if it was ever valid. | `backend/.env` | **SECURITY** |
 | 5 | **No linting/formatting config** — no `.eslintrc`, `.prettierrc`, or `ruff.toml` found. Code style is inconsistent. | Project root | P3 |
-| 6 | **Next.js 14.2 is outdated** — build warns about it. v15+ has perf improvements. | `package.json` | P3 |
+| 6 | **Frontend version baseline** — the repository now declares Next.js 16.2.9 and React 19.2.7; keep this row as a version-review reminder rather than a current finding. | `frontend/package.json` | P3 |
 | 7 | **Vercel deployment for frontend only** — backend is not deployed. Needs separate hosting (Railway, Fly.io, or Vercel serverless functions). | `vercel.json` | P2 |
 | 8 | **No Dockerfile** — backend can't be containerized for easy deployment. | Project root | P3 |
 | 9 | **`@auth/core` + `next-auth` dual dependency** — both in package.json. `next-auth@beta` already depends on `@auth/core`. Possible version conflict. | `package.json` | P2 |

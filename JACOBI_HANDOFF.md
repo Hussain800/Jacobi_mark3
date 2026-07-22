@@ -135,16 +135,16 @@ Complete rewrite of `backend/report_export.py` PDF generation using ReportLab's 
 
 ### Render Environment Variables
 ```
-BRIGHTDATA_API_KEY=61982bfb-b47c-4d00-a281-f885a2cbdab8
+BRIGHTDATA_API_KEY=<set-in-secret-manager>
 BRIGHTDATA_UNLOCKER_ZONE=web_unlocker1
 BRIGHTDATA_CUSTOM_HEADERS_ENABLED=true
-SUPABASE_URL=https://dlxfhoquysrncxkelyxa.supabase.co
-SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_ANON_KEY=sb_publishable_Br_pt2cgWxok1ZLAMXMWiQ_Bb7KvAES
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PRO_PRICE_ID=price_1TbQtuEX9Slvr2kwpbhWvTlk
-STRIPE_WEBHOOK_SECRET=whsec_...
-GEMINI_API_KEY=AIzaSyCznrAWnfsQ4SX810j6fIIarEUmYnAkZKk
+SUPABASE_URL=<set-in-environment>
+SUPABASE_SERVICE_KEY=<set-in-secret-manager>
+SUPABASE_ANON_KEY=<set-in-environment>
+STRIPE_SECRET_KEY=<set-in-secret-manager>
+STRIPE_PRO_PRICE_ID=<set-in-environment>
+STRIPE_WEBHOOK_SECRET=<set-in-secret-manager>
+GEMINI_API_KEY=<set-in-secret-manager>
 ```
 
 ### `.env.local` (local dev only, gitignored)

@@ -39,6 +39,7 @@ from .schemas import (
     RouteLegality,
     RouteSummary,
     RouteType,
+    SCHEMA_VERSION,
     ScoreComponents,
 )
 
@@ -339,7 +340,7 @@ def _routes(url: str, pol: PolicyDecision, official_route: bool) -> RouteSummary
         candidates.append(RouteCandidate(
             route_type=RouteType.official_api, url=url,
             legality=RouteLegality.official, confidence=0.9,
-            notes="Caller flagged an official/authorized route.",
+            notes="Server-authorized official route.",
         ))
     candidates.append(RouteCandidate(
         route_type=RouteType.user_handoff, url=url if not url.startswith("fixture://") else "",
@@ -388,6 +389,10 @@ def run_verify(
         raise ValueError("either 'demo' or 'url' is required")
 
     scope = ConsentScope(consent_scope)
+    # The request flag is only a claim. The policy registry validates it
+    # against the server-owned official-route domain allowlist before it can
+    # affect purchase gating, evidence tier, or route recommendations.
+    official_route = policy_mod.is_authorized_official_route(_policy_target(url), official_route)
     claim = Money(**displayed_total) if displayed_total else None
     obligation = PriceObligation(
         agent_id=agent_id,
@@ -400,6 +405,11 @@ def run_verify(
     )
 
     pol = policy_mod.evaluate(_policy_target(url), scope, official_route)
+
+    # Resolve configured persistence before collection. If durable storage was
+    # requested but is unavailable, fail closed without fetching the target or
+    # creating an unpersisted decision.
+    repo = get_repo()
 
     # Safety: never collect in service of a blocked purchase.
     blocked_purchase = pol.decision == "block"
@@ -463,7 +473,6 @@ def run_verify(
         fixture_mode=fixture_mode,
     )
 
-    repo = get_repo()
     repo.save_decision(envelope, org)
     repo.save_manifest(manifest, org)
     return envelope
@@ -505,6 +514,7 @@ def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "engine_version": ENGINE_VERSION,
+        "schema_version": SCHEMA_VERSION,
         "providers": ["fixture", "local_http"],
         "fixtures_available": {k: v.exists() for k, v in FIXTURE_URLS.items()},
         "demos": sorted(DEMOS),

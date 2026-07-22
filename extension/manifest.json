@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JACOBI — Price Probe",
   "version": "0.3.0",
-  "description": "Right-click any page to probe for price discrimination. JACOBI deploys 24 agents across location, device, cookie, and network tiers.",
+  "description": "Experimental local-dev URL handoff for the JACOBI Audit probe. Right-click a page to open its URL in the configured JACOBI dashboard.",
   "permissions": [
     "contextMenus",
     "activeTab",

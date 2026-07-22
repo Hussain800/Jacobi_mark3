@@ -112,7 +112,7 @@ export default function EvidenceLockerPage() {
                 <div className="mono" style={{ color: "var(--text)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {item.seller?.name || item.seller?.domain || "Unknown seller"}
                 </div>
-                <a href={item.target_url} className="mono" style={{ display: "block", color: "var(--cobalt-bright)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "none" }}>
+                <a href={item.target_url} target="_blank" rel="noopener noreferrer" className="mono" style={{ display: "block", color: "var(--cobalt-bright)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "none" }}>
                   {item.target_url}
                 </a>
               </div>

@@ -9,7 +9,7 @@ const AGENT_COLS = "minmax(0,2.4fr) 90px 90px 90px 70px";
 const TABLE_MIN_WIDTH = 760;
 
 export default function EvidenceClient({ id }: { id: string }) {
-  const { data, loading } = useEnterpriseWorkspace();
+  const { data, loading, mode } = useEnterpriseWorkspace();
   const f = data.findings.find((finding) => finding.id === id);
 
   const card: React.CSSProperties = {
@@ -59,7 +59,7 @@ export default function EvidenceClient({ id }: { id: string }) {
           <StatusPill status={f.status} />
           <ConfidenceBadge confidence={f.confidence} />
           <span className="mono" style={{ fontSize: 11, color: "var(--text-2)", marginLeft: "auto" }}>
-            {f.id} | detected {fmtDate(f.detectedAt)}
+            {mode === "demo" ? "demo finding" : mode === "live" ? "live workspace finding" : "workspace unavailable"} | {f.id} | detected {fmtDate(f.detectedAt)}
           </span>
         </div>
         <h1 className="display sec-title" style={{ fontSize: 32 }}>{f.product}</h1>

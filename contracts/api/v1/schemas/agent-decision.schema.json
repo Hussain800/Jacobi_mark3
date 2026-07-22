@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jacobi.local/contracts/api/v1/agent-decision.schema.json",
+  "title": "Jacobi for Agents DecisionEnvelope contract minimum",
+  "type": "object",
+  "required": [
+    "request_id",
+    "schema_version",
+    "created_at",
+    "decision",
+    "reason_codes",
+    "user_explanation",
+    "agent_instruction",
+    "next_action",
+    "price_summary",
+    "route_summary",
+    "evidence",
+    "ttl_seconds",
+    "fixture_mode"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "proceed",
+        "proceed_with_caution",
+        "ask_user",
+        "handoff_to_user",
+        "use_official_route",
+        "block"
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "manifest_id",
+        "manifest_sha256",
+        "capability_tier",
+        "limitations"
+      ],
+      "properties": {
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "capability_tier": {
+          "type": "string",
+          "enum": [
+            "claim_only",
+            "local",
+            "managed_request",
+            "managed_browser",
+            "official_api"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fixture_mode": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,130 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "audit_result",
+  "fixture_id": "audit_insufficient_data_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/main.py:get_result + frontend/components/cockpit/types.ts:TopologyReport",
+    "notes": "Sanitized representative Audit result shape; not a live scan and not production evidence."
+  },
+  "uncertainty": {
+    "coverage": "limited",
+    "topology_class": "insufficient_data",
+    "claim_status": "insufficient_data",
+    "attribution": "not_supported",
+    "pei_gate_open": false,
+    "limitations": [
+      "Only one real comparable probe produced a price.",
+      "Limited coverage cannot support a discrimination claim."
+    ]
+  },
+  "response": {
+    "session_id": "demo_audit_insufficient_data",
+    "target_url": "https://demo-merchant.example/products/widget",
+    "target_name": "Demo Widget",
+    "timestamp": "2026-07-22T00:00:00Z",
+    "status": "completed",
+    "total_agents": 4,
+    "successful_agents": 1,
+    "failed_agents": 3,
+    "detected_agents": 0,
+    "elapsed_seconds": 9.4,
+    "control_stability": 0.0,
+    "baseline_price": 129.99,
+    "mean_price": 129.99,
+    "all_prices": {
+      "AGENT_00": 129.99,
+      "AGENT_01": null,
+      "AGENT_02": null,
+      "AGENT_03": null
+    },
+    "price_range": [
+      129.99,
+      129.99
+    ],
+    "max_price_spread": 0.0,
+    "max_price_spread_pct": 0.0,
+    "gradients": [],
+    "discrimination_index": 0.0,
+    "topology_class": "insufficient_data",
+    "discrimination_score": 0.0,
+    "summary": "INSUFFICIENT DATA. Only one comparable price was captured; no buyer-context pricing claim is supported.",
+    "max_discrimination_scenario": "",
+    "min_discrimination_scenario": "",
+    "native_currency": "USD",
+    "native_baseline_price": 129.99,
+    "normalized_currency": "USD",
+    "fx_rate_used": null,
+    "language_observations": [],
+    "configured_agents": 4,
+    "real_probes_executed": 1,
+    "skipped_inferred_agents": 0,
+    "evidence_count": 1,
+    "audit_depth": "smart24",
+    "tier": "free",
+    "coverage": "limited",
+    "priced_agents": 1,
+    "robust_baseline": 129.99,
+    "mad_normalized_spread": 0.0,
+    "gini_all": 0.0,
+    "sensitivity_matrix": {
+      "outputs": [
+        "price_usd"
+      ],
+      "note": "Limited coverage; sensitivity axes are intentionally withheld.",
+      "rows": [],
+      "jacobian_norm": 0.0,
+      "significant_count": 0
+    },
+    "pei": {
+      "score": 0.0,
+      "gated": false,
+      "basis": "PEI requires non-limited coverage and a significant controlled gradient.",
+      "dispersion_index": 0.0,
+      "interpretation": "Gated because coverage is limited."
+    },
+    "agents": [
+      {
+        "agent_id": "AGENT_00",
+        "label": "AGENT_00 BASELINE DEMO",
+        "status": "success",
+        "price": 129.99,
+        "response_time_ms": 820,
+        "bot_detected": false,
+        "detection_signal": null,
+        "error_message": null,
+        "variables": {
+          "location": "demo",
+          "device": "desktop",
+          "cookie": "fresh",
+          "referrer": "direct"
+        },
+        "network_tier": 0,
+        "proxy_type": "demo",
+        "native_price": 129.99,
+        "native_currency": "USD",
+        "normalized_price_usd": 129.99,
+        "inferred": false,
+        "evidence": {
+          "extraction_method": "generic_price_parser",
+          "price_raw_text": "$129.99"
+        }
+      },
+      {
+        "agent_id": "AGENT_01",
+        "label": "AGENT_01 DEMO BLOCKED",
+        "status": "failed",
+        "price": null,
+        "response_time_ms": null,
+        "bot_detected": false,
+        "detection_signal": null,
+        "error_message": "No comparable price returned.",
+        "variables": {},
+        "inferred": false,
+        "evidence": null
+      }
+    ],
+    "error": null
+  }
+}

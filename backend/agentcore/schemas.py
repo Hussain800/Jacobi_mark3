@@ -13,12 +13,12 @@ Canonical hashing contract (used by evidence.py and tests):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 SCHEMA_VERSION = "1.0.0"
 
@@ -307,3 +307,16 @@ class DecisionEnvelope(BaseModel):
     budget: BudgetInfo = Field(default_factory=BudgetInfo)
     ttl_seconds: int = 900  # evidence freshness window — re-verify after this
     fixture_mode: bool = False  # True when the verification ran against demo fixtures
+
+    @computed_field
+    @property
+    def expires_at(self) -> datetime:
+        """Exclusive freshness boundary derived from the server timestamp."""
+        return self.created_at + timedelta(seconds=self.ttl_seconds)
+
+    def is_fresh(self, at: Optional[datetime] = None) -> bool:
+        """Return whether the envelope remains inside its evidence TTL."""
+        instant = at or datetime.now(timezone.utc)
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=timezone.utc)
+        return instant < self.expires_at

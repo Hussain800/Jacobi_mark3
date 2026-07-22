@@ -21,6 +21,7 @@ interface Props {
   onPick: (url: string) => void;
   running: boolean;
   urlError?: string;
+  agentCount?: number;
 }
 
 export default function EmptyState({
@@ -30,6 +31,7 @@ export default function EmptyState({
   onPick,
   running,
   urlError,
+  agentCount = 24,
 }: Props) {
   const reducedMotion = useReducedMotion();
   const [focused, setFocused] = useState(false);
@@ -63,7 +65,7 @@ export default function EmptyState({
             className="font-serif text-[32px] sm:text-[44px] leading-[1.04] tracking-tight text-primary mb-10"
           >
             Paste a URL.{" "}
-            <span className="text-signal">Twenty-four synthetic buyers</span>{" "}
+            <span className="text-signal">{agentCount} synthetic buyers</span>{" "}
             go to work.
           </motion.h1>
 

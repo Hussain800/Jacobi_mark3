@@ -14,7 +14,7 @@
  *     2. The verdict strip — topology, hidden premium, plain-English sentence
  *     3. The math — baseline, mean, spread, % over baseline, index
  *     4. The recommendation — "switch to X to save $Y"
- *     5. The evidence table — all 24 agents sorted by price (worst → best)
+ *     5. The evidence table — all configured agents sorted by price (worst → best)
  *     6. The drivers — price impact by vector, each with a short explainer
  *     7. The actions — Download PDF report · Copy link · Export JSON · New probe
  *
@@ -31,109 +31,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "../../../lib/supabase/client";
 import { fetchPlan, type Plan } from "../../../lib/billing";
 import { JacobianMatrix } from "../../cockpit/JacobianMatrix";
-import type { SensitivityMatrix, PEI } from "../../cockpit/types";
+import type {
+  Agent as BackendAgent,
+  Gradient,
+  LanguageObservation,
+  SensitivityMatrix,
+  PEI,
+  TopologyReport,
+} from "../../cockpit/types";
+import {
+  acceptedLiveTrustLabel,
+  claimStatus,
+  normalizeAuditUrl,
+  reportTrust,
+  trustLabelText,
+  type TrustLabel,
+} from "../../cockpit/trust-state";
 
 /* ─── Types & data ──────────────────────────────────────────────────── */
 
-interface Gradient {
-  variable_name: string;
-  state_high: string;
-  state_low: string;
-  mean_price_high: number;
-  mean_price_low: number;
-  delta: number;
-  delta_pct: number;
-  pooled_std: number;
-  t_statistic: number;
-  significant: boolean;
-  n_high: number;
-  n_low: number;
-}
-
-interface BackendAgent {
-  agent_id: string;
-  label: string;
-  status: string;
-  price: number | null;
-  response_time_ms: number | null;
-  bot_detected: boolean;
-  detection_signal: string | null;
-  error_message: string | null;
-  variables: Record<string, string>;
-  network_tier?: number;
-  proxy_type?: string;
-  // Native (on-page) price fields. May be absent on demo / cached results.
-  native_price?: number | null;
-  native_currency?: string | null;
-  normalized_price_usd?: number | null;
-  inferred?: boolean;
-  // Browser-language vector (Phase 4). Optional → render N/A when absent.
-  browser_language?: string | null;
-  accept_language_header?: string | null;
-  language_label?: string | null;
-  language_pair_id?: string | null;
-  language_pair_role?: string | null;
-}
-
-interface TopologyReport {
-  session_id: string;
-  target_url: string;
-  target_name: string;
-  timestamp: string;
-  status: string;
-  total_agents: number;
-  successful_agents: number;
-  failed_agents: number;
-  detected_agents: number;
-  elapsed_seconds: number;
-  baseline_price: number | null;
-  mean_price: number | null;
-  all_prices: Record<string, number | null>;
-  price_range: [number, number] | null;
-  max_price_spread: number | null;
-  max_price_spread_pct: number | null;
-  gradients: Gradient[];
-  discrimination_index: number;
-  topology_class: string;
-  agents: BackendAgent[];
-  error: string | null;
-  // Native (on-page) currency for the headline; USD figures above are the
-  // normalized comparison basis. All optional → render N/A when absent.
-  native_currency?: string | null;
-  native_baseline_price?: number | null;
-  normalized_currency?: string | null;
-  fx_rate_used?: number | null;
-  // Math Engine v2 — robust baseline, Jacobian sensitivity matrix, gated PEI.
-  robust_baseline?: number | null;
-  mad_normalized_spread?: number | null;
-  gini_all?: number | null;
-  sensitivity_matrix?: SensitivityMatrix | null;
-  pei?: PEI | null;
-  // Controlled browser-language observations (metadata, not a driver).
-  language_observations?: LanguageObservation[];
-  // Phase 5A honest probe accounting + audit depth.
-  configured_agents?: number;
-  real_probes_executed?: number | null;
-  skipped_inferred_agents?: number | null;
-  evidence_count?: number | null;
-  audit_depth?: string | null;
-  tier?: string | null;
-  // Coverage: how much of the matrix returned a usable price.
-  coverage?: "strong" | "partial" | "limited" | null;
-  priced_agents?: number | null;
-}
-
-interface LanguageObservation {
-  pair_id: string;
-  controlled: boolean;
-  control_language_label?: string | null;
-  variant_language_label?: string | null;
-  control_price_usd?: number | null;
-  variant_price_usd?: number | null;
-  delta_usd?: number | null;
-  delta_pct?: number | null;
-  difference_detected?: boolean;
-}
 
 // Preset case studies shown as quick-start examples. They run the REAL
 // probe engine exactly like a user-pasted URL — there is no curated/canned
@@ -151,7 +67,7 @@ const CASES = [
 // pre-flight gate (extractors.travel_context) rejects dateless booking URLs
 // with needs_context before launching a single agent. Complete the query
 // here, at the one point every probe launch routes through (case studies,
-// the default target, pasted URLs, retries). All 24 agents fetch the SAME
+// the default target, pasted URLs, retries). All configured agents fetch the SAME
 // completed URL, so the price comparison stays valid, and the dates are
 // visible in the probe bar — nothing is added silently.
 function withTravelContext(raw: string): string {
@@ -273,7 +189,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   const apiBase = ""; // relative paths go through Vercel/Next.js proxy
 
   const [phase, setPhase] = useState<Phase>("idle");
+  const [trustLabel, setTrustLabel] = useState<TrustLabel>("live");
   const [input, setInput] = useState(initialUrl || "");
+  const [inputError, setInputError] = useState<string | null>(null);
   const [deckUrl, setDeckUrl] = useState("");
   const [deckPhaseLabel, setDeckPhaseLabel] = useState("deploying");
   const [publishToBoard, setPublishToBoard] = useState(false);
@@ -340,9 +258,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     if (tickRef.current)    clearInterval(tickRef.current);
   }, []);
 
-  const saveConv = useCallback((r: TopologyReport) => {
+  const saveConv = useCallback((r: TopologyReport, source: "demo" | "live") => {
     try {
       const existing = JSON.parse(localStorage.getItem("probe-conversations") || "[]");
+      const trust = reportTrust(r, source);
       existing.unshift({
         id: r.session_id, session_id: r.session_id,
         title: (r.target_name || r.target_url || "Probe").slice(0, 50),
@@ -350,6 +269,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         targetUrl: r.target_url, targetName: r.target_name,
         baselinePrice: r.baseline_price, savings: r.max_price_spread,
         topologyClass: r.topology_class,
+        source,
+        trust_state: trust.label,
+        trust_label: source === "demo" ? "demo" : "live",
       });
       localStorage.setItem("probe-conversations", JSON.stringify(existing.slice(0, 50)));
     } catch {}
@@ -384,17 +306,28 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   }, [apiBase]);
 
   const startProbe = useCallback((url: string, name: string) => {
-    url = withTravelContext(url);
+    const validated = normalizeAuditUrl(url);
+    if (!validated.ok) {
+      setInputError(validated.error);
+      setErrorMsg(validated.error);
+      setTrustLabel("error");
+      setPhase("error");
+      return;
+    }
+    const normalized = validated.value;
+    const completedUrl = withTravelContext(normalized);
     cancelledRef.current = false;
+    setInputError(null);
+    setTrustLabel("submitting");
     setPhase("deploying");
     setDeckPhaseLabel("deploying");
-    setDeckUrl(url);
+    setDeckUrl(completedUrl);
     setReturnedAgents([]);
     setActiveWave(0);
     setElapsed(0);
     setErrorMsg(null);
     setReport(null);
-    lastUrlRef.current = url;
+    lastUrlRef.current = completedUrl;
     lastNameRef.current = name;
     startTimeRef.current = performance.now();
 
@@ -406,7 +339,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     // Case studies run the REAL engine just like a pasted URL — genuine probe
     // behaviour, never canned data. If a probe can't complete, the honest
     // error / needs-context state is shown (no fabricated verdict).
-    runLive(url, name);
+    runLive(completedUrl, name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, publishToBoard, auditDepth]);
 
@@ -419,8 +352,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     setRejection(null);
     setErrorMsg(null);
     setReport(null);
+    setInputError(null);
     setReturnedAgents([]);
     setActiveWave(2);
+    setTrustLabel("demo");
     setPhase("deploying");
     setDeckPhaseLabel("analyzing");
     setDeckUrl("Demo · cached sample");
@@ -434,12 +369,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       setReturnedAgents(
         demo.agents.filter(a => a.status === "success" || a.status === "detected" || a.status === "failed")
       );
-      saveConv(demo);
+      saveConv(demo, "demo");
       setReport(demo);
       setDeckPhaseLabel("complete");
       setPhase("complete");
     } catch {
       setErrorMsg("Demo data is temporarily unavailable. Please try again.");
+      setTrustLabel("error");
       setPhase("error");
     }
   }, [apiBase, saveConv]);
@@ -489,6 +425,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           limit: d.limit,
           tier: d.tier,
         });
+        setTrustLabel("error");
         setPhase("idle");
         return;
       }
@@ -499,12 +436,21 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         try { payload = await r1.json(); } catch { /* ignore */ }
         stopTimers();
         setErrorMsg(payload.detail?.message || "That URL can't be probed.");
+        setTrustLabel("error");
         setPhase("error");
         return;
       }
       if (!r1.ok) throw new Error(`Server error: ${r1.status}`);
       const b1 = await r1.json();
       const sessionId: string = b1.session_id;
+      const acceptedLabel = acceptedLiveTrustLabel(b1.status);
+      setTrustLabel(acceptedLabel);
+      if (acceptedLabel === "error") {
+        stopTimers();
+        setErrorMsg("The backend accepted no runnable audit state. Please try again.");
+        setPhase("error");
+        return;
+      }
 
       let notFoundCount = 0;
       pollRef.current = setInterval(async () => {
@@ -527,6 +473,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           notFoundCount = 0;
           if (!r2.ok) throw new Error(`Poll error: ${r2.status}`);
           const data: TopologyReport = await r2.json();
+          setTrustLabel(reportTrust(data, "live").label);
           setReturnedAgents(data.agents.filter(a => a.status === "success" || a.status === "detected" || a.status === "failed"));
           const succ = data.successful_agents;
           setActiveWave(succ < 8 ? 0 : succ < 16 ? 1 : 2);
@@ -534,7 +481,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
           if (data.status === "completed" || data.status === "failed" || data.status === "needs_context" || data.status === "timeout") {
             stopTimers();
             if (data.status === "completed") {
-              saveConv(data);
+              saveConv(data, "live");
               setDeckPhaseLabel("analyzing");
               await handleAnalyze(data);
               setDeckPhaseLabel("complete");
@@ -570,6 +517,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
         } catch (e) {
           stopTimers();
           setErrorMsg(e instanceof Error ? e.message : "Poll error");
+          setTrustLabel("error");
           setPhase("error");
         }
       }, 1000);
@@ -577,10 +525,12 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       timeoutRef.current = setTimeout(() => {
         stopTimers();
         setErrorMsg("Probe timed out after 3 minutes");
+        setTrustLabel("error");
         setPhase("error");
       }, 180_000);
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Request failed");
+      setTrustLabel("error");
       setPhase("error");
       stopTimers();
     }
@@ -599,11 +549,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    let v = input.trim();
-    if (!v) v = "https://www.booking.com/hotel/in/the-leela-palace-bangalore.html";
-    if (!/^https?:\/\//i.test(v)) v = "https://" + v;
-    const label = CASES.find(c => c.url === v)?.name || v;
-    startProbe(v, label);
+    const validated = normalizeAuditUrl(input);
+    if (!validated.ok) {
+      setInputError(validated.error);
+      return;
+    }
+    setInputError(null);
+    const label = CASES.find(c => c.url === validated.value)?.name || validated.value;
+    startProbe(validated.value, label);
   }, [input, startProbe]);
 
   const backToIdle = useCallback(() => {
@@ -611,12 +564,14 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     setInput("");
     setReport(null);
     setReturnedAgents([]);
+    setTrustLabel("live");
+    setInputError(null);
   }, [cancel]);
 
   /* ─── Derived data for the readable verdict ────────────────────── */
 
   const allPrices = useMemo(
-    () => returnedAgents.filter(a => a.price != null && a.status === "success").map(a => a.price as number),
+    () => returnedAgents.filter(a => !a.inferred && a.price != null && a.status === "success").map(a => a.price as number),
     [returnedAgents],
   );
 
@@ -641,7 +596,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
   const verdict = useMemo(() => {
     if (!report) return null;
-    const cls = report.topology_class || "selective";
+    // Coverage and attribution gates override visual topology copy. A limited
+    // sample must never render as an aggressive/selective pricing claim.
+    const cls = report.coverage === "limited"
+      ? "insufficient_data"
+      : report.topology_class === "indeterminate"
+        ? "indeterminate"
+        : report.topology_class || "selective";
     const [color, label, blurb] = TOPO[cls] || TOPO.selective;
     const spread = Math.round(report.max_price_spread || 0);
     const pct = Math.round(report.max_price_spread_pct || 0);
@@ -658,7 +619,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     const skippedInferred = report.skipped_inferred_agents ?? null;
     const evidenceCount = report.evidence_count ?? null;
 
-    const successAgents = report.agents.filter(a => a.status === "success" && a.price != null);
+    const successAgents = report.agents.filter(a => !a.inferred && a.status === "success" && a.price != null);
     const sortedByPrice = successAgents.slice().sort((a, b) => (b.price! - a.price!));
     const top = sortedByPrice[0];
     const low = sortedByPrice[sortedByPrice.length - 1];
@@ -666,6 +627,15 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
     const dominant = report.gradients
       .filter(g => g.significant)
       .reduce<Gradient | null>((m, g) => (Math.abs(g.delta_pct) > Math.abs(m?.delta_pct ?? 0) ? g : m), null);
+
+    const claim = trustLabel === "demo"
+      ? {
+          label: "Demo sample only",
+          explanation: "This cached fixture illustrates the interface. It is not a live observation or a production claim.",
+          tone: "neutral" as const,
+          canAttribute: false,
+        }
+      : claimStatus({ coverage: report.coverage ?? null, topology_class: cls, pei: report.pei ?? null });
 
     return {
       color, label, blurb, spread, pct, index,
@@ -697,8 +667,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
       pei: report.pei ?? null,
       sensitivityMatrix: report.sensitivity_matrix ?? null,
       robustBaseline: report.robust_baseline ?? null,
+      claim,
     };
-  }, [report]);
+  }, [report, trustLabel]);
 
   const topVectors = useMemo(() => {
     if (!verdict) return [];
@@ -780,6 +751,8 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
   /* ─── Render ──────────────────────────────────────────────────────── */
 
   const showStage = phase !== "idle";
+  const requestedAgentCount = auditDepth === "pro50" && isPro && pro50BetaEnabled ? 50 : 24;
+  const displayAgentCount = report?.configured_agents ?? report?.total_agents ?? requestedAgentCount;
 
   return (
     <main className="probe-main">
@@ -790,22 +763,39 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             <span className="dot">●</span> JACOBI · probe cockpit
           </span>
           <h1 className="cockpit-h1 serif">
-            Paste a URL. <span className="cobalt-i">Twenty-four synthetic buyers</span> go to work.
+            Paste a URL. <span className="cobalt-i">Synthetic buyer audit</span>.
           </h1>
+
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              maxWidth: 720, margin: "0 auto 20px", padding: "14px 18px",
+              border: "1px solid var(--line-2)", borderRadius: "var(--r-sm)",
+              background: "var(--surface-2)", color: "var(--text-2)",
+              fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6,
+            }}
+          >
+            <strong style={{ color: "var(--text)" }}>Choose your starting point:</strong>{" "}
+            <span>View a deterministic demo for orientation, or run a live public audit. Live results may be queued, limited, indeterminate, or unavailable.</span>
+          </div>
 
           <form className="probe-instrument cockpit-bar" onSubmit={handleSubmit}>
             <div className="pi-row">
               <span className="pi-meta">
-                <span className="pi-glyph">⌖</span> 24 agents
+                <span className="pi-glyph">⌖</span> {displayAgentCount} agents
               </span>
               <input
                 className="pi-input"
                 type="text"
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => { setInput(e.target.value); if (inputError) setInputError(null); }}
                 placeholder="paste a flight, hotel or product URL"
                 spellCheck="false"
                 autoComplete="off"
+                aria-label="Public URL to audit"
+                aria-invalid={inputError ? "true" : "false"}
+                aria-describedby={inputError ? "cockpit-url-error" : undefined}
               />
               <button className="pi-submit" type="submit">
                 Run audit <span className="pi-arrow">&rarr;</span>
@@ -813,6 +803,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             </div>
             <span className="pi-rule" />
           </form>
+          {inputError && (
+            <p id="cockpit-url-error" role="alert" style={{ maxWidth: 720, margin: "10px auto 0", color: "var(--over)", fontFamily: "var(--mono)", fontSize: 12 }}>
+              {inputError}
+            </p>
+          )}
 
           <div style={{
             marginTop: 18, display: "flex", justifyContent: "center",
@@ -981,9 +976,9 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               <div className="deck-target-url mono">{deckUrl}</div>
             </div>
             <div className="deck-state">
-              <span className="chip">
+              <span className="chip" role="status" aria-live="polite" aria-label={`${trustLabelText(trustLabel)} status`}>
                 <span className="pulse" />
-                <span>{phase === "error" ? "halted" : deckPhaseLabel}</span>
+                <span>{trustLabelText(trustLabel)}</span>
               </span>
               {phase === "deploying" && (
                 <button
@@ -1058,10 +1053,10 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
             </svg>
 
             <div className="radial-readout mono">
-              <div className="rr-label label-mono">live deployment</div>
+              <div className="rr-label label-mono">{trustLabel === "demo" ? "deterministic demo" : "live public audit"}</div>
               <div className="rr-count">
                 <span>{returnedAgents.length}</span>
-                <span className="rr-of">/24 agents</span>
+                <span className="rr-of">/ {displayAgentCount} agents</span>
               </div>
               <div className="rr-time">
                 <span>{elapsed.toFixed(1)}</span>s elapsed
@@ -1161,13 +1156,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
 
               {/* Tab switcher */}
               <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--line)" }}>
-                <button onClick={() => setActiveTab("verdict")} style={{
+                <button type="button" aria-pressed={activeTab === "verdict"} onClick={() => setActiveTab("verdict")} style={{
                   padding: "12px 24px", background: "none", border: "none",
                   borderBottom: activeTab === "verdict" ? "2px solid var(--cobalt-bright)" : "2px solid transparent",
                   color: activeTab === "verdict" ? "var(--cobalt-bright)" : "var(--muted)",
                   fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: activeTab === "verdict" ? 600 : 400, cursor: "pointer"
                 }}>Verdict</button>
-                <button onClick={() => setActiveTab("evidence")} style={{
+                <button type="button" aria-pressed={activeTab === "evidence"} onClick={() => setActiveTab("evidence")} style={{
                   padding: "12px 24px", background: "none", border: "none",
                   borderBottom: activeTab === "evidence" ? "2px solid var(--cobalt-bright)" : "2px solid transparent",
                   color: activeTab === "evidence" ? "var(--cobalt-bright)" : "var(--muted)",
@@ -1220,6 +1215,21 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     treat the verdict as moderate confidence.
                   </div>
                 )}
+                <div
+                  role="status"
+                  aria-live="polite"
+                  style={{
+                    marginBottom: 14, padding: "12px 14px", borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--cobalt-line)", background: "var(--surface-2)",
+                    color: "var(--text-2)", lineHeight: 1.55,
+                  }}
+                >
+                  <div className="label-mono" style={{ color: "var(--cobalt-bright)", marginBottom: 5 }}>Claim status · {verdict.claim.label}</div>
+                  <div style={{ fontFamily: "var(--sans)", fontSize: 13 }}>{verdict.claim.explanation}</div>
+                  <div className="label-mono" style={{ marginTop: 7, color: "var(--text-3)" }}>
+                    Source: {trustLabel === "demo" ? "deterministic demo data" : "live public audit"} · State: {trustLabelText(trustLabel)}
+                  </div>
+                </div>
                 {/* Curated-sample notice: a case study whose live probe didn't
                     complete falls back to a deterministic sample. Be explicit. */}
                 {verdict.curatedFallback && (
@@ -1228,7 +1238,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     border: "1px solid var(--line-2)", background: "var(--surface-2)",
                     color: "var(--text-3)",
                   }}>
-                    Curated sample — the live probe didn't complete, showing a saved example.
+                    Deterministic demo — this is cached sample data; no live scan was run.
                   </div>
                 )}
                 {/* Honest audit-depth line — reflects the run the backend
@@ -1268,7 +1278,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                     <span className="good">${verdict.low.price}</span> for the identical listing.{" "}
                     The gap is{" "}
                     <strong style={{ color: "var(--text)" }}>${verdict.spread}</strong>
-                    {verdict.dominantName && (
+                    {verdict.claim.canAttribute && verdict.dominantName && (
                       <>
                         {" "}— and the dominant driver in the data was{" "}
                         <strong style={{ color: "var(--text)" }}>{verdict.dominantName}</strong>.
@@ -1302,7 +1312,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   <Stat label="Range" value={verdict.range ? `$${verdict.range[0]} – $${verdict.range[1]}` : "—"} />
                   <Stat label="Spread" value={`$${verdict.spread}`} accent="over" />
                   <Stat label="% over baseline" value={`${verdict.pct}%`} accent="over" />
-                  <Stat label="Discrimination index" value={`${verdict.index}/100`} />
+                  <Stat label="Observed variation index" value={`${verdict.index}/100`} />
                   {verdict.pei && (
                     <Stat label="Exploitation index (PEI)" value={`${Math.round(verdict.pei.score)}/100`} />
                   )}
@@ -1316,21 +1326,21 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   </div>
                 </div>
                 <p className="verdict-text" style={{ marginTop: 18, color: "var(--text)" }}>
-                  The <strong style={{ color: "var(--text)" }}>discrimination index</strong> rolls
-                  the spread and how many vectors contributed into a single 0–100 score. Above 60
-                  means at least one identity signal materially moved the price; above 80 means
-                  several signals stacked.
+                  The <strong style={{ color: "var(--text)" }}>variation index</strong> summarizes
+                  observed spread and contributing vectors. It is not a standalone discrimination
+                  finding; use the claim status, coverage, significance, and raw evidence together.
                 </p>
               </ResultSection>
 
               {/* 3. Jacobian sensitivity matrix + PEI, then the driver bars. */}
-              <ResultSection eyebrow="03 · jacobian sensitivity matrix">
+              <ResultSection eyebrow={verdict.claim.canAttribute ? "03 · jacobian sensitivity matrix" : "03 · tested axes and limitations"}>
                 {verdict.sensitivityMatrix && verdict.sensitivityMatrix.rows.length > 0 && (
-                  <JacobianMatrix matrix={verdict.sensitivityMatrix} pei={verdict.pei} />
+                  <JacobianMatrix matrix={verdict.sensitivityMatrix} pei={verdict.pei} gradients={verdict.gradients} />
                 )}
                 <p className="verdict-text" style={{ marginBottom: 24, marginTop: 28, color: "var(--text)" }}>
-                  Four signals were tested. Each bar shows how much that one variable
-                  moved the price on its own, holding the others as steady as the sample allowed.
+                  Four signals were tested. Each bar shows the observed movement for one variable,
+                  holding the others as steady as the sample allowed. Only rows marked significant
+                  clear the attribution gate; the bars alone are not causal findings.
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
                   {topVectors.map(v => (
@@ -1373,10 +1383,11 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
               </ResultSection>
 
               {/* 4. Per-agent table */}
-              <ResultSection eyebrow="04 · all 24 agents">
+              <ResultSection eyebrow={`04 · all ${displayAgentCount} agents`}>
                 <p className="verdict-text" style={{ marginBottom: 22, color: "var(--text)" }}>
-                  Every identity we deployed, sorted by price (most expensive first). Agents that
-                  saw the highest prices are marked red; the cheapest, green.
+                  Every identity in the returned matrix is shown, including any profiles skipped
+                  by the exact-uniform gate. Skipped profiles remain labeled as inferred; observed
+                  prices are sorted with the highest marked red and the cheapest green.
                 </p>
                 <div style={{
                   border: "1px solid var(--line)",
@@ -1430,13 +1441,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                         <span style={{ color: "var(--text-2)" }}>{net}</span>
                         <span style={{ color: "var(--text-2)" }}>{a.browser_language || "—"}</span>
                         <span style={{
-                          color: a.status === "success" ? "var(--good)" : "var(--over)",
+                          color: a.inferred ? "var(--gold)" : a.status === "success" ? "var(--good)" : "var(--over)",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.08em",
                           fontSize: 11,
                         }}>
-                          {a.status}
+                          {a.inferred ? "inferred" : a.status}
                         </span>
                         <span style={{ color: priceColor, textAlign: "right", fontWeight: 600, lineHeight: 1.3 }}>
                           {a.native_currency && a.native_price != null ? (
@@ -1493,10 +1504,7 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                       const mp = srt[srt.length - 1] || 0;
                       const lp = srt[0] || 0;
                       const sp = mp - lp;
-                      const succ = report.successful_agents || 0;
-                      const tot = report.total_agents || 24;
-                      const conf = tot > 0 ? Math.round((succ / tot) * 100) : 0;
-                      const sigG = (report.gradients || []).filter((g: any) => g.significant).sort((a: any, b: any) => Math.abs(b.delta) - Math.abs(a.delta));
+                      const coverage = report.coverage || "not reported";
                       const sev = (report as any).discrimination_score || 0;
                       return (
                         <>
@@ -1513,13 +1521,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                             <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>${sp.toLocaleString()}</div>
                           </div>
                           <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
-                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Confidence</div>
-                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>{conf}%</div>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Coverage</div>
+                            <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>{coverage}</div>
                           </div>
                           <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
-                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Driver</div>
+                            <div className="label-mono" style={{ fontSize: 10, marginBottom: 6 }}>Claim status</div>
                             <div className="tnum" style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--cobalt-bright)", fontWeight: 600 }}>
-                              {sigG.length > 0 ? sigG[0].variable_name.replace(/_/g, " ") : "None"}
+                              {verdict.claim.label}
                             </div>
                           </div>
                           <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 8, padding: 16 }}>
@@ -1571,12 +1579,13 @@ export default function CockpitProbe({ initialUrl }: { initialUrl?: string }) {
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 16, textAlign: "center" }}>
                     {(() => {
-                      const realProbes = returnedAgents.filter((a: any) => a.evidence?.extraction_method !== "none" && a.evidence != null).length;
-                      const filled = returnedAgents.length - realProbes;
-                      if (filled > 0) {
-                        return <>{realProbes} real probes · exact-uniform gate passed · {filled} agents skipped</>;
+                      const realProbes = report.real_probes_executed ?? returnedAgents.filter((a) => (a.response_time_ms || 0) > 0 && !a.inferred).length;
+                      const skipped = report.skipped_inferred_agents ?? returnedAgents.filter((a) => a.inferred).length;
+                      const evidence = report.evidence_count ?? returnedAgents.filter((a) => !a.inferred && a.evidence?.extraction_method && a.evidence.extraction_method !== "none").length;
+                      if (skipped > 0) {
+                        return <>{realProbes} real probes · exact-uniform gate passed · {skipped} agents skipped</>;
                       }
-                      return <>{realProbes} of {returnedAgents.length} agents captured evidence</>;
+                      return <>{evidence} of {displayAgentCount} agents captured evidence</>;
                     })()}
                   </div>
                 </div>

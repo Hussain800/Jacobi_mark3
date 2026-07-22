@@ -2,8 +2,14 @@
 
 Date: 2026-06-24  
 Repository: `https://github.com/Hussain800/Jacobi_mark3`  
-Roadmap status: Phases 1-6 implemented at application level
-Current product level: application-ready for paid pilot after production environment verification
+Roadmap status: Phases 1-6 have implementation coverage in this repository
+Current product level: **design-partner/pilot candidate; not externally launched**
+
+> **Readiness convention.** “Application-complete” means the repository has
+> code and local tests for the capability. “Pilot-ready” additionally requires
+> production environment, RLS, worker, provider, observability, and smoke-test
+> verification. “Public production” is a separate later gate. This document
+> uses those terms consistently; implementation coverage is not launch proof.
 
 ## Executive Summary
 
@@ -19,7 +25,11 @@ The original remaining work was organized into four production-readiness phases:
 - **Phase 5:** Security, Roles, Rate Limits, Cost Controls
 - **Phase 6:** Production Supabase, Ops, Pilot GTM
 
-Those phases have now been implemented in the application codebase. The remaining work is external launch execution: production Supabase migration/RLS verification, Vercel/BrightData/Sentry environment configuration, and one controlled pilot smoke test.
+Those phases have implementation coverage in the application codebase. The
+remaining work for a pilot-ready verdict is external launch execution:
+production Supabase migration/RLS verification, a durable worker deployment,
+Vercel/BrightData/Sentry environment configuration, and one controlled pilot
+smoke test.
 
 ## Implementation Status Update
 
@@ -386,9 +396,9 @@ The team can confidently onboard pilot customers, monitor scan health and cost, 
 
 Production Supabase rollout:
 
-- Apply all enterprise migrations in production:
-  - `202606240001_enterprise_price_integrity.sql`
-  - `202606240002_live_scan_worker.sql`
+- Apply the ordered migration list in
+  `docs/PRODUCTION_READINESS_CHECKLIST.md`, including the latest member-insert
+  RLS hardening migration `202607220001_harden_member_insert_policy.sql`.
 - Verify migration success.
 - Verify indexes exist.
 - Verify triggers and RLS policies exist.

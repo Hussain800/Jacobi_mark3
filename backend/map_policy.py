@@ -35,6 +35,11 @@ def confidence_from_coverage(coverage_pct: Optional[float]) -> str:
     return "insufficient"
 
 
+def coverage_allows_map_finding(coverage_pct: Optional[float]) -> bool:
+    """Whether the available MAP observation coverage clears the finding gate."""
+    return coverage_pct is None or coverage_pct >= MIN_COVERAGE_FOR_FINDING
+
+
 def severity_from_map_gap(gap_pct: float) -> str:
     """Bucket a below-MAP percentage into the dashboard severity scale."""
     if gap_pct >= 15:
@@ -79,7 +84,7 @@ def evaluate_map_observation(
             "reason": "missing_observed_price",
             "confidence": "insufficient",
         }
-    if coverage is not None and coverage < MIN_COVERAGE_FOR_FINDING:
+    if not coverage_allows_map_finding(coverage):
         return {
             "is_violation": False,
             "reason": "coverage_below_gate",

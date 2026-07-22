@@ -1,0 +1,107 @@
+{
+  "contract_version": "2026-07-22.g012",
+  "family": "agent_decision",
+  "fixture_id": "agent_decision_blocked_route_demo_v1",
+  "mode": "demo_fixture",
+  "source": {
+    "kind": "checked_in_fixture",
+    "code_reference": "backend/agentcore/engine.py:run_verify(demo='blocked_route') + backend/agentcore/schemas.py:DecisionEnvelope",
+    "notes": "Sanitized blocked purchase-authorized route example. No collection attempt is allowed."
+  },
+  "uncertainty": {
+    "capability_tier": "claim_only",
+    "fixture_mode": false,
+    "ttl_seconds": 900,
+    "limitations": [
+      "No collection performed: requested action blocked by platform policy.",
+      "Evidence tier is claim-only (agent-provided context, not observed)."
+    ]
+  },
+  "response": {
+    "request_id": "req_demo_blocked_route",
+    "schema_version": "1.0.0",
+    "created_at": "2026-07-22T00:00:00Z",
+    "expires_at": "2026-07-22T00:15:00Z",
+    "obligation_id": "obl_demo_blocked_route",
+    "decision": "block",
+    "provenance_score": 40.2,
+    "confidence": "low",
+    "score_components": {
+      "source_legitimacy": 50,
+      "total_price_integrity": 60,
+      "price_stability": 60,
+      "inventory_freshness": 50,
+      "policy_safety": 0,
+      "evidence_quality": 15,
+      "user_control": 40
+    },
+    "reason_codes": [
+      "PLATFORM_AUTOMATION_RESTRICTED",
+      "MANIFEST_INCOMPLETE"
+    ],
+    "user_explanation": "booking.com restricts automated booking or purchasing under its terms. Jacobi blocked the automated purchase attempt before any action was taken.",
+    "agent_instruction": "This platform restricts automated purchasing. Do not automate this purchase; stop and inform the user.",
+    "next_action": "Hand the official page to the user to complete the booking manually.",
+    "price_summary": {
+      "observed_total": null,
+      "displayed_total": {
+        "amount": 1990,
+        "currency": "AED",
+        "label": null
+      },
+      "delta_abs": null,
+      "delta_pct": null,
+      "mandatory_fees_detected": [],
+      "currency_notes": [],
+      "price_trace": [
+        {
+          "stage": "agent_claim",
+          "label": "Agent-provided price",
+          "amount": 1990,
+          "currency": "AED"
+        }
+      ]
+    },
+    "route_summary": {
+      "source_route": "https://www.booking.com/hotel/ae/demo-example.html",
+      "preferred_route": "user_handoff",
+      "route_legality": "blocked",
+      "candidates": [
+        {
+          "route_type": "user_handoff",
+          "url": "https://www.booking.com/hotel/ae/demo-example.html",
+          "merchant": null,
+          "legality": "user_handoff",
+          "confidence": 0.95,
+          "notes": "User completes checkout manually."
+        }
+      ]
+    },
+    "policy": {
+      "domain": "booking.com",
+      "requested_scope": "purchase_authorized",
+      "action_mode": "evidence_only",
+      "decision": "block",
+      "reason_code": "PLATFORM_AUTOMATION_RESTRICTED",
+      "reason": "booking.com restricts automated purchasing; use the official route or hand off to the user.",
+      "official_route": false,
+      "source": "jacobi-policy-registry",
+      "reviewed_at": null
+    },
+    "evidence": {
+      "manifest_id": "man_demo_blocked_route",
+      "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "capability_tier": "claim_only",
+      "limitations": [
+        "No collection performed: requested action blocked by platform policy.",
+        "Evidence tier is claim-only (agent-provided context, not observed)."
+      ]
+    },
+    "budget": {
+      "estimated_cost_usd": 0,
+      "budget_status": "ok"
+    },
+    "ttl_seconds": 900,
+    "fixture_mode": false
+  }
+}

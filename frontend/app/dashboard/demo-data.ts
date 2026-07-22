@@ -318,7 +318,7 @@ export function kpis() {
     high,
     monitoredUrls: PORTFOLIO.length,
     highConfidencePct: Math.round((highConf / FINDINGS.length) * 100),
-    auditsThisMonth: 318,
+    auditsThisMonth: PORTFOLIO.length,
   };
 }
 

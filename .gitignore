@@ -1,6 +1,8 @@
 node_modules/
 .next/
 out/
+.venv/
+.pytest_cache/
 __pycache__/
 *.pyc
 .env
@@ -32,6 +34,8 @@ Jacobi_demo_video/_render/JACOBI_film_1080p30.mp4
 
 # Opencode + tool internal state
 .omo/
+.omx/
+.jacobi-sprint/
 
 # Jacobi for Agents evidence artifacts (raw fetched HTML, regenerable)
 backend/agentcore/_artifacts/

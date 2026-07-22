@@ -33,10 +33,11 @@ from report_export import router as export_router
 from savings_verdict import compute_savings_verdict
 from supabase_client import save_probe, update_probe
 from auth_user import get_optional_user
-from profile_store import can_run_probe, increment_probe_count
+from profile_store import QuotaUnavailableError, can_run_probe, increment_probe_count
 from fastapi import Depends
 from scheduler import ScheduleRequest
 from url_guard import validate_public_url, UnsafeUrlError
+from probe_accounting import apply_probe_accounting
 from enterprise_access import EnterprisePermissionError
 from enterprise_store import (
     EnterpriseAccessError,
@@ -47,6 +48,7 @@ from enterprise_store import (
     create_organization_invite as enterprise_create_organization_invite,
     create_share_token as enterprise_create_share_token,
     create_watchlist as enterprise_create_watchlist,
+    fail_claimed_scan_job as enterprise_fail_claimed_scan_job,
     finish_scan_job as enterprise_finish_scan_job,
     get_evidence_item as enterprise_get_evidence_item,
     get_finding_packet as enterprise_get_finding_packet,
@@ -65,6 +67,12 @@ from enterprise_store import (
 )
 from enterprise_reports import generate_map_pdf, packet_json_bytes, redact_packet, external_share_token_view
 from ops_readiness import build_enterprise_health
+from execution_service import (
+    DispatchTarget,
+    ExecutionService,
+    LifecycleEvent,
+    TargetExecutionResult,
+)
 if os.getenv("MATH_ENGINE_V2", "1") == "0":
     # Ops kill-switch: skip the math layer entirely (numpy never imports) so a
     # resource-constrained instance can be isolated WITHOUT a code deploy — set
@@ -84,6 +92,24 @@ else:
 
         def apply_math_engine_v2(session):  # type: ignore[misc]
             return None
+
+
+EXECUTION_SERVICE = ExecutionService(
+    launch_scan_job=enterprise_launch_scan_job,
+    claim_scan_job=enterprise_claim_scan_job,
+    claim_next_scan_job=enterprise_claim_next_scan_job,
+    get_scan_job_work=enterprise_get_scan_job_work,
+    record_live_probe_result=enterprise_record_live_probe_result,
+    release_scan_job=enterprise_release_scan_job,
+    finish_scan_job=enterprise_finish_scan_job,
+    fail_claimed_scan_job=enterprise_fail_claimed_scan_job,
+)
+
+
+def _supervised_background_task(coro, *, task_label: str):
+    """Compatibility adapter for process-local probe dispatch."""
+    return EXECUTION_SERVICE.supervise(coro, task_label=task_label)
+
 
 # ── Pro 50 launch gate ──────────────────────────────────────────────────────
 # JACOBI is opening a Smart 24 waitlist first; the 50-agent "Pro 50" matrix stays
@@ -1399,7 +1425,7 @@ def compute_language_observations(session: dict) -> List[dict]:
     for a in session.get("agents", []):
         pid = a.get("language_pair_id")
         role = a.get("language_pair_role")
-        if pid and role and a.get("price") is not None:
+        if pid and role and a.get("price") is not None and not a.get("inferred"):
             by_pair[pid][role] = a
 
     observations: List[dict] = []
@@ -1443,7 +1469,7 @@ def compute_gradients(session: dict) -> List[dict]:
     if not baseline: return []
     groups: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
     for a in agents:
-        if a.get("price") is None: continue
+        if a.get("price") is None or a.get("inferred"): continue
         v = a.get("delta_variable"); d = a.get("delta_direction")
         if v and d: groups[v][d].append(a["price"])
     results = []
@@ -1520,7 +1546,13 @@ def compute_severity_score(session: dict) -> float:
 
 def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     """Fill every derived pricing field for a session with valid prices."""
-    valid = [p for p in session.get("all_prices", {}).values() if p is not None]
+    inferred_ids = {
+        a.get("agent_id") for a in session.get("agents", []) if a.get("inferred")
+    }
+    valid = [
+        price for agent_id, price in session.get("all_prices", {}).items()
+        if price is not None and agent_id not in inferred_ids
+    ]
     if not valid:
         return False
 
@@ -1541,7 +1573,7 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     # (e.g. "AED 11,600.00"). The USD figures above remain the comparison basis.
     _native_codes = [
         a.get("native_currency") for a in session.get("agents", [])
-        if a.get("native_currency") and a.get("native_price") is not None
+        if not a.get("inferred") and a.get("native_currency") and a.get("native_price") is not None
     ]
     if _native_codes:
         dominant = Counter(_native_codes).most_common(1)[0][0]
@@ -1550,7 +1582,7 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
         # baseline; else convert the USD baseline back via the known fx rate.
         native_baseline = None
         for a in session.get("agents", []):
-            if (a.get("native_currency") == dominant
+            if (not a.get("inferred") and a.get("native_currency") == dominant
                     and a.get("normalized_price_usd") is not None
                     and abs((a["normalized_price_usd"] or 0) - bp) < 0.01
                     and a.get("native_price") is not None):
@@ -1571,7 +1603,7 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     controls = [
         a["price"]
         for a in session.get("agents", [])
-        if a.get("is_control") and a.get("price") is not None
+        if a.get("is_control") and not a.get("inferred") and a.get("price") is not None
     ]
     if len(controls) >= 2 and statistics.mean(controls):
         cv = statistics.stdev(controls) / statistics.mean(controls)
@@ -1665,7 +1697,10 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
             f"DI: ${di:.2f}. Significant: {len(sig_vars)} vars. {sig_details}."
         )
 
-    priced_agents = [a for a in session.get("agents", []) if a.get("price") is not None]
+    priced_agents = [
+        a for a in session.get("agents", [])
+        if a.get("price") is not None and not a.get("inferred")
+    ]
     max_a = max(priced_agents, key=lambda x: x["price"], default=None)
     min_a = min(priced_agents, key=lambda x: x["price"], default=None)
     session["max_discrimination_scenario"] = (
@@ -1677,15 +1712,10 @@ def finalize_pricing_session(session: dict, overall_start: float) -> bool:
     # Honest probe accounting (Phase 5A): how many agents were REALLY probed vs
     # filled by the exact-uniform gate. response_time_ms > 0 marks a real probe;
     # inferred=True marks a gate-skipped agent. Never conflate the two.
-    agents_all = session.get("agents", [])
-    real = sum(1 for a in agents_all if (a.get("response_time_ms") or 0) > 0)
-    skipped = sum(1 for a in agents_all if a.get("inferred"))
-    ev_count = sum(1 for a in agents_all
-                   if isinstance(a.get("evidence"), dict)
-                   and a["evidence"].get("extraction_method") not in (None, "none", ""))
-    session["real_probes_executed"] = real
-    session["skipped_inferred_agents"] = skipped
-    session["evidence_count"] = ev_count
+    # Uses the centralized helper so the rule is identical across the finalize
+    # path, the pre-flight path, and the enterprise scan worker.
+    apply_probe_accounting(session)
+
 
     session["status"] = "completed"
     session["error"] = None
@@ -1882,10 +1912,9 @@ async def _run_probe_engine(session: dict, url: str,
             session["context_message"] = _msg
             session["status"] = "needs_context"
             session["error"] = _msg
-            # Honest accounting: no probes were launched.
-            session["real_probes_executed"] = 0
-            session["skipped_inferred_agents"] = 0
-            session["evidence_count"] = 0
+            # Honest accounting: no probes were launched. Keep this path on
+            # the same source of truth as normal finalize/error paths.
+            apply_probe_accounting(session)
             session["elapsed_seconds"] = round(time.time() - overall_start, 2)
             return session
     except Exception as _e:
@@ -1902,6 +1931,12 @@ async def _run_probe_engine(session: dict, url: str,
             return
         session["agents"].append(r)
         if r.get("price") is not None:
+            # Inferred agents display the copied baseline for transparency but
+            # did not perform a network request. Keep them out of the pricing
+            # population so coverage, gradients, PEI, and quota accounting
+            # cannot treat copied values as observations.
+            if r.get("inferred"):
+                return
             session["all_prices"][r["agent_id"]] = r["price"]
             session["successful_agents"] += 1
         elif r.get("status") == "no_context":
@@ -2059,14 +2094,10 @@ async def _run_probe_engine(session: dict, url: str,
                 _ingest_agent(r)
 
         # Honest probe accounting on EVERY exit path (not only the success path).
+        # Uses the centralized helper so the rule is identical across all paths.
         def _set_accounting():
-            al = session.get("agents", [])
-            session["real_probes_executed"] = sum(
-                1 for a in al if (a.get("response_time_ms") or 0) > 0)
-            session["skipped_inferred_agents"] = sum(1 for a in al if a.get("inferred"))
-            session["evidence_count"] = sum(
-                1 for a in al if isinstance(a.get("evidence"), dict)
-                and a["evidence"].get("extraction_method") not in (None, "none", ""))
+            apply_probe_accounting(session)
+
 
         all_prices = session.get("all_prices", {})
         valid = [p for p in all_prices.values() if p is not None]
@@ -2228,8 +2259,14 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     # Vercel preview deploys (jacobi-mark3-<hash>.vercel.app) + any localhost port.
     allow_origin_regex=r"^https://[a-z0-9-]+\.vercel\.app$|^http://localhost:\d+$",
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Authorization",
+        "Content-Type",
+        "X-Api-Key",
+        "X-Jacobi-Worker-Secret",
+    ],
 )
 
 app.include_router(export_router)
@@ -2359,11 +2396,24 @@ async def launch_probe(
     # Quota gate.
     try:
         allowed, quota = await can_run_probe(user["id"])
+    except QuotaUnavailableError as quota_err:
+        print(f"[PROBE] quota check unavailable; refusing live probe: {quota_err!r}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "quota_unavailable",
+                "message": "Live probe quota could not be verified. Please try again later.",
+            },
+        )
     except Exception as quota_err:
-        # Fail open ONLY if the quota subsystem itself errors — don't block
-        # paying users because Supabase blipped. Logged for ops.
-        print(f"[PROBE] quota check raised, failing open: {quota_err!r}")
-        allowed, quota = True, {"tier": "free", "used": 0, "limit": None}
+        print(f"[PROBE] quota check failed; refusing live probe: {quota_err!r}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "quota_unavailable",
+                "message": "Live probe quota could not be verified. Please try again later.",
+            },
+        )
     if not allowed:
         raise HTTPException(
             status_code=402,
@@ -2423,13 +2473,16 @@ async def launch_probe(
     except Exception as persist_err:
         print(f"[PROBE] early persist failed (continuing): {persist_err!r}")
 
-    asyncio.create_task(_complete_probe_in_background(
-        session=session,
-        url=input.target_url,
-        user_id=user["id"],
-        publish_to_board=bool(input.publish_to_board),
-        engine_tier=engine_tier,
-    ))
+    _supervised_background_task(
+        _complete_probe_in_background(
+            session=session,
+            url=input.target_url,
+            user_id=user["id"],
+            publish_to_board=bool(input.publish_to_board),
+            engine_tier=engine_tier,
+        ),
+        task_label=f'probe:{sid}',
+    )
     return {"session_id": sid, "status": "running", "audit_depth": session["audit_depth"]}
 
 
@@ -2447,33 +2500,40 @@ async def _complete_probe_in_background(
     doesn't poison the in-memory session — the user can still poll
     /api/result and see whatever the engine produced.
     """
-    try:
+    async def _run_with_capacity_limit() -> None:
         # Gate concurrent scans so simultaneous users queue instead of starving
         # each other on the single worker (see _SCAN_SEMAPHORE). The hard
         # watchdog ensures a hung provider can't leave a probe 'running' forever.
         async with _SCAN_SEMAPHORE:
-            await asyncio.wait_for(
-                _run_probe_engine(session, url,
-                                  agent_configs=get_agent_configs_for_tier(engine_tier)),
-                timeout=PROBE_HARD_TIMEOUT_S,
+            await _run_probe_engine(
+                session,
+                url,
+                agent_configs=get_agent_configs_for_tier(engine_tier),
             )
-    except asyncio.TimeoutError:
-        # Global watchdog tripped: surface an honest terminal 'timeout' instead
-        # of an endless spinner. Distinct from 'failed' so the UI can explain it.
-        print(f"[PROBE-BG] hard timeout after {PROBE_HARD_TIMEOUT_S}s")
-        session["status"] = "timeout"
-        session["error"] = (
+
+    outcome = await EXECUTION_SERVICE.run_process_local(
+        _run_with_capacity_limit(),
+        state=session,
+        timeout_seconds=PROBE_HARD_TIMEOUT_S,
+        timeout_message=(
             "The audit timed out before completing. This can happen on a cold "
             "start or when the target blocks automated access. Please retry, or "
             "try a demo audit."
-        )
-    except Exception as e:
+        ),
+        cancellation_message="The audit was interrupted before completing. Please retry.",
+        failure_message="Probe engine error. Please retry.",
+    )
+    if outcome == LifecycleEvent.TIMEOUT:
+        # Global watchdog tripped: surface an honest terminal 'timeout' instead
+        # of an endless spinner. Distinct from 'failed' so the UI can explain it.
+        print(f"[PROBE-BG] hard timeout after {PROBE_HARD_TIMEOUT_S}s")
+    elif outcome == LifecycleEvent.CANCEL:
+        print("[PROBE-BG] execution cancelled before completion")
+    elif outcome == LifecycleEvent.FAIL:
         # Engine itself crashed. Mark the session as failed so the
         # frontend's polling loop can surface a clean error state instead
         # of hanging forever.
-        print(f"[PROBE-BG] engine crashed: {e!r}")
-        session["status"] = "failed"
-        session["error"] = "Probe engine error. Please retry."
+        print("[PROBE-BG] engine crashed")
 
     # Persist the terminal result. Prefer UPDATING the row created at launch so
     # there's exactly one durable record per probe; only fall back to an insert
@@ -2511,6 +2571,86 @@ def _enterprise_engine_tier(audit_depth: Optional[str]) -> str:
     return "free"
 
 
+async def _execute_enterprise_scan_target(
+    user_id: str,
+    scan_job_id: str,
+    target: dict,
+    scan_job: dict,
+) -> TargetExecutionResult:
+    """Execute one claimed target; the facade owns job-level persistence state."""
+    item = target.get("item") or {}
+    product = target.get("product") or {}
+    seller = target.get("seller") or {}
+    target_url = item.get("target_url") or ""
+    target_name = " / ".join(
+        part
+        for part in (
+            product.get("name") or product.get("sku") or "Watchlist product",
+            seller.get("name") or seller.get("domain") or "Seller",
+        )
+        if part
+    )
+
+    try:
+        validate_public_url(target_url)
+    except UnsafeUrlError as url_err:
+        return TargetExecutionResult(
+            session={
+                "session_id": None,
+                "status": "failed",
+                "error": str(url_err),
+                "agents": [],
+            },
+            error=f"Invalid target URL: {url_err}",
+        )
+
+    engine_tier = _enterprise_engine_tier(scan_job.get("audit_depth"))
+    audit_depth = "pro50" if engine_tier == "pro" else "smart24"
+    sid, session = create_session(target_url, target_name)
+    session["user_id"] = user_id
+    session["is_public"] = False
+    session["audit_depth"] = audit_depth
+    session["enterprise_scan_job_id"] = scan_job_id
+    session["enterprise_watchlist_item_id"] = item.get("id")
+
+    async def _run_with_capacity_limit() -> None:
+        async with _SCAN_SEMAPHORE:
+            await _run_probe_engine(
+                session,
+                target_url,
+                agent_configs=get_agent_configs_for_tier(engine_tier),
+            )
+
+    outcome = await EXECUTION_SERVICE.run_process_local(
+        _run_with_capacity_limit(),
+        state=session,
+        timeout_seconds=PROBE_HARD_TIMEOUT_S,
+        timeout_message="Enterprise probe target timed out before completing.",
+        cancellation_message="Enterprise probe target was interrupted before completing.",
+        failure_message="Probe engine error. Please retry.",
+        propagate_cancellation=True,
+    )
+    if outcome == LifecycleEvent.TIMEOUT:
+        print(f"[ENTERPRISE-SCAN] target timed out for {scan_job_id}/{item.get('id')}")
+    elif outcome == LifecycleEvent.FAIL:
+        print(f"[ENTERPRISE-SCAN] engine crashed for {scan_job_id}/{item.get('id')}")
+
+    saved_id = None
+    try:
+        saved_id = await save_probe(session, user_id=user_id, is_public=False)
+    except Exception as db_err:
+        print(f"[ENTERPRISE-SCAN] save_probe failed for {sid}: {db_err!r}")
+
+    result_error = None
+    if session.get("status") in {"failed", "timeout", "needs_context"}:
+        result_error = session.get("error") or session.get("context_message")
+    return TargetExecutionResult(
+        session=session,
+        probe_row_id=saved_id,
+        error=result_error,
+    )
+
+
 async def _run_enterprise_scan_job(
     user_id: str,
     scan_job_id: str,
@@ -2518,137 +2658,14 @@ async def _run_enterprise_scan_job(
     already_claimed: bool = False,
     max_targets: Optional[int] = None,
 ) -> dict:
-    """Process a queued enterprise scan job using the live probe engine.
-
-    The store owns job state and evidence writes; this worker only handles URL
-    validation, engine execution, and probe-history persistence.
-    """
-    terminal_error = None
-    claimed = False
-    finished = False
-    released = False
-    processed_targets = 0
-    remaining_targets = 0
-    latest_job: dict = {}
-    try:
-        if already_claimed:
-            claimed = True
-        else:
-            claim = await enterprise_claim_scan_job(user_id, scan_job_id)
-            if not claim.get("claimed"):
-                return {"claimed": False, "scan_job_id": scan_job_id, "processed_targets": 0, "remaining_targets": 0}
-            claimed = True
-
-        work = await enterprise_get_scan_job_work(user_id, scan_job_id)
-        job = work["scan_job"]
-        latest_job = job
-        engine_tier = _enterprise_engine_tier(job.get("audit_depth"))
-        audit_depth = "pro50" if engine_tier == "pro" else "smart24"
-        metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
-        processed_item_ids = set(metadata.get("processed_item_ids") or [])
-        pending_targets = [
-            target for target in work.get("items", [])
-            if (target.get("item") or {}).get("id") not in processed_item_ids
-        ]
-        targets = pending_targets[:max_targets] if max_targets else pending_targets
-
-        for target in targets:
-            item = target.get("item") or {}
-            product = target.get("product") or {}
-            seller = target.get("seller") or {}
-            target_url = item.get("target_url") or ""
-            target_name = " / ".join(
-                part for part in (
-                    product.get("name") or product.get("sku") or "Watchlist product",
-                    seller.get("name") or seller.get("domain") or "Seller",
-                )
-                if part
-            )
-            session = {}
-            saved_id = None
-
-            try:
-                validate_public_url(target_url)
-            except UnsafeUrlError as url_err:
-                record = await enterprise_record_live_probe_result(
-                    user_id,
-                    scan_job_id,
-                    item["id"],
-                    {"session_id": None, "status": "failed", "error": str(url_err), "agents": []},
-                    error=f"Invalid target URL: {url_err}",
-                )
-                latest_job = record.get("scan_job") or latest_job
-                processed_targets += 1
-                continue
-
-            sid, session = create_session(target_url, target_name)
-            session["user_id"] = user_id
-            session["is_public"] = False
-            session["audit_depth"] = audit_depth
-            session["enterprise_scan_job_id"] = scan_job_id
-            session["enterprise_watchlist_item_id"] = item.get("id")
-
-            try:
-                async with _SCAN_SEMAPHORE:
-                    await _run_probe_engine(
-                        session,
-                        target_url,
-                        agent_configs=get_agent_configs_for_tier(engine_tier),
-                    )
-            except Exception as engine_err:
-                print(f"[ENTERPRISE-SCAN] engine crashed for {scan_job_id}/{item.get('id')}: {engine_err!r}")
-                session["status"] = "failed"
-                session["error"] = "Probe engine error. Please retry."
-
-            try:
-                saved_id = await save_probe(session, user_id=user_id, is_public=False)
-            except Exception as db_err:
-                print(f"[ENTERPRISE-SCAN] save_probe failed for {sid}: {db_err!r}")
-
-            result_error = None
-            if session.get("status") in {"failed", "needs_context"}:
-                result_error = session.get("error") or session.get("context_message")
-            record = await enterprise_record_live_probe_result(
-                user_id,
-                scan_job_id,
-                item["id"],
-                session,
-                probe_row_id=saved_id,
-                error=result_error,
-            )
-            latest_job = record.get("scan_job") or latest_job
-            processed_targets += 1
-
-        remaining_targets = max(0, len(pending_targets) - processed_targets)
-        if max_targets and remaining_targets > 0 and terminal_error is None:
-            release = await enterprise_release_scan_job(user_id, scan_job_id)
-            latest_job = release.get("scan_job") or latest_job
-            released = True
-        else:
-            finish = await enterprise_finish_scan_job(user_id, scan_job_id)
-            latest_job = finish.get("scan_job") or latest_job
-            finished = True
-    except Exception as exc:
-        terminal_error = str(exc)
-        print(f"[ENTERPRISE-SCAN] job {scan_job_id} failed: {exc!r}")
-    finally:
-        if claimed and not finished and not released:
-            try:
-                finish = await enterprise_finish_scan_job(user_id, scan_job_id, terminal_error)
-                latest_job = finish.get("scan_job") or latest_job
-                finished = True
-            except Exception as finish_err:
-                print(f"[ENTERPRISE-SCAN] finish failed for {scan_job_id}: {finish_err!r}")
-    return {
-        "claimed": claimed,
-        "scan_job_id": scan_job_id,
-        "scan_job": latest_job,
-        "processed_targets": processed_targets,
-        "remaining_targets": remaining_targets,
-        "released": released,
-        "finished": finished,
-        "error": terminal_error,
-    }
+    """Compatibility adapter for the facade-owned durable worker lifecycle."""
+    return await EXECUTION_SERVICE.run_scan_job(
+        user_id,
+        scan_job_id,
+        process_target=_execute_enterprise_scan_target,
+        already_claimed=already_claimed,
+        max_targets=max_targets,
+    )
 
 
 def _probe_owner_id(session: dict) -> Optional[str]:
@@ -3045,12 +3062,15 @@ async def create_enterprise_scan_job(
 ):
     signed_in = _require_signed_in_user(user)
     try:
-        result = await enterprise_launch_scan_job(signed_in["id"], input.model_dump())
-        scan_job = result.get("scan_job") or {}
-        metadata = scan_job.get("metadata") or {}
-        if scan_job.get("status") == "queued" and metadata.get("run_mode") == "live":
-            asyncio.create_task(_run_enterprise_scan_job(signed_in["id"], scan_job["id"]))
-        return result
+        submission = await EXECUTION_SERVICE.submit_scan(
+            signed_in["id"], input.model_dump()
+        )
+        # Live enterprise scans are intentionally left queued for the existing
+        # protected worker endpoint. The response stays store-authored and never
+        # implies that process-local work has completed.
+        if submission.dispatch not in {DispatchTarget.NONE, DispatchTarget.DURABLE_WORKER}:
+            raise RuntimeError("Unsupported enterprise scan dispatch target")
+        return submission.response
     except Exception as exc:
         raise _enterprise_error(exc)
 
@@ -3058,24 +3078,12 @@ async def create_enterprise_scan_job(
 async def _drain_scan_worker(max_jobs: int, max_targets_per_job: int, worker_id: str) -> dict:
     """Claim and process up to ``max_jobs`` queued scan jobs. Shared by the POST
     (manual/scripted) and GET (Vercel cron) worker entrypoints."""
-    processed = []
-    for _ in range(max(1, max_jobs)):
-        claim = await enterprise_claim_next_scan_job(worker_id)
-        if not claim.get("claimed"):
-            break
-        job = claim.get("scan_job") or {}
-        user_id = claim.get("user_id") or job.get("requested_by")
-        if not user_id or not job.get("id"):
-            processed.append({"claimed": True, "error": "Claimed job missing requester or id."})
-            continue
-        result = await _run_enterprise_scan_job(
-            user_id,
-            job["id"],
-            already_claimed=True,
-            max_targets=max_targets_per_job,
-        )
-        processed.append(result)
-    return {"processed_jobs": processed, "count": len(processed)}
+    return await EXECUTION_SERVICE.drain_worker(
+        max_jobs,
+        max_targets_per_job,
+        worker_id,
+        process_target=_execute_enterprise_scan_target,
+    )
 
 
 @app.post("/api/enterprise/scan-worker/run")
@@ -3218,6 +3226,14 @@ async def create_enterprise_share_token(
     request: Request,
     user: Optional[dict] = Depends(get_optional_user),
 ):
+    if not input.redacted:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "redacted_share_required",
+                "message": "Anonymous share tokens are always redacted.",
+            },
+        )
     signed_in = _require_signed_in_user(user)
     try:
         result = await enterprise_create_share_token(
@@ -3257,8 +3273,8 @@ async def get_enterprise_shared_finding(token: str):
             # SEC-1b: the anonymous viewer never needs the share_tokens row's
             # internal ids (org/finding/created_by); expose only safe fields.
             "share_token": external_share_token_view(result["share_token"]),
-            "redacted": result.get("redacted", True),
-            "packet": redact_packet(result["packet"], redacted=bool(result.get("redacted", True))),
+            "redacted": True,
+            "packet": redact_packet(result["packet"], redacted=True),
         }
     except Exception as exc:
         raise _enterprise_error(exc)
